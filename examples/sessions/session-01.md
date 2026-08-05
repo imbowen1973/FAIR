@@ -6,6 +6,9 @@ duration_minutes: 45
 outcomes:
   - Explain cold chain integrity requirements
   - Describe temperature monitoring approaches
+competencies:
+  C1: Cold chain monitoring
+  C4: Traceability systems
 dc:
   creator: FAIR Consortium
   license: CC-BY-4.0

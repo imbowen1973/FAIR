@@ -1,0 +1,14 @@
+{
+  "name": "fair-assembler",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Office.js task pane add-in that assembles a deck by competency (Component B)",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "office-addin-dev-certs": "^2.0.0"
+  }
+}

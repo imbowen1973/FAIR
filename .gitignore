@@ -5,3 +5,5 @@ __pycache__/
 out/
 build/
 .venv/
+node_modules/
+assembler/web/data/

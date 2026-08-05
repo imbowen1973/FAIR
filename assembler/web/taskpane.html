@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>FAIR Deck Assembler</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <link rel="stylesheet" href="taskpane.css"/>
+</head>
+<body>
+  <header>
+    <h1>FAIR Deck Assembler</h1>
+    <p class="sub">Pull slides by competency from rendered sessions</p>
+  </header>
+
+  <main>
+    <div id="status" class="status" hidden></div>
+
+    <section id="step-competency">
+      <label for="competency">Competency</label>
+      <select id="competency" disabled>
+        <option value="">Loading catalog…</option>
+      </select>
+    </section>
+
+    <section id="step-slides" hidden>
+      <h2>Matching slides</h2>
+      <div id="slide-list"></div>
+    </section>
+
+    <section id="step-assemble" hidden>
+      <button id="assemble" class="primary">Insert selected slides</button>
+      <p class="hint">
+        Slides insert with the destination theme, one call per source deck.
+        Within a deck, PowerPoint keeps the slides' original order.
+      </p>
+    </section>
+  </main>
+
+  <script type="module" src="taskpane.js"></script>
+</body>
+</html>
