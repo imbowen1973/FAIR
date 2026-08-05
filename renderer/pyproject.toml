@@ -1,0 +1,22 @@
+[project]
+name = "fair-renderer"
+version = "0.1.0"
+description = "Renders session markdown into template-bound .pptx decks (Component A of the MD-to-PowerPoint pipeline)"
+requires-python = ">=3.10"
+dependencies = [
+    "python-pptx>=1.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+fair-render = "fair_renderer.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

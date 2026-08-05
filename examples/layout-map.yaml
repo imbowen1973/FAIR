@@ -1,0 +1,21 @@
+Title:
+  layout_name: "Title"
+  regions:
+    title: 0
+    subtitle: 1
+Full:
+  layout_name: "Full"
+  regions:
+    title: 0
+    full: 1
+Split:
+  layout_name: "Split"
+  regions:
+    title: 0
+    left: 1
+    right: 2
+Section:
+  layout_name: "Section"
+  regions:
+    title: 0
+    subtitle: 1
