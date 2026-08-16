@@ -119,7 +119,7 @@ hierarchy without writing anything.
 
 ### Layouts
 
-The stand-in template ships nine layouts (regions in parentheses):
+The stand-in template ships ten layouts (regions in parentheses):
 
 | Layout       | Regions                                              |
 |--------------|------------------------------------------------------|
@@ -132,9 +132,16 @@ The stand-in template ships nine layouts (regions in parentheses):
 | `Picture`    | title, picture (a real picture placeholder), caption |
 | `TitleOnly`  | title                                                |
 | `Blank`      | —                                                    |
+| `Cards`      | title, head1–head4, card1–card4                      |
 
 `Picture.picture` is a native picture placeholder, so images inserted
 there keep their `<p:ph>` binding (no free-positioning exception).
+
+`Cards` is a heading over four tab-topped cards. Each `headN` is the
+card's tab — a rounded-top strip filled accent1–4 respectively, centred
+bold text, styled entirely by the layout, so author markdown stays
+plain (`head1: "Detect"`). Each `cardN` is that card's body panel and
+takes any text content type (`ul`, `ol`, `p`).
 
 ### Mermaid resolution
 

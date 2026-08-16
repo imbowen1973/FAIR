@@ -81,8 +81,9 @@ dok: 2
 ---
 ```
 
-Nine layouts (`Title`, `Full`, `Split`, `Section`, `Comparison`,
-`Caption`, `Picture`, `TitleOnly`, `Blank`), inline
+Ten layouts (`Title`, `Full`, `Split`, `Section`, `Comparison`,
+`Caption`, `Picture`, `TitleOnly`, `Blank`, and `Cards` — a heading
+over four colour-tabbed cards), inline
 `**bold**`/`*italic*`, and colours restricted to theme slots — so a
 template rebrand recolours every deck with zero content edits. Full
 grammar in [`docs/session-md-format.md`](docs/session-md-format.md).

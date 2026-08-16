@@ -283,6 +283,54 @@ def test_comparison_layout_binds_heads_and_bodies(tmp_path):
     assert "Automatic logger export" in text_by_idx[4]
 
 
+def test_cards_layout_binds_four_tabbed_cards(tmp_path):
+    """Cards slide binds title + 4 tab heads (idx 1-4) + 4 bodies (idx 5-8),
+    and the layout styles tabs with per-card accent fills."""
+    result = render_session(
+        session_path=EXAMPLES / "sessions" / "session-03.md",
+        template_path=EXAMPLES / "template.pptx",
+        layout_map_path=EXAMPLES / "layout-map.yaml",
+        out_dir=tmp_path / "out",
+    )
+    assert _slide_layout_name(result["pptx"], 4) == "Cards"
+    root = _slide_xml(result["pptx"], 4)
+    text_by_idx = {}
+    for sp in root.findall(f".//{{{P_NS}}}sp"):
+        ph = sp.find(f".//{{{P_NS}}}ph")
+        if ph is None:
+            continue
+        idx = int(ph.get("idx") or 0)
+        text_by_idx[idx] = [t.text or "" for t in sp.findall(f".//{{{A_NS}}}t")]
+    assert set(text_by_idx) >= {0, 1, 2, 3, 4, 5, 6, 7, 8}
+    assert text_by_idx[1] == ["Detect"]
+    assert text_by_idx[4] == ["Report"]
+    assert "Quarantine the stock" in text_by_idx[6]
+    assert "File the excursion report" in text_by_idx[8]
+
+    # Layout: tab placeholders carry rounded-top geometry and accent fills.
+    with zipfile.ZipFile(EXAMPLES / "template.pptx") as z:
+        cards_layout = None
+        for name in z.namelist():
+            if name.startswith("ppt/slideLayouts/slideLayout") and name.endswith(".xml"):
+                xml = etree.fromstring(z.read(name))
+                if xml.find(f"{{{P_NS}}}cSld").get("name") == "Cards":
+                    cards_layout = xml
+                    break
+    assert cards_layout is not None
+    fills = {}
+    for sp in cards_layout.findall(f".//{{{P_NS}}}sp"):
+        ph = sp.find(f".//{{{P_NS}}}ph")
+        if ph is None or ph.get("idx") is None:
+            continue
+        idx = int(ph.get("idx"))
+        if 1 <= idx <= 4:
+            geom = sp.find(f".//{{{A_NS}}}prstGeom")
+            assert geom is not None and geom.get("prst") == "round2SameRect"
+            scheme = sp.find(f".//{{{A_NS}}}solidFill/{{{A_NS}}}schemeClr")
+            fills[idx] = scheme.get("val")
+    assert fills == {1: "accent1", 2: "accent2", 3: "accent3", 4: "accent4"}
+
+
 def test_master_bullet_levels_colored():
     """Template master colour-codes list levels 1-3 (accent1/2/3)."""
     with zipfile.ZipFile(EXAMPLES / "template.pptx") as z:

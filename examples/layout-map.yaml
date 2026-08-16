@@ -46,3 +46,15 @@ TitleOnly:
 Blank:
   layout_name: "Blank"
   regions: {}
+Cards:
+  layout_name: "Cards"
+  regions:
+    title: 0
+    head1: 1
+    head2: 2
+    head3: 3
+    head4: 4
+    card1: 5
+    card2: 6
+    card3: 7
+    card4: 8
