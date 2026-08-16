@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+out/
+build/
+.venv/
+node_modules/
+assembler/web/data/
