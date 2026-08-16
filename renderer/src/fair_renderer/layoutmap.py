@@ -42,8 +42,10 @@ def load_layout_map(path: Path) -> dict[str, LayoutBinding]:
         regions = entry.get("regions")
         if not isinstance(layout_name, str) or not layout_name:
             raise LayoutMapError(f"{path}: entry {key!r} missing 'layout_name'")
-        if not isinstance(regions, dict) or not regions:
-            raise LayoutMapError(f"{path}: entry {key!r} missing 'regions'")
+        if not isinstance(regions, dict):
+            raise LayoutMapError(
+                f"{path}: entry {key!r} missing 'regions' (use {{}} for chrome-only layouts)"
+            )
         for rname, idx in regions.items():
             if not isinstance(idx, int) or idx < 0:
                 raise LayoutMapError(

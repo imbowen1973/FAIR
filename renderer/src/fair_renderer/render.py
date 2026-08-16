@@ -18,6 +18,7 @@ from .creation_id import derive_creation_id, inject_creation_id
 from .layoutmap import LayoutBinding, LayoutMapError, load_layout_map, validate_against_template
 from .mermaid import resolve_mermaid
 from .parser import ListItem, Region, Session, Slide, parse_session
+from .runs import write_runs
 from .zipnorm import normalize_zip
 
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -27,23 +28,29 @@ class RenderError(Exception):
     pass
 
 
-def _set_paragraph_text(paragraph, text: str) -> None:
-    run = paragraph.add_run()
-    run.text = text
-
-
-def _apply_auto_numbering(paragraph) -> None:
-    """Mark a paragraph as auto-numbered (arabic, period) instead of bulleted."""
+def _clear_bullet_props(paragraph):
     pPr = paragraph._pPr
     if pPr is None:
         pPr = paragraph._p.get_or_add_pPr()
     for tag in ("buChar", "buAutoNum", "buNone"):
         for el in pPr.findall(f"{{{A_NS}}}{tag}"):
             pPr.remove(el)
+    return pPr
+
+
+def _apply_auto_numbering(paragraph) -> None:
+    """Mark a paragraph as auto-numbered (arabic, period) instead of bulleted."""
+    pPr = _clear_bullet_props(paragraph)
     etree.SubElement(pPr, f"{{{A_NS}}}buAutoNum").set("type", "arabicPeriod")
 
 
-def _fill_list(placeholder, items: list[ListItem], numbered: bool) -> None:
+def _suppress_bullet(paragraph) -> None:
+    """Plain paragraph: no bullet glyph regardless of the layout's list style."""
+    pPr = _clear_bullet_props(paragraph)
+    etree.SubElement(pPr, f"{{{A_NS}}}buNone")
+
+
+def _fill_list(placeholder, region: Region, numbered: bool) -> None:
     tf = placeholder.text_frame
     first = True
 
@@ -56,13 +63,23 @@ def _fill_list(placeholder, items: list[ListItem], numbered: bool) -> None:
             else:
                 paragraph = tf.add_paragraph()
             paragraph.level = level
-            _set_paragraph_text(paragraph, item.text)
+            write_runs(paragraph, item.text, color=item.color or region.color)
             if numbered:
                 _apply_auto_numbering(paragraph)
             if item.children:
                 write_items(item.children, level + 1)
 
-    write_items(items, 0)
+    write_items(region.items, 0)
+
+
+def _fill_plain(placeholder, region: Region, suppress_bullets: bool) -> None:
+    tf = placeholder.text_frame
+    lines = (region.text or "").splitlines() or [""]
+    for i, line in enumerate(lines):
+        paragraph = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        write_runs(paragraph, line, color=region.color)
+        if suppress_bullets:
+            _suppress_bullet(paragraph)
 
 
 def _fill_image(slide, placeholder, image_path: Path) -> None:
@@ -81,18 +98,31 @@ def _fill_image(slide, placeholder, image_path: Path) -> None:
         placeholder.insert_picture(str(image_path))
         return
 
-    left, top = Emu(placeholder.left), Emu(placeholder.top)
-    width, height = Emu(placeholder.width), Emu(placeholder.height)
-    slide.shapes.add_picture(str(image_path), left, top, width=width, height=height)
+    # Contain-fit: scale to the largest size that fits the region without
+    # distortion, centred in the placeholder's footprint.
+    from PIL import Image
+
+    with Image.open(image_path) as im:
+        iw, ih = im.size
+    box_w, box_h = placeholder.width, placeholder.height
+    scale = min(box_w / iw, box_h / ih)
+    w, h = int(iw * scale), int(ih * scale)
+    left = Emu(placeholder.left + (box_w - w) // 2)
+    top = Emu(placeholder.top + (box_h - h) // 2)
+    slide.shapes.add_picture(str(image_path), left, top, width=Emu(w), height=Emu(h))
     sp = placeholder._element
     sp.getparent().remove(sp)
 
 
 def _fill_region(slide, placeholder, region: Region, base_dir: Path, build_dir: Path) -> None:
     if region.type == "text":
-        placeholder.text_frame.text = region.text or ""
+        # Plain string region: emphasis-aware, keeps the layout's own
+        # paragraph style (titles and heads are unbulleted by design).
+        write_runs(placeholder.text_frame.paragraphs[0], region.text or "")
+    elif region.type == "p":
+        _fill_plain(placeholder, region, suppress_bullets=True)
     elif region.type in ("ul", "ol"):
-        _fill_list(placeholder, region.items, numbered=(region.type == "ol"))
+        _fill_list(placeholder, region, numbered=(region.type == "ol"))
     elif region.type == "image":
         _fill_image(slide, placeholder, base_dir / region.src)
     elif region.type == "mermaid":
@@ -179,13 +209,18 @@ def render_session(
         slide_id_map[slide_src.id] = source_ref
 
         title_region = next((r for r in slide_src.regions if r.name == "title"), None)
+        plain_title = None
+        if title_region and title_region.text:
+            from .runs import parse_emphasis
+
+            plain_title = "".join(r.text for r in parse_emphasis(title_region.text))
         index_entries.append(
             {
                 "slideId": slide_src.id,
                 "sessionId": session_id,
                 "sourceRef": source_ref,
                 "sourcePptx": pptx_name,
-                "title": title_region.text if title_region else None,
+                "title": plain_title,
                 "develops": slide_src.develops,
                 "dok": slide_src.dok,
             }

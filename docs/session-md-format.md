@@ -83,18 +83,58 @@ removed by PowerPoint convention at edit time).
 
 ### Region content
 
-`title` regions take a plain string. All other regions take a typed object:
+Any region may take a **plain string** — one unadorned paragraph in the
+layout's own style. That's the form for titles, column heads
+(`left_head: "Paper"`), and short captions. Otherwise a region takes a
+typed object:
 
 - `{ type: ul, items: [...] }` — bulleted list
 - `{ type: ol, items: [...] }` — numbered list
+- `{ type: p, text: "..." }` — plain paragraphs (newline-separated), no
+  bullets
 - `{ type: image, src: path }` — image, path relative to the session file
 - `{ type: mermaid, src: path }` — Mermaid source, rendered to PNG at build
   time (see below)
 
-A list item is either a string or `{ text: str, items: [...] }` for
-nesting. Maximum nesting depth is 5 (python-pptx paragraph levels 0–4).
+A list item is either a string or `{ text: str, items: [...], color: ... }`
+for nesting. Maximum nesting depth is 5 (python-pptx paragraph levels 0–4).
 
 A region contains text or an image, never both (per spec A.2).
+
+### Emphasis and colour
+
+Inline emphasis inside any text: `**bold**`, `*italic*`,
+`***bold italic***`.
+
+Colour is declared in YAML, not inline, and only as **theme colour
+slots** — `accent1`–`accent6`, `dk1`, `lt1`, `dk2`, `lt2`, `hlink`,
+`folHlink`. `color:` on a `ul`/`ol`/`p` region colours all its text;
+`color:` on an individual item overrides the region. Raw hex values are
+rejected: the palette belongs to the template's theme, so a rebrand
+recolours every deck with zero session edits.
+
+Sub-list bullet glyphs are colour-coded by level in the template's
+master (accent1/2/3 for levels 1–3) — authors get coloured list
+hierarchy without writing anything.
+
+### Layouts
+
+The stand-in template ships nine layouts (regions in parentheses):
+
+| Layout       | Regions                                              |
+|--------------|------------------------------------------------------|
+| `Title`      | title, subtitle                                      |
+| `Full`       | title, full                                          |
+| `Split`      | title, left, right                                   |
+| `Section`    | title, subtitle                                      |
+| `Comparison` | title, left_head, left, right_head, right            |
+| `Caption`    | title, content, caption                              |
+| `Picture`    | title, picture (a real picture placeholder), caption |
+| `TitleOnly`  | title                                                |
+| `Blank`      | —                                                    |
+
+`Picture.picture` is a native picture placeholder, so images inserted
+there keep their `<p:ph>` binding (no free-positioning exception).
 
 ### Mermaid resolution
 

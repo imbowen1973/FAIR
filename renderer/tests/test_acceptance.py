@@ -143,7 +143,7 @@ def test_a6_5_deterministic_output(rendered, tmp_path):
 def test_creation_id_present_and_mapped(rendered):
     """Every slide carries p14:creationId, and slide-id-map.json matches the XML."""
     slide_id_map = json.loads(rendered["slide_id_map"].read_text())
-    assert set(slide_id_map) == {"s01-01", "s01-02", "s01-03", "s01-04"}
+    assert set(slide_id_map) == {"s01-01", "s01-02", "s01-03", "s01-04", "s01-05"}
 
     with zipfile.ZipFile(rendered["pptx"]) as z:
         # presentation.xml gives authored order of slide ids
@@ -153,7 +153,7 @@ def test_creation_id_present_and_mapped(rendered):
             for el in pres.findall(f".//{{{P_NS}}}sldIdLst/{{{P_NS}}}sldId")
         ]
         creation_ids = []
-        for n in range(1, 5):
+        for n in range(1, 6):
             root = etree.fromstring(z.read(f"ppt/slides/slide{n}.xml"))
             cid = root.find(f".//{{{P14_NS}}}creationId")
             assert cid is not None, f"slide{n} missing p14:creationId"
@@ -199,16 +199,99 @@ def test_notes_written(rendered):
     assert found, "speaker notes text not found in any notes slide"
 
 
-def test_image_slide_occupies_placeholder_geometry(rendered):
-    """Image lands at the content placeholder's footprint (documented
-    free-position exception for non-picture placeholders, spec A.3)."""
+def test_picture_placeholder_keeps_binding(rendered):
+    """The Picture layout's image binds into the picture placeholder —
+    the <p:pic> itself carries <p:ph idx=1>, no free-positioning."""
     root = _slide_xml(rendered["pptx"], 4)
     pics = root.findall(f".//{{{P_NS}}}pic")
     assert len(pics) == 1
-    # Title placeholder must still be bound.
-    phs = root.findall(f".//{{{P_NS}}}ph")
-    indices = {int(ph.get("idx") or 0) for ph in phs}
-    assert 0 in indices
+    ph = pics[0].find(f".//{{{P_NS}}}ph")
+    assert ph is not None, "picture must retain its placeholder reference"
+    assert int(ph.get("idx") or 0) == 1
+
+
+def test_caption_plain_text_suppresses_bullets(rendered):
+    """The p-type caption renders paragraphs with buNone and bold emphasis."""
+    root = _slide_xml(rendered["pptx"], 4)
+    for sp in root.findall(f".//{{{P_NS}}}sp"):
+        ph = sp.find(f".//{{{P_NS}}}ph")
+        if ph is None or int(ph.get("idx") or 0) != 2:
+            continue
+        paragraphs = sp.findall(f".//{{{A_NS}}}p")
+        assert len(paragraphs) == 2
+        for p in paragraphs:
+            assert p.find(f"{{{A_NS}}}pPr/{{{A_NS}}}buNone") is not None
+        bold_runs = [
+            r for r in sp.findall(f".//{{{A_NS}}}r")
+            if r.find(f"{{{A_NS}}}rPr") is not None
+            and r.find(f"{{{A_NS}}}rPr").get("b") == "1"
+        ]
+        assert any((r.find(f"{{{A_NS}}}t").text or "") == "red line" for r in bold_runs)
+        return
+    pytest.fail("caption placeholder (idx 2) not found on Picture slide")
+
+
+def test_theme_color_and_emphasis_on_lists(rendered):
+    """Region/item colours resolve to schemeClr runs; ** renders as bold."""
+    root = _slide_xml(rendered["pptx"], 5)
+    for sp in root.findall(f".//{{{P_NS}}}sp"):
+        ph = sp.find(f".//{{{P_NS}}}ph")
+        if ph is None or int(ph.get("idx") or 0) != 1:
+            continue
+        colors_by_text = {}
+        bold_texts = set()
+        for r in sp.findall(f".//{{{A_NS}}}r"):
+            text = r.find(f"{{{A_NS}}}t").text or ""
+            rPr = r.find(f"{{{A_NS}}}rPr")
+            if rPr is None:
+                continue
+            scheme = rPr.find(f"{{{A_NS}}}solidFill/{{{A_NS}}}schemeClr")
+            if scheme is not None:
+                colors_by_text[text] = scheme.get("val")
+            if rPr.get("b") == "1":
+                bold_texts.add(text)
+        # region default accent1; item override accent2
+        assert colors_by_text["In range"] == "accent1"
+        assert colors_by_text["Excursion"] == "accent2"
+        assert "In range" in bold_texts and "Excursion" in bold_texts
+        return
+    pytest.fail("left placeholder (idx 1) not found on slide 5")
+
+
+def test_comparison_layout_binds_heads_and_bodies(tmp_path):
+    """Comparison slide binds all five placeholder indices."""
+    out = tmp_path / "cmp-out"
+    result = render_session(
+        session_path=EXAMPLES / "sessions" / "session-02.md",
+        template_path=EXAMPLES / "template.pptx",
+        layout_map_path=EXAMPLES / "layout-map.yaml",
+        out_dir=out,
+    )
+    assert _slide_layout_name(result["pptx"], 3) == "Comparison"
+    root = _slide_xml(result["pptx"], 3)
+    text_by_idx = {}
+    for sp in root.findall(f".//{{{P_NS}}}sp"):
+        ph = sp.find(f".//{{{P_NS}}}ph")
+        if ph is None:
+            continue
+        idx = int(ph.get("idx") or 0)
+        text_by_idx[idx] = [t.text or "" for t in sp.findall(f".//{{{A_NS}}}t")]
+    assert set(text_by_idx) == {0, 1, 2, 3, 4}
+    assert text_by_idx[1] == ["Paper"]
+    assert text_by_idx[3] == ["Digital"]
+    assert "Manual transcription errors" in text_by_idx[2]
+    assert "Automatic logger export" in text_by_idx[4]
+
+
+def test_master_bullet_levels_colored():
+    """Template master colour-codes list levels 1-3 (accent1/2/3)."""
+    with zipfile.ZipFile(EXAMPLES / "template.pptx") as z:
+        master = etree.fromstring(z.read("ppt/slideMasters/slideMaster1.xml"))
+    body = master.find(f"{{{P_NS}}}txStyles/{{{P_NS}}}bodyStyle")
+    for level, expected in ((1, "accent1"), (2, "accent2"), (3, "accent3")):
+        lvl = body.find(f"{{{A_NS}}}lvl{level}pPr")
+        scheme = lvl.find(f"{{{A_NS}}}buClr/{{{A_NS}}}schemeClr")
+        assert scheme is not None and scheme.get("val") == expected
 
 
 def test_layout_map_validation_fails_loudly(tmp_path):

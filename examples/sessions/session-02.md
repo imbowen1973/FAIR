@@ -42,16 +42,20 @@ dok: 2
 
 --- slide
 id: s02-03
-layout: Split
+layout: Comparison
 title: Paper vs digital records
+left_head: "Paper"
 left:
   type: ul
+  color: accent2
   items:
     - Manual transcription errors
     - Storage and retrieval cost
     - Slow audit response
+right_head: "Digital"
 right:
   type: ul
+  color: accent1
   items:
     - Automatic logger export
     - Searchable history
