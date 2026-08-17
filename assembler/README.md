@@ -20,21 +20,24 @@ Component B of
 Swapping `slidesForCompetency` for a FalkorDB query later changes only
 that function body (spec B.2).
 
-## Published mode (no local server)
+## The distribution model: local first
 
-`.github/workflows/publish.yml` renders the corpus and deploys this
-whole directory to GitHub Pages on every push to main (one-time setup:
-repo Settings → Pages → Source: **GitHub Actions**). The Pages site
-hosts both the pane and the data, so `manifest.pages.xml` is
-sideloadable with nothing running locally.
+The repo holds markdown; **rendered decks are local build products**.
+The normal flow is: pull the content repo, `python
+scripts/build_corpus.py`, `npm start`, and the pane reads
+`localhost:3000`. Decks exist on the presenter's machine and nowhere
+else.
 
-The pane's **Library** picker can add any other published corpus:
-paste `owner/repo` (resolves to that repo's Pages site), a github.com
-repo URL, or a direct https catalog URL. Public repos need no auth —
-private libraries arrive with the middle layer
-(`docs/platform-architecture.md`).
+**Publishing is a deliberate opt-in**, for libraries meant as open
+educational resources: run the manual "Publish corpus" workflow
+(Actions tab; needs Pages enabled) and the pane + data deploy to the
+repo's Pages site, sideloadable via `manifest.pages.xml` with no local
+tooling. The pane's **Library** picker can then add any such published
+corpus: paste `owner/repo`, a github.com URL, or a catalog URL.
+Private libraries are never served this way — they arrive with the
+middle layer (`docs/platform-architecture.md`).
 
-## Run it (local development)
+## Run it (the default local flow)
 
 ```bash
 # 1. Build the data set (from the repo root)

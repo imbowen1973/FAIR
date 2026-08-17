@@ -1,0 +1,25 @@
+name: CI
+
+# Tests and a validation build on every push. Nothing is published:
+# rendered decks are local build products, not web artifacts.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install renderer
+        run: pip install -e "renderer[test]"
+      - name: Renderer acceptance tests
+        run: python -m pytest renderer/tests -q
+      - name: Assembler tests
+        run: cd assembler && npm test
+      - name: Corpus builds cleanly (output discarded)
+        run: python scripts/build_corpus.py

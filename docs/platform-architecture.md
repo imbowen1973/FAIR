@@ -77,6 +77,20 @@ CI (deterministic, versioned); querying stays in the pane
 (`slidesForCompetency`) until the graph arrives; the pane itself is
 static files.
 
+### 3.1 Distribution: local first, publish by decision
+
+Rendered decks are **local build products**. The default flow is: pull
+the markdown, render on your own machine, assemble from localhost. No
+deck reaches a web URL as a side effect of pushing content — CI on push
+runs tests and a validation build only.
+
+Publishing a library (its pane, catalog, and decks on a public URL) is
+a **deliberate, manual act**, appropriate only for libraries the
+consortium intends as open educational resources. Private and shared
+libraries are never web-published; their delivery is the middle
+layer's permission-checked streaming, and until that exists, their
+distribution is the local flow.
+
 ## 4. Authoring flows
 
 **Direct (exists today).** Edit session.md in any editor, push, CI
