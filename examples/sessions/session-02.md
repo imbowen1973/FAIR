@@ -42,16 +42,20 @@ dok: 2
 
 --- slide
 id: s02-03
-layout: Split
+layout: Comparison
 title: Paper vs digital records
+left_head: "Paper"
 left:
   type: ul
+  color: accent2
   items:
     - Manual transcription errors
     - Storage and retrieval cost
     - Slow audit response
+right_head: "Digital"
 right:
   type: ul
+  color: accent1
   items:
     - Automatic logger export
     - Searchable history
@@ -59,5 +63,18 @@ right:
 notes: |
   Contrast the two record-keeping modes; digital wins on audit speed.
 develops: [C2]
+dok: 1
+---
+
+--- slide
+id: s02-04
+layout: Full
+title: Walkthrough, exporting an audit pack
+full:
+  type: video
+  url: https://youtu.be/fair-demo-audit-pack
+notes: |
+  Play the 4-minute export walkthrough, then take questions.
+develops: [C2, C3]
 dok: 1
 ---

@@ -60,3 +60,37 @@ full:
 develops: [C1, C3]
 dok: 2
 ---
+
+--- slide
+id: s03-04
+layout: Cards
+title: Who does what in an excursion
+head1: "Detect"
+card1:
+  type: ul
+  items:
+    - Logger alarm fires
+    - "**Warehouse lead** confirms"
+head2: "Contain"
+card2:
+  type: ul
+  items:
+    - Quarantine the stock
+    - Label and segregate
+head3: "Assess"
+card3:
+  type: ul
+  items:
+    - Pull the full trace
+    - "*QA* rules on disposition"
+head4: "Report"
+card4:
+  type: ul
+  items:
+    - File the excursion report
+    - Notify the consignee
+notes: |
+  One card per role phase; the tabs are colour-coded by the template.
+develops: [C1, C3]
+dok: 2
+---

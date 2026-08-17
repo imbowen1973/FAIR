@@ -83,18 +83,70 @@ removed by PowerPoint convention at edit time).
 
 ### Region content
 
-`title` regions take a plain string. All other regions take a typed object:
+Any region may take a **plain string** — one unadorned paragraph in the
+layout's own style. That's the form for titles, column heads
+(`left_head: "Paper"`), and short captions. Otherwise a region takes a
+typed object:
 
 - `{ type: ul, items: [...] }` — bulleted list
 - `{ type: ol, items: [...] }` — numbered list
+- `{ type: p, text: "..." }` — plain paragraphs (newline-separated), no
+  bullets
 - `{ type: image, src: path }` — image, path relative to the session file
 - `{ type: mermaid, src: path }` — Mermaid source, rendered to PNG at build
   time (see below)
+- `{ type: video, url: https://..., poster: optional path }` — externally
+  hosted video (YouTube etc.). The slide shows the poster image (or a
+  generated play-button panel) hyperlinked to the URL; clicking it in
+  the presentation opens the video. Video files themselves are never
+  committed.
 
-A list item is either a string or `{ text: str, items: [...] }` for
-nesting. Maximum nesting depth is 5 (python-pptx paragraph levels 0–4).
+A list item is either a string or `{ text: str, items: [...], color: ... }`
+for nesting. Maximum nesting depth is 5 (python-pptx paragraph levels 0–4).
 
 A region contains text or an image, never both (per spec A.2).
+
+### Emphasis and colour
+
+Inline emphasis inside any text: `**bold**`, `*italic*`,
+`***bold italic***`.
+
+Colour is declared in YAML, not inline, and only as **theme colour
+slots** — `accent1`–`accent6`, `dk1`, `lt1`, `dk2`, `lt2`, `hlink`,
+`folHlink`. `color:` on a `ul`/`ol`/`p` region colours all its text;
+`color:` on an individual item overrides the region. Raw hex values are
+rejected: the palette belongs to the template's theme, so a rebrand
+recolours every deck with zero session edits.
+
+Sub-list bullet glyphs are colour-coded by level in the template's
+master (accent1/2/3 for levels 1–3) — authors get coloured list
+hierarchy without writing anything.
+
+### Layouts
+
+The stand-in template ships ten layouts (regions in parentheses):
+
+| Layout       | Regions                                              |
+|--------------|------------------------------------------------------|
+| `Title`      | title, subtitle                                      |
+| `Full`       | title, full                                          |
+| `Split`      | title, left, right                                   |
+| `Section`    | title, subtitle                                      |
+| `Comparison` | title, left_head, left, right_head, right            |
+| `Caption`    | title, content, caption                              |
+| `Picture`    | title, picture (a real picture placeholder), caption |
+| `TitleOnly`  | title                                                |
+| `Blank`      | —                                                    |
+| `Cards`      | title, head1–head4, card1–card4                      |
+
+`Picture.picture` is a native picture placeholder, so images inserted
+there keep their `<p:ph>` binding (no free-positioning exception).
+
+`Cards` is a heading over four tab-topped cards. Each `headN` is the
+card's tab — a rounded-top strip filled accent1–4 respectively, centred
+bold text, styled entirely by the layout, so author markdown stays
+plain (`head1: "Detect"`). Each `cardN` is that card's body panel and
+takes any text content type (`ul`, `ol`, `p`).
 
 ### Mermaid resolution
 
@@ -108,6 +160,20 @@ The renderer resolves `{type: mermaid, src: d.mmd}` in this order:
 If neither is available the build fails with an explicit error. Mermaid
 Ink (network rendering) is deliberately not supported: it would break
 offline builds and determinism.
+
+## Asset policy
+
+Enforced by `scripts/check_assets.py`, which gates every corpus build
+(and therefore every publish):
+
+- **No video binaries in the repo, ever.** Video lives on a host
+  (YouTube, Vimeo, an institutional server) and is referenced with the
+  `video` content type. One embedded clip outweighs a course of images.
+- **Images: ≤ 500 KB and ≤ 2200 px on the long edge.** Prepare any
+  image with `scripts/prepare_image.py`, which resizes to 2000 px,
+  compresses, and **strips all metadata including EXIF** — clinical
+  photos must not carry GPS positions, timestamps, or device ids into
+  a repo.
 
 ## Determinism note
 

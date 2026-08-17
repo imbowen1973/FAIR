@@ -8,8 +8,28 @@ from pathlib import Path
 import yaml
 
 RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "dok"}
-CONTENT_TYPES = {"ul", "ol", "image", "mermaid"}
+CONTENT_TYPES = {"ul", "ol", "p", "image", "mermaid", "video"}
 MAX_LIST_DEPTH = 5
+
+# Theme colour slots authors may reference. These resolve through the
+# template's theme, so a rebrand recolours every deck without touching
+# any session file. Raw hex is deliberately not allowed.
+SCHEME_COLORS = {
+    "dk1", "lt1", "dk2", "lt2",
+    "accent1", "accent2", "accent3", "accent4", "accent5", "accent6",
+    "hlink", "folHlink",
+}
+
+
+def _check_color(color, where: str) -> str | None:
+    if color is None:
+        return None
+    if color not in SCHEME_COLORS:
+        raise SessionParseError(
+            f"{where}: color {color!r} is not a theme colour; "
+            f"use one of {sorted(SCHEME_COLORS)}"
+        )
+    return color
 
 
 class SessionParseError(Exception):
@@ -20,15 +40,18 @@ class SessionParseError(Exception):
 class ListItem:
     text: str
     children: list["ListItem"] = field(default_factory=list)
+    color: str | None = None  # theme colour slot, e.g. "accent2"
 
 
 @dataclass
 class Region:
     name: str
-    type: str  # "text" (title), "ul", "ol", "image", "mermaid"
+    type: str  # "text" (plain string), "p", "ul", "ol", "image", "mermaid"
     text: str | None = None
     items: list[ListItem] = field(default_factory=list)
     src: str | None = None
+    color: str | None = None  # default theme colour for the region's items
+    url: str | None = None  # video: external hosting URL (https)
 
 
 @dataclass
@@ -104,7 +127,13 @@ def _parse_list_items(raw, where: str, depth: int = 0) -> list[ListItem]:
             items.append(ListItem(text=entry))
         elif isinstance(entry, dict) and "text" in entry:
             children = _parse_list_items(entry.get("items", []), where, depth + 1)
-            items.append(ListItem(text=str(entry["text"]), children=children))
+            items.append(
+                ListItem(
+                    text=str(entry["text"]),
+                    children=children,
+                    color=_check_color(entry.get("color"), where),
+                )
+            )
         else:
             raise SessionParseError(
                 f"{where}: list item must be a string or {{text, items}}, got {entry!r}"
@@ -113,13 +142,15 @@ def _parse_list_items(raw, where: str, depth: int = 0) -> list[ListItem]:
 
 
 def _parse_region(name: str, raw, where: str) -> Region:
-    if name == "title":
-        if not isinstance(raw, str):
-            raise SessionParseError(f"{where}: 'title' must be a plain string")
+    # A plain string anywhere is a single unadorned text paragraph —
+    # titles, column headings, captions.
+    if isinstance(raw, str):
         return Region(name=name, type="text", text=raw)
+    if name == "title":
+        raise SessionParseError(f"{where}: 'title' must be a plain string")
 
     if not isinstance(raw, dict) or "type" not in raw:
-        raise SessionParseError(f"{where}: region '{name}' must be {{type: ...}}")
+        raise SessionParseError(f"{where}: region '{name}' must be a string or {{type: ...}}")
     ctype = raw["type"]
     if ctype not in CONTENT_TYPES:
         raise SessionParseError(
@@ -127,7 +158,31 @@ def _parse_region(name: str, raw, where: str) -> Region:
             f"expected one of {sorted(CONTENT_TYPES)}"
         )
     if ctype in ("ul", "ol"):
-        return Region(name=name, type=ctype, items=_parse_list_items(raw.get("items"), where))
+        return Region(
+            name=name,
+            type=ctype,
+            items=_parse_list_items(raw.get("items"), where),
+            color=_check_color(raw.get("color"), where),
+        )
+    if ctype == "p":
+        text = raw.get("text")
+        if not isinstance(text, str) or not text:
+            raise SessionParseError(f"{where}: region '{name}' of type p requires 'text'")
+        return Region(
+            name=name, type="p", text=text, color=_check_color(raw.get("color"), where)
+        )
+    if ctype == "video":
+        # Video is never embedded: it lives on a host (YouTube etc.) and
+        # the slide carries a click-through poster. Keeps repos small.
+        url = raw.get("url")
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise SessionParseError(
+                f"{where}: region '{name}' of type video requires an https 'url'"
+            )
+        poster = raw.get("poster")
+        if poster is not None and (not isinstance(poster, str) or not poster):
+            raise SessionParseError(f"{where}: video 'poster' must be a path")
+        return Region(name=name, type="video", url=url, src=poster)
     # image / mermaid
     src = raw.get("src")
     if not isinstance(src, str) or not src:

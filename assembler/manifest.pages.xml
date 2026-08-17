@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Production manifest: pane and corpus served from GitHub Pages
+     (published by .github/workflows/publish.yml). Sideload this one to
+     use the assembler with no local server at all. -->
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:type="TaskPaneApp">
+  <Id>4b6de1cf-9d0a-4f3e-8c21-7a5b9e2d4c10</Id>
+  <Version>0.2.0</Version>
+  <ProviderName>FAIR Consortium</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="FAIR Deck Assembler"/>
+  <Description DefaultValue="Assemble a deck by competency from published session libraries"/>
+  <IconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://github.com/imbowen1973/FAIR"/>
+  <Hosts>
+    <Host Name="Presentation"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="PowerPointApi" MinVersion="1.2"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://imbowen1973.github.io/FAIR/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>

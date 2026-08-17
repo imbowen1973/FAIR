@@ -57,11 +57,38 @@ dok: 2
 
 --- slide
 id: s01-04
-layout: Full
+layout: Picture
 title: Monitoring in practice
-full:
+picture:
   type: image
   src: assets/logger-chart.png
+caption:
+  type: p
+  text: |-
+    A week of logger readings.
+    The **red line** marks the excursion threshold.
 develops: [C1]
 dok: 1
+---
+
+--- slide
+id: s01-05
+layout: Split
+title: Reading the log
+left:
+  type: ul
+  color: accent1
+  items:
+    - "**In range**: no action"
+    - text: "**Excursion**: quarantine"
+      color: accent2
+      items:
+        - Record peak and duration
+right:
+  type: p
+  text: |-
+    Most excursions happen at *handover points*.
+    Check the dock first.
+develops: [C1]
+dok: 2
 ---

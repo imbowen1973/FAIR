@@ -20,7 +20,21 @@ Component B of
 Swapping `slidesForCompetency` for a FalkorDB query later changes only
 that function body (spec B.2).
 
-## Run it
+## Published mode (no local server)
+
+`.github/workflows/publish.yml` renders the corpus and deploys this
+whole directory to GitHub Pages on every push to main (one-time setup:
+repo Settings → Pages → Source: **GitHub Actions**). The Pages site
+hosts both the pane and the data, so `manifest.pages.xml` is
+sideloadable with nothing running locally.
+
+The pane's **Library** picker can add any other published corpus:
+paste `owner/repo` (resolves to that repo's Pages site), a github.com
+repo URL, or a direct https catalog URL. Public repos need no auth —
+private libraries arrive with the middle layer
+(`docs/platform-architecture.md`).
+
+## Run it (local development)
 
 ```bash
 # 1. Build the data set (from the repo root)

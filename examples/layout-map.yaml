@@ -19,3 +19,42 @@ Section:
   regions:
     title: 0
     subtitle: 1
+Comparison:
+  layout_name: "Comparison"
+  regions:
+    title: 0
+    left_head: 1
+    left: 2
+    right_head: 3
+    right: 4
+Caption:
+  layout_name: "Caption"
+  regions:
+    title: 0
+    content: 1
+    caption: 2
+Picture:
+  layout_name: "Picture"
+  regions:
+    title: 0
+    picture: 1
+    caption: 2
+TitleOnly:
+  layout_name: "TitleOnly"
+  regions:
+    title: 0
+Blank:
+  layout_name: "Blank"
+  regions: {}
+Cards:
+  layout_name: "Cards"
+  regions:
+    title: 0
+    head1: 1
+    head2: 2
+    head3: 3
+    head4: 4
+    card1: 5
+    card2: 6
+    card3: 7
+    card4: 8
