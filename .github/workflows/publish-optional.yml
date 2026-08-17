@@ -1,15 +1,14 @@
-name: Publish corpus
+name: Publish corpus (manual opt-in)
 
-# Renders every session and publishes the task pane + corpus to GitHub
-# Pages. The Pages site then serves double duty: it hosts the add-in
-# itself (manifest.pages.xml points here) and it is a public "library"
-# any other pane can add as a source.
+# DELIBERATELY manual. Publishing puts rendered decks on a public URL,
+# which is right only for libraries meant as open educational resources.
+# The default distribution model is local: authors pull the markdown,
+# render on their own machine, and the task pane reads localhost.
 #
-# One-time setup: repo Settings -> Pages -> Source: "GitHub Actions".
+# To publish: repo Settings -> Pages -> Source "GitHub Actions", then
+# run this workflow from the Actions tab.
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -34,10 +33,6 @@ jobs:
           python-version: "3.12"
       - name: Install renderer
         run: pip install -e "renderer[test]"
-      - name: Run renderer acceptance tests
-        run: python -m pytest renderer/tests -q
-      - name: Run assembler tests
-        run: cd assembler && npm test
       - name: Build corpus
         run: python scripts/build_corpus.py
       - uses: actions/configure-pages@v5
