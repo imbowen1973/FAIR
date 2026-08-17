@@ -90,13 +90,17 @@ grammar in [`docs/session-md-format.md`](docs/session-md-format.md).
 
 ## Principles
 
-1. **Git is the source of truth.** Decks, catalogs, and (later) the
-   graph are all derived, rebuildable artifacts.
-2. **Deterministic builds.** The same commit yields byte-identical
+1. **Git is the source of truth.** The repo is versionable markdown —
+   text, graphics, images. Decks, catalogs, and (later) the graph are
+   derived, rebuildable artifacts.
+2. **The .pptx is never stored or published. Ever.** A user renders
+   locally at the moment of use, uses the deck freely, and discards
+   it; the same commit regenerates it identically whenever wanted.
+3. **Deterministic builds.** The same commit yields byte-identical
    decks — the foundation for credential and observatory provenance.
-3. **The template owns appearance.** The renderer never invents
+4. **The template owns appearance.** The renderer never invents
    geometry or colours; content binds into named placeholders.
-4. **Selection by meaning.** Slides are chosen by competency, never by
+5. **Selection by meaning.** Slides are chosen by competency, never by
    filename or slide number.
-5. **AI drafts, humans commit.** Generated content only ever arrives
+6. **AI drafts, humans commit.** Generated content only ever arrives
    as a pull request (see the platform architecture spec).
