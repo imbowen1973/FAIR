@@ -28,6 +28,22 @@ select {
 
 h2 { font-size: 13px; margin: 0 0 8px; }
 
+.add-source { display: flex; gap: 6px; margin-top: 6px; }
+.add-source input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.add-source button {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
 .session-group { margin-bottom: 12px; }
 .session-group > .session-title {
   font-weight: 600;

@@ -1,15 +1,23 @@
-// Task pane wiring: catalog -> competency picker -> slide list -> insert.
-// Implements spec B.3/B.4. All query logic lives in assembler.js.
+// Task pane wiring: library picker -> catalog -> competency picker ->
+// slide list -> insert. Implements spec B.3/B.4 plus git-published
+// libraries (platform-architecture.md, public phase). All query logic
+// lives in assembler.js.
 
 import {
   arrayBufferToBase64,
   buildInsertPlan,
+  joinUrl,
+  normalizeSource,
   slidesForCompetency,
   usedCompetencies,
 } from "./assembler.js";
 
+const DEFAULT_SOURCE = { name: "This library", url: "" };
+const STORE_KEY = "fair.sources";
+
 let catalog = null;
 let currentGroups = new Map();
+let currentSource = DEFAULT_SOURCE;
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,14 +28,66 @@ function setStatus(message, kind = "") {
   el.hidden = !message;
 }
 
-async function loadCatalog() {
-  const res = await fetch("data/catalog.json");
+function loadStoredSources() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((s) => s && s.url) : [];
+  } catch {
+    return [];
+  }
+}
+
+function storeSources(sources) {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(sources));
+  } catch {
+    /* private-mode webviews: picker still works for this session */
+  }
+}
+
+function allSources() {
+  return [DEFAULT_SOURCE, ...loadStoredSources()];
+}
+
+function renderSourcePicker() {
+  const select = $("source");
+  select.innerHTML = "";
+  for (const source of allSources()) {
+    const opt = document.createElement("option");
+    opt.value = source.url;
+    opt.textContent = source.name;
+    select.appendChild(opt);
+  }
+  select.value = currentSource.url;
+}
+
+async function loadCatalog(source) {
+  const res = await fetch(joinUrl(source.url, "data/catalog.json"));
   if (!res.ok) {
     throw new Error(
-      `catalog.json not found (${res.status}) — run scripts/build_corpus.py first`
+      source.url
+        ? `no catalog at ${source.name} (${res.status}) — is the library published?`
+        : `catalog.json not found (${res.status}) — run scripts/build_corpus.py first`
     );
   }
   return res.json();
+}
+
+async function switchSource(source) {
+  currentSource = source;
+  $("competency").disabled = true;
+  $("step-slides").hidden = true;
+  $("step-assemble").hidden = true;
+  setStatus(`Loading ${source.name}…`);
+  try {
+    catalog = await loadCatalog(source);
+    renderCompetencyPicker();
+    setStatus("");
+  } catch (err) {
+    catalog = null;
+    setStatus(err.message, "error");
+  }
 }
 
 function renderCompetencyPicker() {
@@ -110,7 +170,8 @@ async function assemble() {
     let inserted = 0;
     for (const step of plan) {
       setStatus(`Fetching ${step.sourcePptx}…`);
-      const res = await fetch(`data/${step.sourcePptx}`);
+      const deckUrl = joinUrl(currentSource.url, joinUrl("data", step.sourcePptx));
+      const res = await fetch(deckUrl);
       if (!res.ok) throw new Error(`fetch failed for ${step.sourcePptx} (${res.status})`);
       const base64 = arrayBufferToBase64(await res.arrayBuffer());
 
@@ -134,6 +195,27 @@ async function assemble() {
   }
 }
 
+function addSource() {
+  const input = $("new-source");
+  const source = normalizeSource(input.value);
+  if (!source) {
+    setStatus(
+      "Enter owner/repo, a github.com repo URL, or an https catalog URL.",
+      "error"
+    );
+    return;
+  }
+  const stored = loadStoredSources();
+  if (!stored.some((s) => s.url === source.url) && source.url !== "") {
+    stored.push(source);
+    storeSources(stored);
+  }
+  input.value = "";
+  renderSourcePicker();
+  $("source").value = source.url;
+  switchSource(source);
+}
+
 Office.onReady((info) => {
   if (info.host !== Office.HostType.PowerPoint) {
     setStatus("This add-in only runs in PowerPoint.", "error");
@@ -148,13 +230,17 @@ Office.onReady((info) => {
     return;
   }
 
-  loadCatalog()
-    .then((data) => {
-      catalog = data;
-      renderCompetencyPicker();
-      setStatus("");
-    })
-    .catch((err) => setStatus(err.message, "error"));
+  renderSourcePicker();
+  switchSource(DEFAULT_SOURCE);
+
+  $("source").addEventListener("change", (e) => {
+    const source = allSources().find((s) => s.url === e.target.value) ?? DEFAULT_SOURCE;
+    switchSource(source);
+  });
+  $("add-source").addEventListener("click", addSource);
+  $("new-source").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addSource();
+  });
 
   $("competency").addEventListener("change", (e) => {
     const cId = e.target.value;

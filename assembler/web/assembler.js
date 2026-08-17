@@ -55,6 +55,54 @@ export function buildInsertPlan(groups, selectedSlideIds) {
   return plan;
 }
 
+/**
+ * Turn what a user types into a library source: {name, url} where url is
+ * the SITE ROOT that serves data/catalog.json and data/<decks>. Git
+ * hosting without git language: the user pastes "owner/repo", a
+ * github.com repo URL, or any https URL near the catalog, and it
+ * resolves. Returns null when unusable.
+ *
+ *   owner/repo                       -> https://owner.github.io/repo
+ *   https://github.com/owner/repo    -> https://owner.github.io/repo
+ *   https://site/x/data/catalog.json -> https://site/x
+ *   https://site/x/data              -> https://site/x
+ *   https://site/x                   -> https://site/x
+ */
+export function normalizeSource(input) {
+  const raw = (input || "").trim().replace(/\/+$/, "");
+  if (!raw) return null;
+
+  const isUrl = /^https?:\/\//.test(raw);
+  const ghRepo = raw.match(
+    /^(?:https?:\/\/(?:www\.)?github\.com\/)?([\w.-]+)\/([\w.-]+?)(?:\.git)?$/
+  );
+  if (ghRepo && (!isUrl || /^https?:\/\/(www\.)?github\.com\//.test(raw))) {
+    const [, owner, repo] = ghRepo;
+    return {
+      name: `${owner}/${repo}`,
+      url: `https://${owner.toLowerCase()}.github.io/${repo}`,
+    };
+  }
+
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") return null;
+  let base = url.href.replace(/\/+$/, "");
+  base = base.replace(/\/data\/catalog\.json$/, "").replace(/\/data$/, "");
+  const name = url.hostname + new URL(base).pathname.replace(/\/$/, "");
+  return { name, url: base };
+}
+
+/** Join a source base URL with a catalog-relative path. Empty base = same-origin. */
+export function joinUrl(base, path) {
+  if (!base) return path;
+  return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+
 /** ArrayBuffer -> base64, chunked to stay clear of argument limits. */
 export function arrayBufferToBase64(buffer) {
   const bytes = new Uint8Array(buffer);

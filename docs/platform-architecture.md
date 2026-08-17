@@ -89,6 +89,34 @@ their catalog entries appear only in their own view until the content
 is PR'd into the shared repo. Same mechanics as any open-source
 contribution — deliberately, because that workflow is battle-tested.
 
+### 4.1 The authoring vocabulary: the full git workflow without git language
+
+Authors are educators, not git users. The authoring surface exposes
+git's *guarantees* under human verbs; git's *vocabulary* never appears
+in the UI. The mapping is fixed here so every future surface (web
+editor, task pane, generation API) uses the same words:
+
+| Author sees | Git reality | Notes |
+|---|---|---|
+| **My drafts** | branches owned by the author | one draft = one branch |
+| **Start a session** | create branch + scaffold `session.md` | template-driven scaffold |
+| **Save** | commit + push to the draft branch | auto-message; author never writes one |
+| **Version history** | `git log` of the file | timestamps + "restore this version" (checkout) |
+| **Preview** | CI dry-run render of the draft branch | same renderer, never merged output |
+| **Submit for review** | open PR against the shared repo | validation gate runs first |
+| **Feedback** | PR review comments | threaded on slides, not diff lines |
+| **Update and resubmit** | push to the same branch | PR updates automatically |
+| **Publish** | merge the PR | triggers render + library publish |
+| **Published library** | main, rendered by CI | what the assembler's picker lists |
+| **Get latest** | pull / rebase the draft on main | conflict = "someone edited the same slide" dialog |
+
+Two rules keep this honest. First, the mapping is one-to-one: every UI
+verb is exactly one git operation, so the escape hatch always exists —
+a git-literate author can work from the command line and the UI users
+see the same state. Second, no UI verb ever does what git wouldn't:
+"Publish" cannot skip review where the branch protection requires it,
+because publish *is* the merge.
+
 ## 5. The generation API
 
 `POST /generate` accepts an intent, not markup:
