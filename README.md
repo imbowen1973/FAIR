@@ -9,6 +9,24 @@ to learning content: findable via a semantic index, accessible from
 git, interoperable through one branded template, reusable slide by
 slide.
 
+## What makes this unique
+
+Markdown-to-slides tools exist. None of them are this:
+
+- **It renders into the designer's template, not around it** — content
+  binds into the named placeholders of a real branded .pptx, so output
+  is indistinguishable from a hand-made deck and stays fully editable.
+- **Every slide is addressable** — an injected stable identity lets
+  PowerPoint's own APIs pull individual slides, turning rendered decks
+  into a queryable slide database.
+- **Renders are byte-deterministic** — the same commit produces the
+  identical deck forever, so nothing rendered ever needs storing.
+- **Meaning travels with the slides** — competency tags in the
+  markdown become the index that assembles decks across sessions.
+
+Versionable markdown is the course; **PowerPoint is just how you look
+at it today**.
+
 ## How it fits together
 
 ```
