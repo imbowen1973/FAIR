@@ -95,8 +95,7 @@ def _fill_image(slide, placeholder, image_path: Path) -> None:
 
     ph_type = placeholder.placeholder_format.type
     if ph_type == PP_PLACEHOLDER.PICTURE:
-        placeholder.insert_picture(str(image_path))
-        return
+        return placeholder.insert_picture(str(image_path))
 
     # Contain-fit: scale to the largest size that fits the region without
     # distortion, centred in the placeholder's footprint.
@@ -109,9 +108,33 @@ def _fill_image(slide, placeholder, image_path: Path) -> None:
     w, h = int(iw * scale), int(ih * scale)
     left = Emu(placeholder.left + (box_w - w) // 2)
     top = Emu(placeholder.top + (box_h - h) // 2)
-    slide.shapes.add_picture(str(image_path), left, top, width=Emu(w), height=Emu(h))
+    pic = slide.shapes.add_picture(str(image_path), left, top, width=Emu(w), height=Emu(h))
     sp = placeholder._element
     sp.getparent().remove(sp)
+    return pic
+
+
+def _video_poster(build_dir: Path) -> Path:
+    """Generate the default 16:9 poster (dark panel, play triangle)."""
+    poster = build_dir / "video-poster.png"
+    if poster.exists():
+        return poster
+    from PIL import Image, ImageDraw
+
+    build_dir.mkdir(parents=True, exist_ok=True)
+    img = Image.new("RGB", (1280, 720), (32, 38, 46))
+    d = ImageDraw.Draw(img)
+    cx, cy, r = 640, 360, 110
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(235, 238, 241), width=10)
+    d.polygon([(cx - 35, cy - 62), (cx - 35, cy + 62), (cx + 72, cy)], fill=(235, 238, 241))
+    img.save(poster)
+    return poster
+
+
+def _fill_video(slide, placeholder, region: Region, base_dir: Path, build_dir: Path) -> None:
+    poster = base_dir / region.src if region.src else _video_poster(build_dir)
+    pic = _fill_image(slide, placeholder, poster)
+    pic.click_action.hyperlink.address = region.url
 
 
 def _fill_region(slide, placeholder, region: Region, base_dir: Path, build_dir: Path) -> None:
@@ -128,6 +151,8 @@ def _fill_region(slide, placeholder, region: Region, base_dir: Path, build_dir: 
     elif region.type == "mermaid":
         image = resolve_mermaid(base_dir / region.src, build_dir)
         _fill_image(slide, placeholder, image)
+    elif region.type == "video":
+        _fill_video(slide, placeholder, region, base_dir, build_dir)
     else:  # pragma: no cover - parser guarantees the type set
         raise RenderError(f"unknown region type {region.type!r}")
 

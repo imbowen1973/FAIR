@@ -331,6 +331,46 @@ def test_cards_layout_binds_four_tabbed_cards(tmp_path):
     assert fills == {1: "accent1", 2: "accent2", 3: "accent3", 4: "accent4"}
 
 
+def test_video_region_renders_linked_poster(tmp_path):
+    """Video regions render a poster picture hyperlinked to the hosted URL;
+    no video binary is involved anywhere."""
+    result = render_session(
+        session_path=EXAMPLES / "sessions" / "session-02.md",
+        template_path=EXAMPLES / "template.pptx",
+        layout_map_path=EXAMPLES / "layout-map.yaml",
+        out_dir=tmp_path / "out",
+    )
+    with zipfile.ZipFile(result["pptx"]) as z:
+        root = etree.fromstring(z.read("ppt/slides/slide4.xml"))
+        pics = root.findall(f".//{{{P_NS}}}pic")
+        assert len(pics) == 1
+        hlink = pics[0].find(f".//{{{A_NS}}}hlinkClick")
+        assert hlink is not None, "poster picture must carry a hyperlink"
+        rid = hlink.get(f"{{{R_NS}}}id")
+        rels = etree.fromstring(z.read("ppt/slides/_rels/slide4.xml.rels"))
+        targets = {r.get("Id"): r.get("Target") for r in rels}
+        assert targets[rid] == "https://youtu.be/fair-demo-audit-pack"
+
+
+def test_asset_policy_gate(tmp_path):
+    import sys
+
+    sys.path.insert(0, str(REPO / "scripts"))
+    from check_assets import check_assets
+    from PIL import Image
+
+    # clean directory passes
+    assert check_assets(EXAMPLES / "sessions") == []
+
+    bad = tmp_path / "assets"
+    bad.mkdir()
+    (bad / "clip.mp4").write_bytes(b"\x00" * 10)
+    Image.new("RGB", (3000, 200), "white").save(bad / "huge.png")
+    errors = check_assets(tmp_path)
+    assert any("clip.mp4" in e and "video" in e for e in errors)
+    assert any("huge.png" in e and "2200" in e for e in errors)
+
+
 def test_master_bullet_levels_colored():
     """Template master colour-codes list levels 1-3 (accent1/2/3)."""
     with zipfile.ZipFile(EXAMPLES / "template.pptx") as z:

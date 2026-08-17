@@ -95,6 +95,11 @@ typed object:
 - `{ type: image, src: path }` — image, path relative to the session file
 - `{ type: mermaid, src: path }` — Mermaid source, rendered to PNG at build
   time (see below)
+- `{ type: video, url: https://..., poster: optional path }` — externally
+  hosted video (YouTube etc.). The slide shows the poster image (or a
+  generated play-button panel) hyperlinked to the URL; clicking it in
+  the presentation opens the video. Video files themselves are never
+  committed.
 
 A list item is either a string or `{ text: str, items: [...], color: ... }`
 for nesting. Maximum nesting depth is 5 (python-pptx paragraph levels 0–4).
@@ -155,6 +160,20 @@ The renderer resolves `{type: mermaid, src: d.mmd}` in this order:
 If neither is available the build fails with an explicit error. Mermaid
 Ink (network rendering) is deliberately not supported: it would break
 offline builds and determinism.
+
+## Asset policy
+
+Enforced by `scripts/check_assets.py`, which gates every corpus build
+(and therefore every publish):
+
+- **No video binaries in the repo, ever.** Video lives on a host
+  (YouTube, Vimeo, an institutional server) and is referenced with the
+  `video` content type. One embedded clip outweighs a course of images.
+- **Images: ≤ 500 KB and ≤ 2200 px on the long edge.** Prepare any
+  image with `scripts/prepare_image.py`, which resizes to 2000 px,
+  compresses, and **strips all metadata including EXIF** — clinical
+  photos must not carry GPS positions, timestamps, or device ids into
+  a repo.
 
 ## Determinism note
 

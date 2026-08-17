@@ -33,6 +33,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "renderer" / "src"))
+sys.path.insert(0, str(REPO / "scripts"))
 
 from fair_renderer.render import render_session  # noqa: E402
 
@@ -43,6 +44,14 @@ DATA_DIR = REPO / "assembler" / "web" / "data"
 
 
 def main() -> None:
+    from check_assets import check_assets
+
+    violations = check_assets(SESSIONS_DIR)
+    if violations:
+        raise SystemExit(
+            "asset policy violations (fix before building):\n  " + "\n  ".join(violations)
+        )
+
     session_files = sorted(SESSIONS_DIR.glob("*.md"))
     if not session_files:
         raise SystemExit(f"no session files in {SESSIONS_DIR}")

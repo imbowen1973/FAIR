@@ -65,3 +65,16 @@ notes: |
 develops: [C2]
 dok: 1
 ---
+
+--- slide
+id: s02-04
+layout: Full
+title: Walkthrough, exporting an audit pack
+full:
+  type: video
+  url: https://youtu.be/fair-demo-audit-pack
+notes: |
+  Play the 4-minute export walkthrough, then take questions.
+develops: [C2, C3]
+dok: 1
+---
