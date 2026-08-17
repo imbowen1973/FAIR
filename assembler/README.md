@@ -20,24 +20,21 @@ Component B of
 Swapping `slidesForCompetency` for a FalkorDB query later changes only
 that function body (spec B.2).
 
-## The distribution model: local first
+## The distribution model
 
-The repo holds markdown; **rendered decks are local build products**.
-The normal flow is: pull the content repo, `python
-scripts/build_corpus.py`, `npm start`, and the pane reads
-`localhost:3000`. Decks exist on the presenter's machine and nowhere
-else.
+The repo holds markdown; **the .pptx is never stored anywhere**. A
+user who wants slides pulls the content, renders it locally, and the
+pane reads `localhost:3000`. Decks exist on that machine for as long
+as they're useful and are rebuilt from the markdown whenever needed —
+rendering is deterministic, so the same commit always regenerates the
+same deck.
 
-**Publishing is a deliberate opt-in**, for libraries meant as open
-educational resources: run the manual "Publish corpus" workflow
-(Actions tab; needs Pages enabled) and the pane + data deploy to the
-repo's Pages site, sideloadable via `manifest.pages.xml` with no local
-tooling. The pane's **Library** picker can then add any such published
-corpus: paste `owner/repo`, a github.com URL, or a catalog URL.
-Private libraries are never served this way — they arrive with the
-middle layer (`docs/platform-architecture.md`).
+The **Library** picker exists for pointing the pane at other corpus
+servers — today another local build, later the middle layer
+(`docs/platform-architecture.md`), which renders on demand for
+authorized users and stores nothing.
 
-## Run it (the default local flow)
+## Run it
 
 ```bash
 # 1. Build the data set (from the repo root)

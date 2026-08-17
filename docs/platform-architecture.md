@@ -36,7 +36,7 @@ Author in PowerPoint task pane / editor
 │                   session token bound to the GitHub token  │
 │  /catalog         merged catalog.json across every repo    │
 │                   the caller can read                      │
-│  /decks/{ref}     artifact proxy: streams session-NN.pptx  │
+│  /decks/{ref}     renders the requested session on demand  │
 │                   after re-checking repo permission        │
 │  /generate        drafting API (section 5): Claude writes  │
 │                   session.md, validates, opens a PR        │
@@ -47,24 +47,26 @@ Author in PowerPoint task pane / editor
 GitHub repos ── personal forks and the shared org repo
         │ push triggers Actions
         ▼
-CI: fair-render + build_corpus → versioned artifacts
-    (decks, catalog.json, slide-id-map.json per commit)
+CI: validate on push (parse, render, reconcile — output discarded)
+    rendering for use happens at the point of use, per request
 ```
 
-The middle layer is deliberately thin. It holds no content: every deck
-and every catalog is a CI artifact keyed by commit; the service checks
-permission, then streams. If the service dies, the data is all still in
-git and rebuildable.
+The middle layer is deliberately thin. It stores no content and no
+rendered output: decks are rendered on demand from the markdown at the
+requested commit (deterministic, so an ephemeral SHA-keyed cache is
+safe), and catalogs are derived the same way. If the service dies,
+everything is still in git.
 
 ## 3. Why a middle layer at all
 
 The static dev server worked because everything was public-to-you and
 local. Three things force a service in between:
 
-1. **Permission-checked delivery.** GitHub artifacts and private repo
-   contents need tokens; a task pane cannot safely hold a long-lived
-   repo token. The service holds the App installation token server-side
-   and re-checks `viewer can read repo X` per request.
+1. **Permission-checked delivery.** Private repo contents need tokens;
+   a task pane cannot safely hold a long-lived repo token. The service
+   holds the App installation token server-side, re-checks `viewer can
+   read repo X` per request, and renders from the markdown it is
+   authorized to read.
 2. **Cross-repo aggregation.** The catalog the pane sees is a merge of
    every catalog the caller may read — shared org repo plus any
    personal repos. That merge is per-viewer, so it cannot be a static
@@ -77,19 +79,29 @@ CI (deterministic, versioned); querying stays in the pane
 (`slidesForCompetency`) until the graph arrives; the pane itself is
 static files.
 
-### 3.1 Distribution: local first, publish by decision
+### 3.1 Distribution: markdown is the only stored artifact
 
-Rendered decks are **local build products**. The default flow is: pull
-the markdown, render on your own machine, assemble from localhost. No
-deck reaches a web URL as a side effect of pushing content — CI on push
-runs tests and a validation build only.
+**The .pptx is never stored — not in the repo, not on a web host, not
+in an artifact store.** Rendering is deterministic, so a deck is a pure
+function of a commit: whoever wants slides renders them at the point of
+use and discards them. Storing the output would be redundant by
+definition, and worse, it would create a second thing that could drift
+from the source.
 
-Publishing a library (its pane, catalog, and decks on a public URL) is
-a **deliberate, manual act**, appropriate only for libraries the
-consortium intends as open educational resources. Private and shared
-libraries are never web-published; their delivery is the middle
-layer's permission-checked streaming, and until that exists, their
-distribution is the local flow.
+Therefore:
+
+- distribution of content **is** git distributing markdown — clone or
+  pull, that's the whole transport
+- CI on push validates (parse, render, reconcile) and discards the
+  output; nothing rendered leaves the runner
+- the local `data/` directory the pane reads is an ephemeral build
+  product, rebuilt at will and gitignored
+- when the middle layer arrives, its `/decks/{ref}` endpoint **renders
+  on demand** for the requesting user (a cache keyed by commit SHA is a
+  permissible optimization precisely because renders are
+  deterministic — it is a cache, never a store of record)
+- provenance needs no stored decks either: a credential pins a commit,
+  and the commit regenerates the exact deck on any future day
 
 ## 4. Authoring flows
 
@@ -120,8 +132,8 @@ editor, task pane, generation API) uses the same words:
 | **Submit for review** | open PR against the shared repo | validation gate runs first |
 | **Feedback** | PR review comments | threaded on slides, not diff lines |
 | **Update and resubmit** | push to the same branch | PR updates automatically |
-| **Publish** | merge the PR | triggers render + library publish |
-| **Published library** | main, rendered by CI | what the assembler's picker lists |
+| **Publish** | merge the PR | main IS the published library |
+| **Published library** | main | what anyone can pull and render |
 | **Get latest** | pull / rebase the draft on main | conflict = "someone edited the same slide" dialog |
 
 Two rules keep this honest. First, the mapping is one-to-one: every UI
@@ -186,8 +198,8 @@ Almost nothing — which is the test that the seams were right:
 ## 7. Build order
 
 1. GitHub App + OAuth broker; `/catalog` and `/decks` over the shared
-   repo only. CI publishes artifacts per commit (the render pipeline is
-   already deterministic, so artifacts are cacheable by commit SHA).
+   repo only, rendering on demand (deterministic, so an ephemeral
+   SHA-keyed render cache is a safe optimization).
 2. Task pane switches to the service endpoints; retire the local data
    directory for anything but offline dev.
 3. Multi-repo aggregation (personal repos), permission-filtered.
