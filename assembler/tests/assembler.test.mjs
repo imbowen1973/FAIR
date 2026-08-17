@@ -84,35 +84,27 @@ test("buildInsertPlan carries sourceRefs and drops deselected slides", () => {
   assert.deepEqual(plan[0].sourceRefs, ["257#901"]);
 });
 
-test("normalizeSource resolves repo shorthand to a Pages site root", () => {
-  assert.deepEqual(normalizeSource("imbowen1973/FAIR"), {
-    name: "imbowen1973/FAIR",
-    url: "https://imbowen1973.github.io/FAIR",
-  });
-  assert.deepEqual(normalizeSource("https://github.com/imbowen1973/FAIR"), {
-    name: "imbowen1973/FAIR",
-    url: "https://imbowen1973.github.io/FAIR",
-  });
-});
-
 test("normalizeSource strips data/catalog.json down to the site root", () => {
   for (const given of [
-    "https://x.github.io/FAIR/data/catalog.json",
-    "https://x.github.io/FAIR/data/",
-    "https://x.github.io/FAIR",
+    "https://corpus.example/lib/data/catalog.json",
+    "https://corpus.example/lib/data/",
+    "https://corpus.example/lib",
   ]) {
     assert.deepEqual(normalizeSource(given), {
-      name: "x.github.io/FAIR",
-      url: "https://x.github.io/FAIR",
+      name: "corpus.example/lib",
+      url: "https://corpus.example/lib",
     });
   }
 });
 
-test("normalizeSource rejects garbage and http", () => {
+test("normalizeSource accepts only https URLs — no repo slugs", () => {
   assert.equal(normalizeSource(""), null);
   assert.equal(normalizeSource("   "), null);
   assert.equal(normalizeSource("http://insecure.example/data"), null);
   assert.equal(normalizeSource("not a url at all"), null);
+  // a bare owner/repo slug is a git reference, not a corpus server
+  assert.equal(normalizeSource("imbowen1973/FAIR"), null);
+  assert.equal(normalizeSource("Agrifoodskills/Clinical-Educator-"), null);
 });
 
 test("joinUrl keeps relative paths for the default source", () => {
