@@ -199,10 +199,7 @@ function addSource() {
   const input = $("new-source");
   const source = normalizeSource(input.value);
   if (!source) {
-    setStatus(
-      "Enter owner/repo, a github.com repo URL, or an https catalog URL.",
-      "error"
-    );
+    setStatus("Enter the https URL of a corpus server (its catalog or site root).", "error");
     return;
   }
   const stored = loadStoredSources();

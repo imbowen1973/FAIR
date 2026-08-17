@@ -57,32 +57,21 @@ export function buildInsertPlan(groups, selectedSlideIds) {
 
 /**
  * Turn what a user types into a library source: {name, url} where url is
- * the SITE ROOT that serves data/catalog.json and data/<decks>. Git
- * hosting without git language: the user pastes "owner/repo", a
- * github.com repo URL, or any https URL near the catalog, and it
- * resolves. Returns null when unusable.
+ * the SITE ROOT that serves data/catalog.json and data/<decks>. Sources
+ * are corpus servers — another local build, a server on the network, or
+ * (later) the middle layer rendering on demand. Decks are never
+ * published, so there is deliberately no repo-slug shorthand: a git
+ * repo holds markdown and is not itself consumable by the pane.
  *
- *   owner/repo                       -> https://owner.github.io/repo
- *   https://github.com/owner/repo    -> https://owner.github.io/repo
  *   https://site/x/data/catalog.json -> https://site/x
  *   https://site/x/data              -> https://site/x
  *   https://site/x                   -> https://site/x
+ *
+ * Returns null when unusable (non-https, unparseable).
  */
 export function normalizeSource(input) {
   const raw = (input || "").trim().replace(/\/+$/, "");
   if (!raw) return null;
-
-  const isUrl = /^https?:\/\//.test(raw);
-  const ghRepo = raw.match(
-    /^(?:https?:\/\/(?:www\.)?github\.com\/)?([\w.-]+)\/([\w.-]+?)(?:\.git)?$/
-  );
-  if (ghRepo && (!isUrl || /^https?:\/\/(www\.)?github\.com\//.test(raw))) {
-    const [, owner, repo] = ghRepo;
-    return {
-      name: `${owner}/${repo}`,
-      url: `https://${owner.toLowerCase()}.github.io/${repo}`,
-    };
-  }
 
   let url;
   try {
