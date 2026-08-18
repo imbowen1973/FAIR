@@ -55,6 +55,13 @@ async function pullLibrary(req, res) {
   }
 
   const name = repoUrl.pathname.replace(/\/+$/, "").split("/").pop().replace(/\.git$/, "");
+  // The name becomes a directory under web/libraries; refuse anything
+  // that is not a plain path segment (e.g. "", ".", "..").
+  if (!/^[\w][\w.-]*$/.test(name)) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `cannot derive a library name from ${repoUrl.pathname}` }));
+    return;
+  }
   const out = join(ROOT, "libraries", name, "data");
 
   // Array args, never a shell string, so the URL cannot inject a command.
