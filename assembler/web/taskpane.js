@@ -6,18 +6,25 @@
 import {
   arrayBufferToBase64,
   buildInsertPlan,
+  buildTree,
+  groupBySource,
+  isRepoUrl,
   joinUrl,
   normalizeSource,
-  slidesForCompetency,
+  searchCatalog,
   usedCompetencies,
 } from "./assembler.js";
 
-const DEFAULT_SOURCE = { name: "This library", url: "" };
+const DEFAULT_SOURCE = { name: "This corpus", url: "" };
 const STORE_KEY = "fair.sources";
 
 let catalog = null;
-let currentGroups = new Map();
 let currentSource = DEFAULT_SOURCE;
+let tree = [];
+let selected = new Set();
+let expanded = new Set();
+let query = "";
+let competencyFilter = "";
 
 const $ = (id) => document.getElementById(id);
 
@@ -74,18 +81,37 @@ async function loadCatalog(source) {
   return res.json();
 }
 
+/** Forget a stored library. The built-in "This library" is not removable. */
+function removeSource() {
+  if (!currentSource.url) return;
+  storeSources(loadStoredSources().filter((s) => s.url !== currentSource.url));
+  renderSourcePicker();
+  switchSource(DEFAULT_SOURCE);
+}
+
 async function switchSource(source) {
   currentSource = source;
+  $("remove-source").hidden = !source.url;
   $("competency").disabled = true;
-  $("step-slides").hidden = true;
   $("step-assemble").hidden = true;
+  // Selection is per-corpus: slide ids from the old catalog mean nothing here.
+  selected = new Set();
+  expanded = new Set();
+  tree = [];
   setStatus(`Loading ${source.name}…`);
   try {
     catalog = await loadCatalog(source);
+    tree = buildTree(catalog);
+    // Open the roots so the pane never lands on a wall of collapsed rows.
+    expanded = new Set(tree.map((_, i) => String(i)));
     renderCompetencyPicker();
+    renderTree();
+    updateSelectionSummary();
     setStatus("");
   } catch (err) {
     catalog = null;
+    tree = [];
+    renderTree();
     setStatus(err.message, "error");
   }
 }
@@ -95,7 +121,7 @@ function renderCompetencyPicker() {
   select.innerHTML = "";
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = "Select a competency…";
+  placeholder.textContent = "All competencies";
   select.appendChild(placeholder);
   for (const { id, label } of usedCompetencies(catalog)) {
     const opt = document.createElement("option");
@@ -106,56 +132,195 @@ function renderCompetencyPicker() {
   select.disabled = false;
 }
 
-function sessionTitle(sourcePptx) {
-  const session = catalog.sessions.find((s) => s.pptx === sourcePptx);
-  return session ? `Session ${session.sessionId}: ${session.title}` : sourcePptx;
+/** Slide ids the competency filter admits; null means "no filter". */
+function allowedByCompetency() {
+  if (!competencyFilter) return null;
+  return new Set(
+    catalog.slides
+      .filter((s) => (s.develops || []).includes(competencyFilter))
+      .map((s) => s.slideId)
+  );
 }
 
-function renderSlideList(cId) {
-  currentGroups = slidesForCompetency(catalog, cId);
-  const container = $("slide-list");
-  container.innerHTML = "";
+function updateSelectionSummary() {
+  const chosen = catalog
+    ? catalog.slides.filter((s) => selected.has(s.slideId))
+    : [];
+  const decks = new Set(chosen.map((s) => s.sourcePptx)).size;
+  $("selection-summary").textContent = chosen.length
+    ? `${chosen.length} slide${chosen.length === 1 ? "" : "s"} from ${decks} deck${decks === 1 ? "" : "s"}`
+    : "";
+  $("step-assemble").hidden = chosen.length === 0;
+}
 
-  if (currentGroups.size === 0) {
-    container.textContent = "No slides develop this competency.";
+function slideRow(node, allowed) {
+  const row = document.createElement("label");
+  row.className = "node-row";
+  const spacer = document.createElement("span");
+  spacer.className = "twisty leaf";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = selected.has(node.meta.slideId);
+  cb.addEventListener("change", () => {
+    toggleSlides([node.meta.slideId], cb.checked);
+  });
+  const label = document.createElement("span");
+  label.className = "node-label";
+  label.textContent = node.title;
+  const dok = document.createElement("span");
+  dok.className = "dok";
+  dok.textContent = node.meta.dok != null ? `DOK ${node.meta.dok}` : "";
+  row.append(spacer, cb, label, dok);
+  return row;
+}
+
+function toggleSlides(ids, on) {
+  for (const id of ids) {
+    if (on) selected.add(id);
+    else selected.delete(id);
+  }
+  renderTree();
+  updateSelectionSummary();
+}
+
+function renderNode(node, path, allowed) {
+  // A container is worth drawing only if the filter leaves slides in it.
+  const ids = allowed ? node.slideIds.filter((id) => allowed.has(id)) : node.slideIds;
+  if (ids.length === 0 && node.kind !== "slide") return null;
+  if (node.kind === "slide" && allowed && !allowed.has(node.meta.slideId)) return null;
+
+  const el = document.createElement("div");
+  el.className = `node node-kind-${node.kind}`;
+
+  if (node.kind === "slide") {
+    el.appendChild(slideRow(node, allowed));
+    return el;
   }
 
-  for (const [sourcePptx, slides] of currentGroups) {
-    const group = document.createElement("div");
-    group.className = "session-group";
-    const title = document.createElement("div");
-    title.className = "session-title";
-    title.textContent = sessionTitle(sourcePptx);
-    group.appendChild(title);
+  const open = expanded.has(path);
+  const row = document.createElement("div");
+  row.className = "node-row";
 
-    for (const slide of slides) {
-      const row = document.createElement("label");
-      row.className = "slide-row";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = true;
-      cb.dataset.slideId = slide.slideId;
-      const text = document.createElement("span");
-      text.textContent = slide.title ?? slide.slideId;
-      const dok = document.createElement("span");
-      dok.className = "dok";
-      dok.textContent = slide.dok != null ? `DOK ${slide.dok}` : "";
-      row.append(cb, text, dok);
-      group.appendChild(row);
+  const twisty = document.createElement("button");
+  twisty.className = "twisty";
+  twisty.textContent = open ? "▼" : "▶";
+  twisty.setAttribute("aria-expanded", String(open));
+  twisty.addEventListener("click", () => {
+    if (open) expanded.delete(path);
+    else expanded.add(path);
+    renderTree();
+  });
+
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  const chosen = ids.filter((id) => selected.has(id)).length;
+  cb.checked = chosen === ids.length && ids.length > 0;
+  cb.indeterminate = chosen > 0 && chosen < ids.length;
+  cb.addEventListener("change", () => toggleSlides(ids, cb.checked));
+
+  const label = document.createElement("span");
+  label.className = "node-label";
+  label.textContent = node.title;
+
+  const meta = document.createElement("span");
+  meta.className = node.kind === "credential" && node.meta.ects ? "ects" : "count";
+  meta.textContent =
+    node.kind === "credential" && node.meta.ects
+      ? `${node.meta.ects} ECTS`
+      : open
+        ? ""
+        : `${ids.length}`;
+
+  row.append(twisty, cb, label, meta);
+  el.appendChild(row);
+
+  if (open) {
+    const kids = document.createElement("div");
+    kids.className = "node-children";
+    for (const [i, child] of node.children.entries()) {
+      const rendered = renderNode(child, `${path}/${i}`, allowed);
+      if (rendered) kids.appendChild(rendered);
     }
-    container.appendChild(group);
+    el.appendChild(kids);
   }
-
-  $("step-slides").hidden = false;
-  $("step-assemble").hidden = currentGroups.size === 0;
+  return el;
 }
 
-function selectedSlideIds() {
-  const ids = new Set();
-  for (const cb of $("slide-list").querySelectorAll("input[type=checkbox]:checked")) {
-    ids.add(cb.dataset.slideId);
+function renderSearchResults(container, allowed) {
+  const hits = searchCatalog(catalog, query).filter(
+    (h) => !allowed || allowed.has(h.slideId)
+  );
+  $("tree-heading").textContent = `${hits.length} result${hits.length === 1 ? "" : "s"}`;
+  if (hits.length === 0) {
+    container.innerHTML = '<p class="empty">Nothing matches that search.</p>';
+    return;
   }
-  return ids;
+  for (const hit of hits) {
+    const el = document.createElement("div");
+    el.className = "hit";
+    const row = document.createElement("label");
+    row.className = "hit-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = selected.has(hit.slideId);
+    cb.addEventListener("change", () => toggleSlides([hit.slideId], cb.checked));
+    const title = document.createElement("span");
+    title.className = "hit-title";
+    title.textContent = hit.slide.title ?? hit.slideId;
+    const field = document.createElement("span");
+    field.className = "hit-field";
+    field.dataset.field = hit.field;
+    field.textContent = hit.field;
+    row.append(cb, title, field);
+    const snip = document.createElement("p");
+    snip.className = "hit-snippet";
+    snip.textContent = hit.snippet;
+    el.append(row, snip);
+    container.appendChild(el);
+  }
+}
+
+function renderTree() {
+  const container = $("tree");
+  container.innerHTML = "";
+  if (!catalog) return;
+  const allowed = allowedByCompetency();
+
+  if (query.trim()) {
+    renderSearchResults(container, allowed);
+    return;
+  }
+
+  $("tree-heading").textContent = "Course";
+  let drawn = 0;
+  for (const [i, root] of tree.entries()) {
+    const rendered = renderNode(root, `${i}`, allowed);
+    if (rendered) {
+      container.appendChild(rendered);
+      drawn++;
+    }
+  }
+  if (drawn === 0) {
+    container.innerHTML = '<p class="empty">No slides match this competency.</p>';
+  }
+}
+
+/** Expand every container, or collapse back to the roots. */
+function toggleExpandAll() {
+  if (expanded.size > tree.length) {
+    expanded = new Set(tree.map((_, i) => String(i)));
+    $("expand-all").textContent = "Expand all";
+  } else {
+    expanded = new Set();
+    const mark = (node, path) => {
+      if (node.kind === "slide") return;
+      expanded.add(path);
+      node.children.forEach((c, i) => mark(c, `${path}/${i}`));
+    };
+    tree.forEach((root, i) => mark(root, String(i)));
+    $("expand-all").textContent = "Collapse all";
+  }
+  renderTree();
 }
 
 /** All slide ids, in document order. */
@@ -191,7 +356,10 @@ async function assemble() {
   const button = $("assemble");
   button.disabled = true;
   try {
-    const plan = buildInsertPlan(currentGroups, selectedSlideIds());
+    const groups = groupBySource(
+      catalog.slides.filter((s) => selected.has(s.slideId))
+    );
+    const plan = buildInsertPlan(groups, selected);
     if (plan.length === 0) {
       setStatus("Nothing selected.", "error");
       return;
@@ -236,8 +404,47 @@ async function assemble() {
   }
 }
 
+/**
+ * A git repo holds markdown, not a rendered catalog, and a browser can
+ * neither clone nor render one. Hand it to the dev server, which does
+ * both and serves the result same-origin.
+ */
+async function addRepo(url) {
+  const button = $("add-source");
+  button.disabled = true;
+  setStatus("Pulling and rendering the library…");
+  try {
+    const res = await fetch("api/pull", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? `pull failed (${res.status})`);
+
+    const source = { name: data.name, url: new URL(data.base, location.href).href };
+    const stored = loadStoredSources();
+    if (!stored.some((s) => s.url === source.url)) {
+      stored.push(source);
+      storeSources(stored);
+    }
+    $("new-source").value = "";
+    renderSourcePicker();
+    $("source").value = source.url;
+    await switchSource(source);
+  } catch (err) {
+    setStatus(`Could not pull that repo: ${err.message ?? err}`, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function addSource() {
   const input = $("new-source");
+  if (isRepoUrl(input.value)) {
+    addRepo(input.value.trim());
+    return;
+  }
   const source = normalizeSource(input.value);
   if (!source) {
     setStatus("Enter the https URL of a corpus server (its catalog or site root).", "error");
@@ -276,17 +483,31 @@ Office.onReady((info) => {
     switchSource(source);
   });
   $("add-source").addEventListener("click", addSource);
+  $("remove-source").addEventListener("click", removeSource);
   $("new-source").addEventListener("keydown", (e) => {
     if (e.key === "Enter") addSource();
   });
+  $("toggle-add").addEventListener("click", () => {
+    const row = $("add-source-row");
+    row.hidden = !row.hidden;
+    if (!row.hidden) $("new-source").focus();
+  });
+
+  // Debounced so typing does not re-render the tree on every keystroke.
+  let searchTimer = null;
+  $("search").addEventListener("input", (e) => {
+    const value = e.target.value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      query = value;
+      renderTree();
+    }, 150);
+  });
 
   $("competency").addEventListener("change", (e) => {
-    const cId = e.target.value;
-    if (cId) renderSlideList(cId);
-    else {
-      $("step-slides").hidden = true;
-      $("step-assemble").hidden = true;
-    }
+    competencyFilter = e.target.value;
+    renderTree();
   });
+  $("expand-all").addEventListener("click", toggleExpandAll);
   $("assemble").addEventListener("click", assemble);
 });

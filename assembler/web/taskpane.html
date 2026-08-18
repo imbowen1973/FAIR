@@ -10,37 +10,46 @@
 <body>
   <header>
     <h1>FAIR Deck Assembler</h1>
-    <p class="sub">Pull slides by competency from rendered sessions</p>
+    <p class="sub">Find slides across a course and build a deck</p>
   </header>
 
   <main>
     <div id="status" class="status" hidden></div>
 
     <section id="step-source">
-      <label for="source">Library</label>
-      <select id="source"></select>
-      <div class="add-source">
-        <input id="new-source" placeholder="https://… corpus server URL" spellcheck="false"/>
-        <button id="add-source" title="Add a published library">Add</button>
+      <label for="source">Corpus</label>
+      <div class="corpus-row">
+        <select id="source"></select>
+        <button id="toggle-add" title="Add a corpus" aria-label="Add a corpus">+</button>
+        <button id="remove-source" title="Remove this corpus" aria-label="Remove this corpus" hidden>&times;</button>
+      </div>
+      <div class="add-source" id="add-source-row" hidden>
+        <input id="new-source" placeholder="git repo URL, or a corpus server URL" spellcheck="false"/>
+        <button id="add-source">Add</button>
       </div>
     </section>
 
-    <section id="step-competency">
-      <label for="competency">Competency</label>
+    <section id="step-find">
+      <label for="search">Find</label>
+      <input id="search" type="search" placeholder="Search titles and speaker notes…" spellcheck="false"/>
       <select id="competency" disabled>
-        <option value="">Loading catalog…</option>
+        <option value="">All competencies</option>
       </select>
     </section>
 
-    <section id="step-slides" hidden>
-      <h2>Matching slides</h2>
-      <div id="slide-list"></div>
+    <section id="step-tree">
+      <div class="tree-head">
+        <h2 id="tree-heading">Course</h2>
+        <button id="expand-all" class="link quiet">Expand all</button>
+      </div>
+      <div id="tree"></div>
     </section>
 
     <section id="step-assemble" hidden>
+      <p id="selection-summary" class="hint"></p>
       <button id="assemble" class="primary">Insert selected slides</button>
       <p class="hint">
-        Slides insert with the destination theme, one call per source deck.
+        Slides insert below the selected slide with the destination theme.
         Within a deck, PowerPoint keeps the slides' original order.
       </p>
     </section>

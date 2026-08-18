@@ -59,6 +59,37 @@ def _load_framework(path: Path) -> dict[str, str]:
     return labels
 
 
+# Delivery structure, outermost first. A container holds either sessions
+# or the next level down, never both: modules -> days -> blocks -> sessions.
+# Every level is optional, so a flat modules[].sessions[] stays valid.
+NESTING = ("modules", "days", "blocks")
+
+
+def _walk_containers(node: dict, path: Path, level: int = 0):
+    """Yield (container_title, session_id) from a credential's structure.
+
+    Recurses through whichever of NESTING is present, so libraries that
+    declare only modules and libraries that declare modules/days/blocks
+    both validate through one code path.
+    """
+    for key in NESTING[level:]:
+        children = node.get(key)
+        if children is None:
+            continue
+        if not isinstance(children, list):
+            raise CorpusError(f"{path}: {key!r} must be a list")
+        if node.get("sessions"):
+            raise CorpusError(
+                f"{path}: {node.get('title')!r} declares both 'sessions' and "
+                f"{key!r} — a container holds one or the other, not both"
+            )
+        for child in children:
+            yield from _walk_containers(child, path, NESTING.index(key) + 1)
+        return
+    for sid in node.get("sessions", []) or []:
+        yield node.get("title"), str(sid)
+
+
 def _validate_credential(
     cred: dict, path: Path, session_ids: set[str], competencies: set[str],
     durations: dict[str, int], warn,
@@ -70,14 +101,13 @@ def _validate_credential(
                 f"{path}: requires unknown competency {cid!r}; known: {sorted(competencies)}"
             )
     referenced: list[str] = []
-    for module in cred.get("modules", []):
-        for sid in module.get("sessions", []):
-            if str(sid) not in session_ids:
-                raise CorpusError(
-                    f"{path}: module {module.get('title')!r} references unknown "
-                    f"session {sid!r}; known: {sorted(session_ids)}"
-                )
-            referenced.append(str(sid))
+    for title, sid in _walk_containers(cred, path):
+        if sid not in session_ids:
+            raise CorpusError(
+                f"{path}: {title!r} references unknown "
+                f"session {sid!r}; known: {sorted(session_ids)}"
+            )
+        referenced.append(sid)
     contact = (cred.get("workload") or {}).get("contact")
     if contact and referenced:
         actual_h = sum(durations.get(sid, 0) for sid in referenced) / 60
@@ -129,6 +159,9 @@ def build_corpus(
                 "title": meta.get("title"),
                 "version": meta.get("version"),
                 "pptx": pptx_rel,
+                # The tree totals durations at block and day level.
+                "durationMinutes": meta.get("duration_minutes"),
+                "outcomes": meta.get("outcomes") or [],
             }
         )
         if isinstance(meta.get("duration_minutes"), int):
