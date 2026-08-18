@@ -14,6 +14,12 @@ from pptx import Presentation
 from pptx.enum.shapes import PP_PLACEHOLDER
 from pptx.util import Emu
 
+from .attribution import (
+    append_notes_line,
+    inject_provenance,
+    load_attribution,
+    stamp_slide,
+)
 from .creation_id import derive_creation_id, inject_creation_id
 from .layoutmap import LayoutBinding, LayoutMapError, load_layout_map, validate_against_template
 from .mermaid import resolve_mermaid
@@ -198,10 +204,20 @@ def render_session(
     template_path: Path,
     layout_map_path: Path,
     out_dir: Path,
+    attribution_path: Path | None = None,
 ) -> dict:
-    """Render one session. Returns a summary dict with output paths."""
+    """Render one session. Returns a summary dict with output paths.
+
+    Attribution config auto-detects at the library root
+    (<sessions dir>/../attribution.yaml) unless a path is given.
+    """
     session = parse_session(session_path)
     bindings = load_layout_map(layout_map_path)
+
+    if attribution_path is None:
+        candidate = session_path.parent.parent / "attribution.yaml"
+        attribution_path = candidate if candidate.exists() else None
+    attribution = load_attribution(attribution_path) if attribution_path else None
 
     prs = Presentation(str(template_path))
     validate_against_template(bindings, prs, template_path)
@@ -230,6 +246,20 @@ def render_session(
         slide, creation_id = _render_slide(
             prs, layouts_by_name, binding, slide_src, session_id, base_dir, build_dir
         )
+
+        dc = session.frontmatter.get("dc") or {}
+        meta = {
+            "creator": dc.get("creator"),
+            "license": dc.get("license"),
+            "session": session_id,
+            "slide": slide_src.id,
+            "version": session.frontmatter.get("version"),
+        }
+        inject_provenance(slide, meta)
+        if attribution:
+            stamp_slide(slide, prs, attribution, build_dir, meta)
+            append_notes_line(slide, attribution["text"], session_id, slide_src.id)
+
         source_ref = f"{slide.slide_id}#{creation_id}"
         slide_id_map[slide_src.id] = source_ref
 

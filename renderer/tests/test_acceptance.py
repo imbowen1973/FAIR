@@ -376,6 +376,88 @@ def test_asset_policy_gate(tmp_path):
     assert any("huge.png" in e and "2200" in e for e in errors)
 
 
+FAIR_NS = "urn:fair:attribution:1"
+
+
+def test_attribution_stamp_locked_and_present(rendered):
+    """Every slide carries the visible CC-BY stamp as an unselectable shape."""
+    for n in range(1, 6):
+        root = _slide_xml(rendered["pptx"], n)
+        stamped = False
+        for sp in root.findall(f".//{{{P_NS}}}sp"):
+            texts = "".join(t.text or "" for t in sp.findall(f".//{{{A_NS}}}t"))
+            if "CC-BY 4.0" in texts:
+                locks = sp.find(f".//{{{A_NS}}}spLocks")
+                assert locks is not None, f"slide{n}: stamp has no locks"
+                for attr in ("noSelect", "noMove", "noResize", "noTextEdit"):
+                    assert locks.get(attr) == "1", f"slide{n}: missing {attr}"
+                stamped = True
+        assert stamped, f"slide{n}: no visible attribution stamp"
+
+
+def test_attribution_provenance_extension(rendered):
+    """Machine-readable provenance rides in every slide's XML."""
+    root = _slide_xml(rendered["pptx"], 3)
+    node = root.find(f".//{{{FAIR_NS}}}attribution")
+    assert node is not None
+    assert node.get("creator") == "FAIR Consortium"
+    assert node.get("license") == "CC-BY-4.0"
+    assert node.get("session") == "01"
+    assert node.get("slide") == "s01-03"
+
+
+def test_attribution_notes_line(rendered):
+    with zipfile.ZipFile(rendered["pptx"]) as z:
+        notes = b"".join(
+            z.read(n) for n in z.namelist() if n.startswith("ppt/notesSlides/notesSlide")
+        )
+    assert b"Source: CC-BY 4.0" in notes
+    assert b"01/s01-03" in notes
+
+
+def test_audit_reads_provenance(rendered):
+    from fair_renderer.audit import audit_deck
+
+    entries = audit_deck(rendered["pptx"])
+    assert len(entries) == 5
+    by_slide = {e["provenance"]["slide"]: e for e in entries if e["provenance"]}
+    assert by_slide["s01-03"]["provenance"]["license"] == "CC-BY-4.0"
+    assert all(e["creationId"] for e in entries)
+
+
+def test_attribution_logo_stamped_with_metadata(tmp_path):
+    """With a logo configured, every slide gets a locked picture whose PNG
+    carries the attribution in its own metadata."""
+    from PIL import Image
+
+    lib = tmp_path / "lib"
+    (lib / "branding").mkdir(parents=True)
+    Image.new("RGBA", (120, 120), (44, 110, 158, 255)).save(lib / "branding" / "logo.png")
+    (lib / "attribution.yaml").write_text(
+        'text: "CC-BY 4.0 · FAIR Consortium"\nlogo: branding/logo.png\n'
+    )
+    out = tmp_path / "out"
+    result = render_session(
+        session_path=EXAMPLES / "sessions" / "session-02.md",
+        template_path=EXAMPLES / "template.pptx",
+        layout_map_path=EXAMPLES / "layout-map.yaml",
+        out_dir=out,
+        attribution_path=lib / "attribution.yaml",
+    )
+    root = _slide_xml(result["pptx"], 1)
+    pics = root.findall(f".//{{{P_NS}}}pic")
+    assert pics, "logo picture missing"
+    lock_found = any(
+        pic.find(f".//{{{A_NS}}}picLocks") is not None
+        and pic.find(f".//{{{A_NS}}}picLocks").get("noSelect") == "1"
+        for pic in pics
+    )
+    assert lock_found, "logo picture is not locked"
+
+    stamped = Image.open(out / "build" / "attribution-logo.png")
+    assert stamped.info.get("fair:license") or stamped.info.get("fair:text")
+
+
 def test_master_bullet_levels_colored():
     """Template master colour-codes list levels 1-3 (accent1/2/3)."""
     with zipfile.ZipFile(EXAMPLES / "template.pptx") as z:
