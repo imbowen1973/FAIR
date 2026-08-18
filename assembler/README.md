@@ -22,17 +22,30 @@ that function body (spec B.2).
 
 ## The distribution model
 
-The repo holds markdown; **the .pptx is never stored anywhere**. A
-user who wants slides pulls the content, renders it locally, and the
-pane reads `localhost:3000`. Decks exist on that machine for as long
-as they're useful and are rebuilt from the markdown whenever needed —
-rendering is deterministic, so the same commit always regenerates the
-same deck.
+The repo holds markdown; **the .pptx is never stored anywhere**.
+Rendering happens at the point of use, and there are three points of
+use — most people only ever need the first:
 
-The **Library** picker exists for pointing the pane at other corpus
-servers — today another local build, later the middle layer
-(`docs/platform-architecture.md`), which renders on demand for
-authorized users and stores nothing.
+1. **In your browser (serverless — the flagship).** Type `owner/repo`
+   into the pane's picker. The pane fetches the markdown straight from
+   GitHub and runs the real `fair_renderer` (Python, via Pyodide/
+   WebAssembly) inside the pane: git → ppt in one hop, decks existing
+   only in the tab's memory. First use downloads the ~10 MB Python
+   runtime once; after that it's seconds. Public repos only (a browser
+   holds no git credentials); Mermaid diagrams need their pre-rendered
+   PNGs committed, which is already the house convention. The pane
+   itself is a static app published to GitHub Pages by
+   `publish-pane.yml` (tool only — no content, no decks);
+   `manifest.web.xml` points there.
+2. **Local.** Clone, `python scripts/build_corpus.py`, `npm start`;
+   the pane reads `localhost:3000`. Full control, private repos work
+   with your git credentials.
+3. **A hosted pull server** (`docs/deploy-server.md`, optional). The
+   same flow run server-side — useful later as the authenticated
+   middle layer for private libraries.
+
+All three run the identical renderer package, so a given commit yields
+the identical deck everywhere.
 
 ## Run it
 

@@ -24,6 +24,10 @@ Markdown-to-slides tools exist. None of them are this:
 - **Meaning travels with the slides** — competency tags in the
   markdown become the index that assembles decks across sessions.
 
+- **It needs no infrastructure** — the add-in renders libraries in the
+  browser itself (the same Python renderer, via WebAssembly): type
+  `owner/repo`, get slides. No server, no hosting, nothing stored.
+
 Versionable markdown is the course; **PowerPoint is just how you look
 at it today**.
 

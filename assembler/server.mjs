@@ -182,10 +182,22 @@ async function handler(req, res) {
       await pullLibrary(req, res);
       return;
     }
-    let filePath = normalize(join(ROOT, urlPath === "/" ? "taskpane.html" : urlPath));
-    if (!filePath.startsWith(ROOT)) {
-      res.writeHead(403).end();
-      return;
+    // The fair_renderer sources, for the in-browser (Pyodide) renderer.
+    // Published deployments serve these as static files under /py/.
+    const PY_ROOT = join(REPO, "renderer", "src");
+    let filePath;
+    if (urlPath.startsWith("/py/")) {
+      filePath = normalize(join(PY_ROOT, urlPath.slice(4)));
+      if (!filePath.startsWith(PY_ROOT)) {
+        res.writeHead(403).end();
+        return;
+      }
+    } else {
+      filePath = normalize(join(ROOT, urlPath === "/" ? "taskpane.html" : urlPath));
+      if (!filePath.startsWith(ROOT)) {
+        res.writeHead(403).end();
+        return;
+      }
     }
     const body = await readFile(filePath);
     res.writeHead(200, {

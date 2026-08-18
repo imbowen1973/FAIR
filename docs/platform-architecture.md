@@ -96,10 +96,15 @@ Therefore:
   output; nothing rendered leaves the runner
 - the local `data/` directory the pane reads is an ephemeral build
   product, rebuilt at will and gitignored
-- when the middle layer arrives, its `/decks/{ref}` endpoint **renders
-  on demand** for the requesting user (a cache keyed by commit SHA is a
-  permissible optimization precisely because renders are
-  deterministic — it is a cache, never a store of record)
+- the flagship delivery is **in-browser rendering**: the pane runs the
+  renderer itself (Pyodide/WebAssembly), fetching markdown straight
+  from git — git → ppt with no server and decks only in tab memory.
+  Public repos need no infrastructure at all.
+- when the middle layer arrives (for private libraries), its
+  `/decks/{ref}` endpoint **renders on demand** for the requesting
+  user (a cache keyed by commit SHA is a permissible optimization
+  precisely because renders are deterministic — it is a cache, never a
+  store of record)
 - provenance needs no stored decks either: a credential pins a commit,
   and the commit regenerates the exact deck on any future day
 

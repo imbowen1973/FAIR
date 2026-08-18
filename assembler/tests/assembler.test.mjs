@@ -101,6 +101,42 @@ test("normalizeSource strips data/catalog.json down to the site root", () => {
   }
 });
 
+test("parseRepoInput handles slugs and github URLs", async () => {
+  const { parseRepoInput } = await import("../web/assembler.js");
+  assert.deepEqual(parseRepoInput("Agrifoodskills/Clinical-Educator-"), {
+    owner: "Agrifoodskills",
+    repo: "Clinical-Educator-",
+  });
+  assert.deepEqual(parseRepoInput("https://github.com/o/r.git"), { owner: "o", repo: "r" });
+  assert.equal(parseRepoInput("https://gitlab.com/o/r"), null);
+  assert.equal(parseRepoInput("https://corpus.example/lib"), null);
+  assert.equal(parseRepoInput("not a repo"), null);
+});
+
+test("selectLibraryPaths picks library files and rejects non-libraries", async () => {
+  const { selectLibraryPaths } = await import("../web/wasm-renderer.js");
+  const picked = selectLibraryPaths([
+    "README.md",
+    "template.pptx",
+    "layout-map.yaml",
+    "sessions/ce-01.md",
+    "sessions/assets/x.png",
+    "competencies/framework.yaml",
+    "credentials/clinical-educator.yaml",
+    ".github/workflows/ci.yml",
+  ]);
+  assert.ok(picked.includes("sessions/ce-01.md"));
+  assert.ok(picked.includes("sessions/assets/x.png"));
+  assert.ok(picked.includes("credentials/clinical-educator.yaml"));
+  assert.ok(!picked.includes("README.md"));
+  assert.ok(!picked.includes(".github/workflows/ci.yml"));
+
+  assert.throws(
+    () => selectLibraryPaths(["README.md", "src/app.js"]),
+    /not a library repo/
+  );
+});
+
 test("normalizeSource accepts only https URLs — no repo slugs", () => {
   assert.equal(normalizeSource(""), null);
   assert.equal(normalizeSource("   "), null);

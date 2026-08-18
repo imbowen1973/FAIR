@@ -1,0 +1,44 @@
+name: Publish pane (tool only — no content, no decks)
+
+# Deploys the assembler PANE as a static app to GitHub Pages: HTML/JS/CSS
+# plus the fair_renderer .py sources the in-browser (Pyodide) renderer
+# imports. This publishes the TOOL, never content — no catalogs, no
+# decks, no data directory. Rendering happens in each user's browser
+# from markdown fetched straight out of git.
+#
+# One-time setup: repo Settings -> Pages -> Source: "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the static pane (no data)
+        run: |
+          mkdir -p _site/py/fair_renderer
+          cp -r assembler/web/* _site/
+          rm -rf _site/data _site/libraries
+          cp renderer/src/fair_renderer/*.py _site/py/fair_renderer/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
