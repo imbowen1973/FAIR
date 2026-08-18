@@ -5,11 +5,19 @@ PowerPoint** use the pipeline — paste a public git URL into the pane's
 corpus picker, the server clones the markdown and renders slides at
 point of use. No local Python, Node, or git on the user's machine.
 
-The invariant holds server-side exactly as it does locally: **nothing
-rendered is stored or published.** Pulled clones and rendered decks
-live in the container's ephemeral storage, are refreshed on pull, and
-vanish with the container. The markdown in git remains the only stored
-artifact.
+The server is a **flow, not a store** — git → render → ppt:
+
+1. `/api/pull` shallow-fetches the repo's tip (content only, no
+   history) into a temporary directory
+2. the renderer turns it into decks + catalog
+3. **the source is deleted before the pull returns** — the server never
+   retains a repo
+4. the render is served to the pane, then swept after
+   `FAIR_RENDER_TTL` (default 1 hour); a restart starts from nothing
+
+Nothing rendered is stored or published; the markdown in git remains
+the only stored artifact anywhere. Peak footprint per pull is one
+library's content plus its render — tens of MB, for seconds.
 
 This is v0 of the middle layer in `platform-architecture.md`: public
 repos only, no login. GitHub identity, private libraries, and the
@@ -64,6 +72,7 @@ PowerPoint.
 | `FAIR_PULL_FRESH` | 60 | seconds a pull stays fresh; within the window repeat pulls serve the existing render instead of re-cloning |
 | `FAIR_PULL_TIMEOUT` | 180 | seconds before a stuck pull is killed |
 | `FAIR_PULL_MAX` | 3 | concurrent pulls; beyond it `/api/pull` answers 429 |
+| `FAIR_RENDER_TTL` | 3600 | seconds a render is kept for the pane before being swept |
 
 ## What the server will and won't do
 
