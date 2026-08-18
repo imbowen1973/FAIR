@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hosted manifest TEMPLATE. Replace __FAIR_HOST__ with your server's
+     domain (must serve HTTPS), then sideload or centrally deploy:
+
+       sed "s/__FAIR_HOST__/fair.example.org/g" \
+         manifest.hosted.template.xml > manifest.hosted.xml
+-->
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:type="TaskPaneApp">
+  <Id>b7e2d4a9-1c56-4f83-9d02-8e6f5a3c7b21</Id>
+  <Version>0.3.0</Version>
+  <ProviderName>FAIR Consortium</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="FAIR Deck Assembler"/>
+  <Description DefaultValue="Assemble a deck by competency from git-hosted session libraries"/>
+  <IconUrl DefaultValue="https://__FAIR_HOST__/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://__FAIR_HOST__/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://github.com/imbowen1973/FAIR"/>
+  <Hosts>
+    <Host Name="Presentation"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="PowerPointApi" MinVersion="1.2"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://__FAIR_HOST__/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>
