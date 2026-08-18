@@ -253,6 +253,19 @@ const GIT_HOSTS = new Set([
   "www.bitbucket.org",
 ]);
 
+/**
+ * Parse "owner/repo" or a github.com repo URL into {owner, repo}, for
+ * the in-browser renderer. Null when the input is not a GitHub repo.
+ */
+export function parseRepoInput(input) {
+  const raw = (input || "").trim().replace(/\/+$/, "");
+  let m = raw.match(/^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+  if (m && !raw.includes(":")) return { owner: m[1], repo: m[2] };
+  m = raw.match(/^https?:\/\/(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+  if (m) return { owner: m[1], repo: m[2] };
+  return null;
+}
+
 /** True when the input names a git repo rather than a corpus server. */
 export function isRepoUrl(input) {
   const raw = (input || "").trim();

@@ -11,9 +11,14 @@ import {
   isRepoUrl,
   joinUrl,
   normalizeSource,
+  parseRepoInput,
   searchCatalog,
   usedCompetencies,
 } from "./assembler.js";
+
+// Decks rendered in-browser (wasm sources), keyed by source url then
+// sourcePptx. RAM only — nothing is stored anywhere.
+const memoryDecks = new Map();
 
 const DEFAULT_SOURCE = { name: "This corpus", url: "" };
 const STORE_KEY = "fair.sources";
@@ -70,12 +75,19 @@ function renderSourcePicker() {
 }
 
 async function loadCatalog(source) {
+  if (source.url.startsWith("wasm:")) {
+    const [owner, repo] = source.url.slice(5).split("/");
+    const { loadLibraryFromGitHub } = await import("./wasm-renderer.js");
+    const { catalog, decks } = await loadLibraryFromGitHub(owner, repo, setStatus);
+    memoryDecks.set(source.url, decks);
+    return catalog;
+  }
   const res = await fetch(joinUrl(source.url, "data/catalog.json"));
   if (!res.ok) {
     throw new Error(
       source.url
         ? `no catalog at ${source.name} (${res.status}) — is the library published?`
-        : `catalog.json not found (${res.status}) — run scripts/build_corpus.py first`
+        : "no local corpus here — add a library below: owner/repo renders in your browser"
     );
   }
   return res.json();
@@ -368,10 +380,18 @@ async function assemble() {
     let inserted = 0;
     for (const step of plan) {
       setStatus(`Fetching ${step.sourcePptx}…`);
-      const deckUrl = joinUrl(currentSource.url, joinUrl("data", step.sourcePptx));
-      const res = await fetch(deckUrl);
-      if (!res.ok) throw new Error(`fetch failed for ${step.sourcePptx} (${res.status})`);
-      const base64 = arrayBufferToBase64(await res.arrayBuffer());
+      let base64;
+      const inMemory = memoryDecks.get(currentSource.url);
+      if (inMemory) {
+        const bytes = inMemory.get(step.sourcePptx);
+        if (!bytes) throw new Error(`deck ${step.sourcePptx} missing from the in-browser render`);
+        base64 = arrayBufferToBase64(bytes.buffer);
+      } else {
+        const deckUrl = joinUrl(currentSource.url, joinUrl("data", step.sourcePptx));
+        const res = await fetch(deckUrl);
+        if (!res.ok) throw new Error(`fetch failed for ${step.sourcePptx} (${res.status})`);
+        base64 = arrayBufferToBase64(await res.arrayBuffer());
+      }
 
       setStatus(`Inserting ${step.sourceRefs.length} slide(s) from ${step.sourcePptx}…`);
       // Spec B.3: one insert call per source deck, selecting slides by
@@ -404,50 +424,35 @@ async function assemble() {
   }
 }
 
-/**
- * A git repo holds markdown, not a rendered catalog, and a browser can
- * neither clone nor render one. Hand it to the dev server, which does
- * both and serves the result same-origin.
- */
-async function addRepo(url) {
-  const button = $("add-source");
-  button.disabled = true;
-  setStatus("Pulling and rendering the library…");
-  try {
-    const res = await fetch("api/pull", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? `pull failed (${res.status})`);
-
-    const source = { name: data.name, url: new URL(data.base, location.href).href };
+function addSource() {
+  const input = $("new-source");
+  // A GitHub repo renders IN THE BROWSER: markdown is fetched straight
+  // from git and fair_renderer runs in WebAssembly. git -> ppt, no
+  // server, decks only in this tab's memory.
+  const repo = parseRepoInput(input.value);
+  if (repo) {
+    const source = {
+      name: `${repo.owner}/${repo.repo}`,
+      url: `wasm:${repo.owner}/${repo.repo}`,
+    };
     const stored = loadStoredSources();
     if (!stored.some((s) => s.url === source.url)) {
       stored.push(source);
       storeSources(stored);
     }
-    $("new-source").value = "";
+    input.value = "";
     renderSourcePicker();
     $("source").value = source.url;
-    await switchSource(source);
-  } catch (err) {
-    setStatus(`Could not pull that repo: ${err.message ?? err}`, "error");
-  } finally {
-    button.disabled = false;
+    switchSource(source);
+    return;
   }
-}
-
-function addSource() {
-  const input = $("new-source");
   if (isRepoUrl(input.value)) {
-    addRepo(input.value.trim());
+    setStatus("Only github.com repos render in-browser so far — or paste a corpus server URL.", "error");
     return;
   }
   const source = normalizeSource(input.value);
   if (!source) {
-    setStatus("Enter the https URL of a corpus server (its catalog or site root).", "error");
+    setStatus("Enter owner/repo (renders in your browser) or an https corpus URL.", "error");
     return;
   }
   const stored = loadStoredSources();

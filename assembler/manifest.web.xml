@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Serverless manifest: the pane is a static app on GitHub Pages and
+     renders libraries IN THE BROWSER (Pyodide). git -> ppt, no server
+     anywhere, decks exist only in the user's tab memory.
+     Requires Pages enabled on this repo (Settings -> Pages -> GitHub
+     Actions); published by .github/workflows/publish-pane.yml. -->
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:type="TaskPaneApp">
+  <Id>c9d1f7b3-2e84-4a06-b1c5-7f3a9d8e6042</Id>
+  <Version>0.4.0</Version>
+  <ProviderName>FAIR Consortium</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="FAIR Deck Assembler"/>
+  <Description DefaultValue="Assemble decks by competency from git libraries, rendered in your browser"/>
+  <IconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://github.com/imbowen1973/FAIR"/>
+  <Hosts>
+    <Host Name="Presentation"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="PowerPointApi" MinVersion="1.2"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://imbowen1973.github.io/FAIR/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>
