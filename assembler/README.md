@@ -59,7 +59,10 @@ npm test
 - **PowerPoint on the web**: open a deck → Add-ins →
   **Upload My Add-in** → pick `manifest.xml`. Requires the HTTPS server.
 
-Requirement set: **PowerPointApi 1.2** (checked at startup). Supported on
+Requirement set: **PowerPointApi 1.2** (checked at startup). Inserting
+below the *selected* slide additionally needs **1.5** (`getSelectedSlides`);
+where it is missing the pane appends to the end of the deck instead, so
+1.2 remains the floor. Supported on
 Microsoft 365 desktop (Windows ≥ build 13426, Mac ≥ 16.43) and PowerPoint
 on the web; not on iPad.
 
@@ -67,6 +70,11 @@ on the web; not on iPad.
 
 - Within one source deck, PowerPoint inserts slides in their original
   deck order, whatever the order of `sourceSlideIds`.
+- `insertSlidesFromBase64` inserts at the **beginning** of the deck when
+  `targetSlideId` is omitted — not the end. The pane anchors the first
+  batch after the selected slide and then advances the anchor to each
+  batch's last inserted slide, so slides land below the selection and
+  multi-deck plans keep their order.
 - `KeepSourceFormatting` has open fidelity bugs (office-js #2780, #4428,
   #5896); the pane uses `UseDestinationTheme`, which is also the spec's
   architectural expectation since all decks share one template.

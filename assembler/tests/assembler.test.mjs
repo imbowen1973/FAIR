@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildInsertPlan,
+  buildTree,
+  groupBySource,
+  isRepoUrl,
+  searchCatalog,
   joinUrl,
   normalizeSource,
   slidesForCompetency,
@@ -129,6 +133,12 @@ test("real catalog: C1 spans sessions 01 and 03 (build order step 5)", (t) => {
   }
   const catalog = JSON.parse(readFileSync(catalogPath, "utf-8"));
   const groups = slidesForCompetency(catalog, "C1");
+  if (groups.size === 0) {
+    // web/data is whichever library was last built there (see
+    // scripts/pull_library.py); only the examples corpus defines C1.
+    t.skip("another library is built — run scripts/build_corpus.py for the examples");
+    return;
+  }
   const sessions = new Set(
     [...groups.values()].flat().map((s) => s.sessionId)
   );
@@ -138,4 +148,148 @@ test("real catalog: C1 spans sessions 01 and 03 (build order step 5)", (t) => {
       assert.match(s.sourceRef, /^\d+#\d+$/);
     }
   }
+});
+
+test("a git repo URL is not a corpus server", () => {
+  // The pane fetches <base>/data/catalog.json; a repo serves HTML and
+  // holds only markdown, so this must fail at validation, not as CORS.
+  for (const repo of [
+    "https://github.com/Agrifoodskills/Clinical-Educator-",
+    "https://github.com/Agrifoodskills/Clinical-Educator-.git",
+    "https://www.github.com/org/lib",
+    "https://gitlab.com/org/lib",
+    "https://bitbucket.org/org/lib",
+    "Agrifoodskills/Clinical-Educator-",
+  ]) {
+    assert.equal(isRepoUrl(repo), true, repo);
+    assert.equal(normalizeSource(repo), null, repo);
+  }
+});
+
+test("corpus servers are still accepted, including Pages hosts", () => {
+  for (const ok of [
+    "https://corpus.example/lib",
+    "https://agrifoodskills.github.io/Clinical-Educator-",
+  ]) {
+    assert.equal(isRepoUrl(ok), false, ok);
+    assert.notEqual(normalizeSource(ok), null, ok);
+  }
+});
+
+// --- hierarchy -----------------------------------------------------------
+
+const NESTED = {
+  sessions: [
+    { sessionId: "ce-01", title: "Foundations", durationMinutes: 180 },
+    { sessionId: "ce-02", title: "Feedback", durationMinutes: 180 },
+    { sessionId: "ce-99", title: "Orphan session", durationMinutes: 30 },
+  ],
+  competencies: { CE1: "Designing clinical teaching" },
+  credentials: [
+    {
+      id: "clinical-educator",
+      title: "Clinical Educator",
+      ects: 5,
+      modules: [
+        {
+          title: "Foundations",
+          days: [
+            {
+              title: "Day 1",
+              blocks: [
+                { title: "Morning", sessions: ["ce-01"] },
+                { title: "Afternoon", sessions: ["ce-02"] },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  slides: [
+    { slideId: "a", sessionId: "ce-01", sourcePptx: "d1.pptx", sourceRef: "1#1", title: "Why the clinic is not a classroom", develops: ["CE1"], dok: 2, notes: "Contrast andragogy with clinical reality; feedback comes later." },
+    { slideId: "b", sessionId: "ce-02", sourcePptx: "d2.pptx", sourceRef: "2#2", title: "Feedback that lands", develops: [], dok: 3, notes: "Potassium rises fast in an obstructed cat." },
+    { slideId: "c", sessionId: "ce-99", sourcePptx: "d3.pptx", sourceRef: "3#3", title: "Loose end", develops: [], dok: null, notes: null },
+  ],
+};
+
+const FLAT = {
+  sessions: [{ sessionId: "ce-01", title: "Foundations" }],
+  competencies: {},
+  credentials: [{ id: "x", title: "Flat course", modules: [{ title: "Module A", sessions: ["ce-01"] }] }],
+  slides: [
+    { slideId: "a", sessionId: "ce-01", sourcePptx: "d1.pptx", sourceRef: "1#1", title: "One", develops: [], dok: null, notes: null },
+  ],
+};
+
+const kinds = (node) => {
+  const out = [];
+  const go = (n) => { out.push(n.kind); (n.children || []).forEach(go); };
+  go(node);
+  return out;
+};
+
+test("buildTree nests credential > module > day > block > session > slide", () => {
+  const [cred] = buildTree(NESTED);
+  assert.equal(cred.kind, "credential");
+  assert.equal(cred.title, "Clinical Educator");
+  assert.equal(cred.meta.ects, 5);
+  assert.deepEqual(kinds(cred).slice(0, 6), [
+    "credential", "module", "day", "block", "session", "slide",
+  ]);
+  // Containers aggregate the slide ids of everything beneath them.
+  assert.deepEqual(cred.slideIds, ["a", "b"]);
+});
+
+test("buildTree collapses absent levels for a flat modules[].sessions[]", () => {
+  const [cred] = buildTree(FLAT);
+  assert.deepEqual(kinds(cred), ["credential", "module", "session", "slide"]);
+  assert.deepEqual(cred.slideIds, ["a"]);
+});
+
+test("buildTree puts sessions no credential claims under Unassigned", () => {
+  const roots = buildTree(NESTED);
+  const last = roots[roots.length - 1];
+  assert.equal(last.title, "Unassigned sessions");
+  assert.deepEqual(last.slideIds, ["c"]);
+});
+
+test("buildTree with no credentials still browses every session", () => {
+  const { credentials, ...noCreds } = NESTED;
+  const roots = buildTree(noCreds);
+  assert.equal(roots.length, 1);
+  assert.equal(roots[0].title, "All sessions");
+  assert.deepEqual(roots[0].slideIds, ["a", "b", "c"]);
+});
+
+// --- search --------------------------------------------------------------
+
+test("searchCatalog matches speaker notes, not just titles", () => {
+  const hits = searchCatalog(NESTED, "potassium");
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].slideId, "b");
+  assert.equal(hits[0].field, "notes");
+  assert.match(hits[0].snippet, /Potassium rises fast/);
+});
+
+test("searchCatalog ranks a title hit above a notes hit", () => {
+  // "feedback" is slide b's title and appears in slide a's notes.
+  const hits = searchCatalog(NESTED, "feedback");
+  assert.equal(hits.length, 2);
+  assert.deepEqual(hits.map((h) => [h.slideId, h.field]), [
+    ["b", "title"],
+    ["a", "notes"],
+  ]);
+});
+
+test("searchCatalog is empty for a blank query and tolerates null notes", () => {
+  assert.deepEqual(searchCatalog(NESTED, "   "), []);
+  assert.deepEqual(searchCatalog(NESTED, "zzzznotfound"), []);
+});
+
+test("groupBySource output feeds buildInsertPlan unchanged", () => {
+  const chosen = NESTED.slides.filter((s) => ["a", "b"].includes(s.slideId));
+  const plan = buildInsertPlan(groupBySource(chosen), new Set(["a", "b"]));
+  assert.deepEqual(plan.map((p) => p.sourcePptx), ["d1.pptx", "d2.pptx"]);
+  assert.deepEqual(plan.flatMap((p) => p.sourceRefs), ["1#1", "2#2"]);
 });

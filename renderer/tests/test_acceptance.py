@@ -187,6 +187,11 @@ def test_index_json_contract(rendered):
     assert entry["develops"] == ["C1", "C4"]
     assert entry["dok"] == 2
     assert re.fullmatch(r"\d+#\d+", entry["sourceRef"])
+    # Notes ride in the index so the pane can search narration, not just
+    # titles; slides without notes carry an explicit null, never a gap.
+    assert "integrity pillars" in entry["notes"]
+    assert all("notes" in s for s in doc["slides"])
+    assert any(s["notes"] is None for s in doc["slides"])
 
 
 def test_notes_written(rendered):
@@ -396,4 +401,105 @@ def test_layout_map_validation_fails_loudly(tmp_path):
             template_path=EXAMPLES / "template.pptx",
             layout_map_path=bad_map,
             out_dir=tmp_path / "out",
+        )
+
+
+# --- nested delivery structure (credentials modules/days/blocks) ----------
+
+
+def _corpus(tmp_path, credential: dict):
+    """Build a one-session corpus with the given credential definition."""
+    import shutil
+
+    import yaml
+
+    from fair_renderer.corpus import build_corpus
+
+    sessions = tmp_path / "sessions"
+    if not sessions.exists():
+        # copytree brings assets/ along; session-01 references an image.
+        shutil.copytree(EXAMPLES / "sessions", sessions)
+        for stale in sessions.glob("session-0[23].md"):
+            stale.unlink()
+    creds = tmp_path / "credentials"
+    creds.mkdir(exist_ok=True)
+    (creds / "c.yaml").write_text(yaml.safe_dump(credential), encoding="utf-8")
+    return build_corpus(
+        sessions_dir=sessions,
+        template=EXAMPLES / "template.pptx",
+        layout_map=EXAMPLES / "layout-map.yaml",
+        out_dir=tmp_path / "out",
+        credentials_dir=creds,
+        warn=lambda msg: None,
+    )
+
+
+def test_nested_credential_validates(tmp_path):
+    """modules -> days -> blocks -> sessions is accepted and passed through."""
+    summary = _corpus(
+        tmp_path,
+        {
+            "id": "c",
+            "title": "Course",
+            "modules": [
+                {
+                    "title": "M1",
+                    "days": [
+                        {"title": "Day 1", "blocks": [{"title": "AM", "sessions": ["01"]}]}
+                    ],
+                }
+            ],
+        },
+    )
+    assert summary["credentials"] == 1
+    catalog = json.loads((tmp_path / "out" / "catalog.json").read_text())
+    block = catalog["credentials"][0]["modules"][0]["days"][0]["blocks"][0]
+    assert block["sessions"] == ["01"]
+
+
+def test_flat_credential_still_validates(tmp_path):
+    """The pre-existing flat modules[].sessions[] shape must not break."""
+    summary = _corpus(
+        tmp_path,
+        {"id": "c", "title": "Course", "modules": [{"title": "M1", "sessions": ["01"]}]},
+    )
+    assert summary["credentials"] == 1
+
+
+def test_unknown_session_in_nested_block_raises(tmp_path):
+    from fair_renderer.corpus import CorpusError
+
+    with pytest.raises(CorpusError, match="unknown session"):
+        _corpus(
+            tmp_path,
+            {
+                "id": "c",
+                "modules": [
+                    {
+                        "title": "M1",
+                        "days": [
+                            {"title": "D", "blocks": [{"title": "AM", "sessions": ["99"]}]}
+                        ],
+                    }
+                ],
+            },
+        )
+
+
+def test_container_with_both_sessions_and_days_raises(tmp_path):
+    from fair_renderer.corpus import CorpusError
+
+    with pytest.raises(CorpusError, match="one or the other"):
+        _corpus(
+            tmp_path,
+            {
+                "id": "c",
+                "modules": [
+                    {
+                        "title": "M1",
+                        "sessions": ["01"],
+                        "days": [{"title": "D", "sessions": ["01"]}],
+                    }
+                ],
+            },
         )

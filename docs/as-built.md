@@ -116,10 +116,12 @@ order.
 |---|---|
 | `session-{NN}.pptx` | template-bound deck |
 | `slide-id-map.json` | `{authored id: "slideId#creationId"}` |
-| `index.json` | `{"session": <frontmatter verbatim>, "slides": [{slideId, sessionId, sourceRef, sourcePptx, title, develops, dok}]}` |
+| `index.json` | `{"session": <frontmatter verbatim>, "slides": [{slideId, sessionId, sourceRef, sourcePptx, title, develops, dok, notes}]}` |
 
 `title` in the index is emphasis-stripped plain text. `sourceRef` is
-the exact string `insertSlidesFromBase64` consumes.
+the exact string `insertSlidesFromBase64` consumes. `notes` is the
+slide's speaker narration verbatim (`null` when absent) — carried so
+the pane can search what a slide *says*, not only how it is tagged.
 
 ## 3. The template (as built)
 
@@ -157,12 +159,37 @@ and the assembler. Renders every `examples/sessions/*.md` into
 
 ```json
 {
-  "sessions":     [{"sessionId", "title", "version", "pptx"}],
+  "sessions":     [{"sessionId", "title", "version", "pptx",
+                    "durationMinutes", "outcomes"}],
   "competencies": {"C1": "Cold chain monitoring", ...},
   "slides":       [ <all index entries, session order,
-                     sourcePptx rewritten data-relative> ]
+                     sourcePptx rewritten data-relative> ],
+  "credentials":  [ <credential definitions, passthrough> ]
 }
 ```
+
+### 4.1 Delivery structure (`credentials/*.yaml`)
+
+A credential declares how the course is delivered. Containers nest
+outermost-first and every level is optional, so a flat
+`modules[].sessions[]` and a fully nested course validate through one
+recursive walker (`NESTING` in `corpus.py`):
+
+```yaml
+modules:
+  - title: Foundations
+    days:
+      - title: Day 1
+        blocks:
+          - title: Morning
+            sessions: [ce-01]
+```
+
+A container holds either `sessions` or the next level down — declaring
+both is a hard error, since the intended order would be ambiguous.
+Unknown session refs abort the build naming the container; summed
+session durations are checked against `workload.contact` and warn on
+drift beyond 25%.
 
 Competency labels come from each session's frontmatter
 `competencies:` map; conflicting labels across sessions abort the
@@ -181,6 +208,15 @@ Permissions: `ReadWriteDocument`. Pane URL `https://localhost:3000`.
 - `slidesForCompetency(catalog, cId)` → `Map<sourcePptx, entries[]>`
   — the seam reserved for FalkorDB; swapping the body is the whole
   migration
+- `groupBySource(slides)` → the same `Map`, so tree selection and
+  competency selection converge on one insert path
+- `buildTree(catalog)` → `credential > module > day > block > session >
+  slide` nodes; absent levels collapse, and sessions no credential
+  claims land under a trailing "Unassigned sessions" root so a library
+  without `credentials/` still browses
+- `searchCatalog(catalog, query)` → ranked hits over slide titles,
+  session titles, speaker notes and competency labels, each with a
+  ~120-char snippet and the matched field
 - `usedCompetencies(catalog)` → labeled ids actually referenced
 - `buildInsertPlan(groups, selectedIds)` → per-deck
   `{sourcePptx, sourceRefs[]}`
@@ -188,9 +224,12 @@ Permissions: `ReadWriteDocument`. Pane URL `https://localhost:3000`.
 
 ### 5.2 Pane flow (`web/taskpane.js`)
 
-load catalog → competency dropdown → matching slides grouped by
-session (checkbox per slide, title + DOK shown) → single button →
-sequentially per source deck:
+corpus picker (add / change / remove) → search box and competency
+filter → collapsible hierarchy tree with tri-state checkboxes → single
+button. Selection is a `Set` of slide ids held independently of what is
+displayed, so it survives switching between tree and search results;
+switching corpus clears it, because ids from another catalog are
+meaningless. Insert runs sequentially per source deck:
 
 ```js
 context.presentation.insertSlidesFromBase64(base64, {
@@ -205,7 +244,13 @@ deck counts.
 
 ### 5.3 Serving
 
-`server.mjs`: static file server, port 3000 (`PORT` env). HTTPS with
+`server.mjs`: static file server plus `POST /api/pull`, port 3000
+(`PORT` env). The pull endpoint clones/updates a library repo via
+`scripts/pull_library.py` and renders it into `web/libraries/<name>/data`,
+which is what lets the pane accept a plain git URL: a browser can
+neither clone nor render, and serving the result same-origin also
+avoids CORS. Restricted to https on known git hosts and spawned with
+array args, never a shell string. HTTPS with
 trusted localhost certs when `office-addin-dev-certs` is installed
 (`npm install`), plain-HTTP fallback for browser smoke tests only.
 Serves pane assets and `web/data/` (decks + catalog). No state, no

@@ -248,6 +248,8 @@ def render_session(
                 "title": plain_title,
                 "develops": slide_src.develops,
                 "dok": slide_src.dok,
+                # Carried so the pane can search narration, not just titles.
+                "notes": slide_src.notes,
             }
         )
 
