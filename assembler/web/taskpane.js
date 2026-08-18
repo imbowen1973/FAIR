@@ -158,6 +158,35 @@ function selectedSlideIds() {
   return ids;
 }
 
+/** All slide ids, in document order. */
+async function slideIds(context) {
+  const slides = context.presentation.slides;
+  slides.load("items/id");
+  await context.sync();
+  return slides.items.map((s) => s.id);
+}
+
+/**
+ * Where the first batch lands: directly after the slide the user has
+ * selected (the last one, if several). getSelectedSlides needs
+ * PowerPointApi 1.5; the manifest floor is 1.2, so hosts without it fall
+ * back to appending at the end of the deck.
+ */
+async function resolveAnchor() {
+  return PowerPoint.run(async (context) => {
+    if (Office.context.requirements.isSetSupported("PowerPointApi", "1.5")) {
+      const selected = context.presentation.getSelectedSlides();
+      selected.load("items/id");
+      await context.sync();
+      if (selected.items.length > 0) {
+        return selected.items[selected.items.length - 1].id;
+      }
+    }
+    const ids = await slideIds(context);
+    return ids.length ? ids[ids.length - 1] : null;
+  });
+}
+
 async function assemble() {
   const button = $("assemble");
   button.disabled = true;
@@ -167,6 +196,7 @@ async function assemble() {
       setStatus("Nothing selected.", "error");
       return;
     }
+    let anchorId = await resolveAnchor();
     let inserted = 0;
     for (const step of plan) {
       setStatus(`Fetching ${step.sourcePptx}…`);
@@ -179,11 +209,22 @@ async function assemble() {
       // Spec B.3: one insert call per source deck, selecting slides by
       // the renderer-emitted slideId#creationId sourceRefs.
       await PowerPoint.run(async (context) => {
-        context.presentation.insertSlidesFromBase64(base64, {
+        const before = new Set(await slideIds(context));
+
+        const options = {
           formatting: PowerPoint.InsertSlideFormatting.useDestinationTheme,
           sourceSlideIds: step.sourceRefs,
-        });
+        };
+        // Omitting targetSlideId inserts at the *beginning* of the deck.
+        if (anchorId) options.targetSlideId = anchorId;
+
+        context.presentation.insertSlidesFromBase64(base64, options);
         await context.sync();
+
+        // Advance the anchor to the last slide just inserted, so the next
+        // source deck lands below this batch rather than above it.
+        const added = (await slideIds(context)).filter((id) => !before.has(id));
+        if (added.length) anchorId = added[added.length - 1];
       });
       inserted += step.sourceRefs.length;
     }

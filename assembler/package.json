@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/"
   },
   "devDependencies": {
     "office-addin-dev-certs": "^2.0.0"
