@@ -1,9 +1,21 @@
-// Minimal static dev server for the task pane.
+// Static server for the task pane + the pull-and-render endpoint.
 //
-// Office add-ins require HTTPS (localhost included, except older desktop
-// builds). If office-addin-dev-certs is installed (`npm install`), we use
-// its trusted localhost certificate; otherwise we fall back to plain HTTP
-// so the pane can at least be smoke-tested in a browser.
+// Runs in two modes with the same code:
+//
+//   Local (default): binds 127.0.0.1. Office add-ins require HTTPS, so if
+//   office-addin-dev-certs is installed (`npm install`) we use its trusted
+//   localhost certificate; otherwise plain HTTP for browser smoke tests.
+//
+//   Hosted: FAIR_BIND=0.0.0.0 behind a TLS-terminating reverse proxy
+//   (see docs/deploy-server.md). This is middle-layer v0: anyone with
+//   PowerPoint can paste a public git URL and get slides — the server
+//   renders at point of use and never stores or publishes a deck (the
+//   per-library render directory is an ephemeral cache, rebuilt on pull).
+//
+// Env: PORT, FAIR_BIND, FAIR_PYTHON, FAIR_PULL_TOKEN (require a bearer
+// token on /api/pull), FAIR_PULL_FRESH (seconds a pull stays fresh, 60),
+// FAIR_PULL_TIMEOUT (seconds before a pull is killed, 180),
+// FAIR_PULL_MAX (concurrent pulls, 3).
 
 import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
@@ -26,6 +38,47 @@ const PYTHON =
     : join(REPO, ".venv", "bin", "python"));
 
 const GIT_HOSTS = new Set(["github.com", "www.github.com", "gitlab.com", "bitbucket.org"]);
+
+const BIND = process.env.FAIR_BIND ?? "127.0.0.1";
+const PULL_TOKEN = process.env.FAIR_PULL_TOKEN || null;
+const FRESH_MS = Number(process.env.FAIR_PULL_FRESH ?? 60) * 1000;
+const PULL_TIMEOUT_MS = Number(process.env.FAIR_PULL_TIMEOUT ?? 180) * 1000;
+const MAX_ACTIVE_PULLS = Number(process.env.FAIR_PULL_MAX ?? 3);
+
+// One pull per library at a time; concurrent requests for the same
+// library await the same promise instead of racing git and the renderer
+// over one directory.
+const inFlight = new Map(); // name -> Promise<{status, body}>
+const lastPulled = new Map(); // name -> epoch ms
+let activePulls = 0;
+
+function runPull(name, href) {
+  const out = join(ROOT, "libraries", name, "data");
+  return new Promise((resolve) => {
+    activePulls++;
+    // Array args, never a shell string, so the URL cannot inject a command.
+    const proc = spawn(PYTHON, [join(REPO, "scripts", "pull_library.py"), href, "--out", out]);
+    let log = "";
+    const timer = setTimeout(() => proc.kill("SIGKILL"), PULL_TIMEOUT_MS);
+    proc.stdout.on("data", (d) => (log += d));
+    proc.stderr.on("data", (d) => (log += d));
+    proc.on("error", (e) => {
+      clearTimeout(timer);
+      activePulls--;
+      resolve({ status: 500, body: { error: `cannot run ${PYTHON}: ${e.message}` } });
+    });
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      activePulls--;
+      if (code === 0) {
+        lastPulled.set(name, Date.now());
+        resolve({ status: 200, body: { name, base: `/libraries/${name}`, log: log.trim() } });
+      } else {
+        resolve({ status: 500, body: { error: log.trim() || `pull failed (exit ${code})` } });
+      }
+    });
+  });
+}
 
 /**
  * POST /api/pull {url} — clone/update a library repo and render it into
@@ -62,29 +115,37 @@ async function pullLibrary(req, res) {
     res.end(JSON.stringify({ error: `cannot derive a library name from ${repoUrl.pathname}` }));
     return;
   }
-  const out = join(ROOT, "libraries", name, "data");
 
-  // Array args, never a shell string, so the URL cannot inject a command.
-  const proc = spawn(PYTHON, [join(REPO, "scripts", "pull_library.py"), repoUrl.href, "--out", out]);
-  let log = "";
-  proc.stdout.on("data", (d) => (log += d));
-  proc.stderr.on("data", (d) => (log += d));
+  if (PULL_TOKEN) {
+    if ((req.headers.authorization ?? "") !== `Bearer ${PULL_TOKEN}`) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "pull requires an access token" }));
+      return;
+    }
+  }
 
-  proc.on("error", (e) => {
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: `cannot run ${PYTHON}: ${e.message}` }));
-  });
-  proc.on("close", (code) => {
-    if (res.headersSent) return;
-    res.writeHead(code === 0 ? 200 : 500, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify(
-        code === 0
-          ? { name, base: `/libraries/${name}`, log: log.trim() }
-          : { error: log.trim() || `pull failed (exit ${code})` }
-      )
-    );
-  });
+  // Freshly pulled? Serve the existing render instead of re-cloning —
+  // an ephemeral freshness window, not a store: the next window re-pulls.
+  const at = lastPulled.get(name);
+  if (at && Date.now() - at < FRESH_MS) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ name, base: `/libraries/${name}`, cached: true }));
+    return;
+  }
+
+  let pending = inFlight.get(name);
+  if (!pending) {
+    if (activePulls >= MAX_ACTIVE_PULLS) {
+      res.writeHead(429, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "server is busy pulling other libraries — retry shortly" }));
+      return;
+    }
+    pending = runPull(name, repoUrl.href).finally(() => inFlight.delete(name));
+    inFlight.set(name, pending);
+  }
+  const result = await pending;
+  res.writeHead(result.status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(result.body));
 }
 
 const MIME = {
@@ -121,15 +182,23 @@ async function handler(req, res) {
 }
 
 let server;
-try {
-  const { getHttpsServerOptions } = await import("office-addin-dev-certs");
-  server = createHttpsServer(await getHttpsServerOptions(), handler);
-  server.listen(PORT, () => console.log(`https://localhost:${PORT}/taskpane.html`));
-} catch {
-  console.warn(
-    "office-addin-dev-certs not available — serving plain HTTP. " +
-      "Run `npm install` in assembler/ for the HTTPS certs sideloading needs."
-  );
+if (process.env.FAIR_BIND) {
+  // Hosted mode: plain HTTP behind a TLS-terminating reverse proxy.
   server = createHttpServer(handler);
-  server.listen(PORT, () => console.log(`http://localhost:${PORT}/taskpane.html`));
+  server.listen(PORT, BIND, () =>
+    console.log(`hosted mode: http://${BIND}:${PORT} (put TLS in front — see docs/deploy-server.md)`)
+  );
+} else {
+  try {
+    const { getHttpsServerOptions } = await import("office-addin-dev-certs");
+    server = createHttpsServer(await getHttpsServerOptions(), handler);
+    server.listen(PORT, BIND, () => console.log(`https://localhost:${PORT}/taskpane.html`));
+  } catch {
+    console.warn(
+      "office-addin-dev-certs not available — serving plain HTTP. " +
+        "Run `npm install` in assembler/ for the HTTPS certs sideloading needs."
+    );
+    server = createHttpServer(handler);
+    server.listen(PORT, BIND, () => console.log(`http://localhost:${PORT}/taskpane.html`));
+  }
 }

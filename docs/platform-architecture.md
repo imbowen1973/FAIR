@@ -197,6 +197,11 @@ Almost nothing — which is the test that the seams were right:
 
 ## 7. Build order
 
+0. **(exists — v0)** The pull-and-render server: `/api/pull` clones a
+   public library repo and renders it at point of use, hosted behind
+   TLS so anyone with PowerPoint can use the pane with no local
+   tooling. See `deploy-server.md`. Steps 1+ add identity and private
+   repos on top of this same endpoint.
 1. GitHub App + OAuth broker; `/catalog` and `/decks` over the shared
    repo only, rendering on demand (deterministic, so an ephemeral
    SHA-keyed render cache is a safe optimization).
