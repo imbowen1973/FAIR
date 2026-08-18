@@ -1,0 +1,176 @@
+"""Attribution: visible, locked, and machine-readable — per slide.
+
+Three layers, injected at render time (rendering is the only path from
+content to deck, so attribution cannot be forgotten):
+
+1. A visible stamp — small text (and optional logo) in a corner of
+   every slide, as shapes carrying OOXML locks (noSelect etc.): they
+   cannot be clicked, moved, or deleted in PowerPoint's UI. Removal
+   requires editing the file's XML — deliberate, not casual.
+2. A line appended to the speaker notes.
+3. A provenance extension in each slide's XML (beside the creationId):
+   origin, licence, session and slide ids. PowerPoint preserves unknown
+   extensions through edits, re-theming and cross-deck copies, so this
+   survives even after a determined user strips the visible marks —
+   which is what makes stripping provable. `fair-audit` reads it back.
+
+Config: attribution.yaml at the library root (next to sessions/):
+
+    text: "CC-BY 4.0 · FAIR Consortium"
+    logo: branding/logo.png      # optional, relative to this file
+    corner: bottom-right         # or bottom-left
+
+No file -> no visible stamp; the provenance extension is written
+regardless, from the session's frontmatter (dc.creator, dc.license).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+from lxml import etree
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Emu, Pt
+
+A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+FAIR_NS = "urn:fair:attribution:1"
+# Registered extension URI for the FAIR provenance block (fixed GUID).
+ATTRIBUTION_EXT_URI = "{9D2C8E4A-5B31-4F60-A0C7-2D8E13AB0042}"
+
+CORNERS = {"bottom-right", "bottom-left"}
+_EMU_IN = 914400
+
+
+class AttributionError(Exception):
+    pass
+
+
+def load_attribution(path: Path) -> dict:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not isinstance(data.get("text"), str):
+        raise AttributionError(f"{path}: attribution.yaml needs a 'text' string")
+    corner = data.get("corner", "bottom-right")
+    if corner not in CORNERS:
+        raise AttributionError(f"{path}: corner must be one of {sorted(CORNERS)}")
+    logo = data.get("logo")
+    if logo is not None:
+        logo_path = (path.parent / logo).resolve()
+        if not logo_path.exists():
+            raise AttributionError(f"{path}: logo not found: {logo}")
+        data["_logo_path"] = logo_path
+    data["corner"] = corner
+    return data
+
+
+def _lock(nv_pr_element, tag: str, attrs: tuple[str, ...]) -> None:
+    # python-pptx may already have created the locks element (e.g.
+    # picLocks noChangeAspect); merge into it rather than duplicating.
+    locks = nv_pr_element.find(f"{{{A_NS}}}{tag}")
+    if locks is None:
+        locks = etree.SubElement(nv_pr_element, f"{{{A_NS}}}{tag}")
+    for attr in attrs:
+        locks.set(attr, "1")
+
+
+def _stamped_logo(logo_path: Path, build_dir: Path, meta: dict) -> Path:
+    """Copy the logo with attribution baked into the PNG's own metadata."""
+    from PIL import Image
+    from PIL.PngImagePlugin import PngInfo
+
+    out = build_dir / "attribution-logo.png"
+    if out.exists():
+        return out
+    build_dir.mkdir(parents=True, exist_ok=True)
+    info = PngInfo()
+    for key in ("creator", "license", "text"):
+        if meta.get(key):
+            info.add_text(f"fair:{key}", str(meta[key]))
+    with Image.open(logo_path) as im:
+        im.load()
+        im.save(out, format="PNG", pnginfo=info)
+    return out
+
+
+def stamp_slide(slide, prs, config: dict, build_dir: Path, meta: dict) -> None:
+    """Layer 1: the visible, locked stamp."""
+    text = config["text"]
+    corner = config["corner"]
+    margin = Emu(int(0.12 * _EMU_IN))
+    box_h = Emu(int(0.24 * _EMU_IN))
+    box_w = Emu(int(3.4 * _EMU_IN))
+    logo_h = Emu(int(0.26 * _EMU_IN))
+    top = prs.slide_height - box_h - margin
+
+    logo_path = config.get("_logo_path")
+    logo_w = Emu(0)
+    if logo_path:
+        from PIL import Image
+
+        stamped = _stamped_logo(logo_path, build_dir, {**meta, "text": text})
+        with Image.open(stamped) as im:
+            ratio = im.width / im.height
+        logo_w = Emu(int(int(logo_h) * ratio))
+        logo_left = (
+            prs.slide_width - margin - logo_w
+            if corner == "bottom-right"
+            else margin
+        )
+        pic = slide.shapes.add_picture(
+            str(stamped), logo_left, prs.slide_height - logo_h - margin,
+            width=logo_w, height=logo_h,
+        )
+        c_nv_pic_pr = pic._element.find(f"{{{P_NS}}}nvPicPr/{{{P_NS}}}cNvPicPr")
+        _lock(
+            c_nv_pic_pr,
+            "picLocks",
+            ("noSelect", "noMove", "noResize", "noGrp", "noChangeAspect"),
+        )
+
+    gap = Emu(int(0.06 * _EMU_IN)) if logo_path else Emu(0)
+    if corner == "bottom-right":
+        left = prs.slide_width - margin - logo_w - gap - box_w
+        align = PP_ALIGN.RIGHT
+    else:
+        left = margin + logo_w + gap
+        align = PP_ALIGN.LEFT
+
+    tb = slide.shapes.add_textbox(left, top, box_w, box_h)
+    tf = tb.text_frame
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+    paragraph = tf.paragraphs[0]
+    paragraph.alignment = align
+    run = paragraph.add_run()
+    run.text = text
+    run.font.size = Pt(8)
+    from pptx.dml.color import RGBColor
+
+    run.font.color.rgb = RGBColor(0x8A, 0x8A, 0x8A)
+    _lock(
+        tb._element.nvSpPr.cNvSpPr,
+        "spLocks",
+        ("noSelect", "noMove", "noResize", "noGrp", "noTextEdit"),
+    )
+
+
+def append_notes_line(slide, text: str, session_id: str, slide_id: str) -> None:
+    """Layer 2: attribution in the speaker notes."""
+    tf = slide.notes_slide.notes_text_frame
+    paragraph = tf.paragraphs[0] if not tf.paragraphs[0].runs and len(tf.paragraphs) == 1 else tf.add_paragraph()
+    run = paragraph.add_run()
+    run.text = f"Source: {text} · {session_id}/{slide_id}"
+
+
+def inject_provenance(slide, meta: dict) -> None:
+    """Layer 3: machine-readable provenance beside the creationId."""
+    sld = slide._element
+    ext_lst = sld.find(f"{{{P_NS}}}extLst")
+    if ext_lst is None:
+        ext_lst = etree.SubElement(sld, f"{{{P_NS}}}extLst")
+    ext = etree.SubElement(ext_lst, f"{{{P_NS}}}ext")
+    ext.set("uri", ATTRIBUTION_EXT_URI)
+    node = etree.SubElement(ext, f"{{{FAIR_NS}}}attribution", nsmap={"fair": FAIR_NS})
+    for key in ("creator", "license", "session", "slide", "version"):
+        if meta.get(key):
+            node.set(key, str(meta[key]))

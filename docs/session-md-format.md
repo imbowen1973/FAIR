@@ -175,6 +175,32 @@ Enforced by `scripts/check_assets.py`, which gates every corpus build
   photos must not carry GPS positions, timestamps, or device ids into
   a repo.
 
+## Attribution
+
+An optional `attribution.yaml` at the library root (next to
+`sessions/`) stamps every rendered slide:
+
+```yaml
+text: "CC-BY 4.0 · FAIR Consortium"
+logo: branding/logo.png   # optional
+corner: bottom-right      # or bottom-left
+```
+
+Three layers, all injected at render time — including when someone
+else re-renders the content in *their* template, which is what makes
+CC-BY operational:
+
+1. a visible text (and logo) stamp as **locked, unselectable shapes**
+   — removable only by editing the file's XML, never casually
+2. a source line in the speaker notes
+3. machine-readable provenance (creator, licence, session/slide ids)
+   in each slide's XML, which survives re-theming, cross-deck
+   assembly, and removal of the visible marks — `fair-audit deck.pptx`
+   reads it back from any deck, years later
+
+Without the file, layers 1–2 are skipped; layer 3 is always written
+from the session's `dc.creator` / `dc.license` frontmatter.
+
 ## Determinism note
 
 The same session file, template, and layout map always produce the same

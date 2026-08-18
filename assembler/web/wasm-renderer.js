@@ -37,7 +37,9 @@ export function selectLibraryPaths(paths) {
     (p) =>
       p === "template.pptx" ||
       p === "layout-map.yaml" ||
+      p === "attribution.yaml" ||
       p === "competencies/framework.yaml" ||
+      p.startsWith("branding/") ||
       p.startsWith("sessions/") ||
       (p.startsWith("credentials/") && p.endsWith(".yaml"))
   );
