@@ -7,5 +7,4 @@ build/
 .venv/
 node_modules/
 assembler/web/data/
-.libraries/
 assembler/web/libraries/

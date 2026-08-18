@@ -15,12 +15,13 @@
 // Env: PORT, FAIR_BIND, FAIR_PYTHON, FAIR_PULL_TOKEN (require a bearer
 // token on /api/pull), FAIR_PULL_FRESH (seconds a pull stays fresh, 60),
 // FAIR_PULL_TIMEOUT (seconds before a pull is killed, 180),
-// FAIR_PULL_MAX (concurrent pulls, 3).
+// FAIR_PULL_MAX (concurrent pulls, 3), FAIR_RENDER_TTL (seconds a
+// render is kept for the pane before being swept, 3600).
 
 import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -51,6 +52,22 @@ const MAX_ACTIVE_PULLS = Number(process.env.FAIR_PULL_MAX ?? 3);
 const inFlight = new Map(); // name -> Promise<{status, body}>
 const lastPulled = new Map(); // name -> epoch ms
 let activePulls = 0;
+
+// The render is the only thing that touches disk (the source repo lives
+// in a temp dir inside pull_library.py and is deleted before it exits).
+// Renders live just long enough for the pane to browse and fetch decks,
+// then are swept; a restart starts from nothing.
+const RENDER_TTL_MS = Number(process.env.FAIR_RENDER_TTL ?? 3600) * 1000;
+const LIBRARIES_DIR = join(ROOT, "libraries");
+await rm(LIBRARIES_DIR, { recursive: true, force: true });
+setInterval(() => {
+  for (const [name, at] of lastPulled) {
+    if (Date.now() - at > RENDER_TTL_MS) {
+      lastPulled.delete(name);
+      rm(join(LIBRARIES_DIR, name), { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}, 60_000).unref();
 
 function runPull(name, href) {
   const out = join(ROOT, "libraries", name, "data");

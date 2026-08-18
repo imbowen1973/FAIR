@@ -1,14 +1,14 @@
-"""Pull a library repo and render it into the assembler's data directory.
+"""Flow a library repo into the assembler's data directory.
 
-A library is a plain git repo of markdown — no Pages, no published
-decks. This clones or updates it under .libraries/ and renders it at
-point of use, which is the invariant: the pptx is never stored or
-published, it is regenerated from the markdown whenever needed.
+git -> render -> ppt, nothing retained: the repo's tip is shallow-cloned
+(no history) into a temporary directory, rendered at point of use, and
+the source is deleted the moment the render completes. Only the render
+survives — long enough for the pane to fetch decks from it — and the
+server sweeps that too (FAIR_RENDER_TTL).
 
     python scripts/pull_library.py https://github.com/Org/Some-Library
 
-Re-run to refresh; it fast-forwards to the remote's current tip. The
-default branch is read from the remote rather than assumed to be main.
+The markdown in git remains the only stored artifact anywhere.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -49,25 +50,13 @@ def git(*args: str, cwd: Path | None = None) -> str:
     return result.stdout.strip()
 
 
-def default_branch(url: str) -> str:
-    """The remote's own HEAD, so we do not assume 'main'."""
-    for line in git("ls-remote", "--symref", url, "HEAD").splitlines():
-        if line.startswith("ref:"):
-            return line.split()[1].removeprefix("refs/heads/")
-    return "HEAD"
-
-
-def sync(url: str, ref: str | None, cache: Path) -> tuple[Path, str]:
-    ref = ref or default_branch(url)
-    if (cache / ".git").is_dir():
-        git("fetch", "--prune", "origin", cwd=cache)
-    else:
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        git("clone", "--quiet", url, str(cache))
-        git("fetch", "--prune", "origin", cwd=cache)
-    # Hard reset, not merge: the cache is a render input, not a workspace.
-    git("checkout", "--quiet", "--detach", f"origin/{ref}", cwd=cache)
-    return cache, git("rev-parse", "--short", "HEAD", cwd=cache)
+def fetch_tip(url: str, ref: str | None, dest: Path) -> str:
+    """Shallow-clone the tip only — content, no history — into dest."""
+    args = ["clone", "--quiet", "--depth", "1", "--single-branch"]
+    if ref:
+        args += ["--branch", ref]
+    git(*args, url, str(dest))
+    return git("rev-parse", "--short", "HEAD", cwd=dest)
 
 
 def resolve(root: Path) -> dict[str, Path]:
@@ -88,34 +77,35 @@ def resolve(root: Path) -> dict[str, Path]:
 def main() -> int:
     ap = argparse.ArgumentParser(
         prog="pull_library.py",
-        description="Clone/update a library repo and render it for the pane",
+        description="Flow a library repo through the renderer for the pane",
     )
     ap.add_argument("url", help="git URL of the library repo (or a local path)")
     ap.add_argument("--ref", default=None, help="branch to render (default: remote HEAD)")
     ap.add_argument("--out", type=Path, default=REPO / "assembler" / "web" / "data")
-    ap.add_argument("--cache", type=Path, default=None,
-                    help="where the clone lives (default: .libraries/<name>)")
     args = ap.parse_args()
 
     name = args.url.rstrip("/").split("/")[-1].removesuffix(".git")
-    cache = args.cache or REPO / ".libraries" / name
 
-    root, sha = sync(args.url, args.ref, cache)
-    print(f"{name} @ {sha}")
+    # The source exists only inside this block; it is gone before we exit.
+    with tempfile.TemporaryDirectory(prefix="fair-pull-") as tmp:
+        src = Path(tmp) / "src"
+        sha = fetch_tip(args.url, args.ref, src)
+        print(f"{name} @ {sha}")
 
-    paths = resolve(root)
-    try:
-        summary = build_corpus(
-            sessions_dir=paths["sessions"],
-            template=paths["template"],
-            layout_map=paths["layout_map"],
-            out_dir=args.out,
-            framework=paths.get("framework"),
-            credentials_dir=paths.get("credentials"),
-        )
-    except CorpusError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 1
+        paths = resolve(src)
+        try:
+            summary = build_corpus(
+                sessions_dir=paths["sessions"],
+                template=paths["template"],
+                layout_map=paths["layout_map"],
+                out_dir=args.out,
+                framework=paths.get("framework"),
+                credentials_dir=paths.get("credentials"),
+            )
+        except CorpusError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+
     print(
         f"wrote {summary['catalog']}: {summary['sessions']} sessions, "
         f"{summary['slides']} slides, {summary['competencies']} competencies, "
