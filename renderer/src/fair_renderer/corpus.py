@@ -118,6 +118,32 @@ def _validate_credential(
             )
 
 
+def _catalog_attribution(path: Path | None, out_dir: Path) -> dict | None:
+    """The library's funder credit, in a form a web surface can render.
+
+    The logo is copied beside the catalog and referenced by a relative
+    name, so a consumer needs nothing but the data directory.
+    """
+    if path is None:
+        return None
+    from .attribution import load_attribution
+
+    config = load_attribution(path)
+    entry = {
+        "text": config["text"],
+        "corner": config["corner"],
+        "opacity": config["opacity"],
+        "logo": None,
+    }
+    logo_path = config.get("_logo_path")
+    if logo_path:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        name = f"attribution-logo{logo_path.suffix.lower()}"
+        (out_dir / name).write_bytes(logo_path.read_bytes())
+        entry["logo"] = name
+    return entry
+
+
 def build_corpus(
     sessions_dir: Path,
     template: Path,
@@ -125,8 +151,17 @@ def build_corpus(
     out_dir: Path,
     framework: Path | None = None,
     credentials_dir: Path | None = None,
+    attribution: Path | None = None,
     warn=lambda msg: print(f"warning: {msg}", file=sys.stderr),
 ) -> dict:
+    # Rendering is the only path from content to deck, so attribution has
+    # to ride this path or it is not enforced at all. Default to the
+    # library-root convention (attribution.yaml beside sessions/) rather
+    # than requiring every caller to pass it.
+    if attribution is None:
+        candidate = sessions_dir.parent / "attribution.yaml"
+        attribution = candidate if candidate.exists() else None
+
     violations = check_assets(sessions_dir)
     if violations:
         raise CorpusError(
@@ -147,6 +182,7 @@ def build_corpus(
             session_path=md,
             template_path=template,
             layout_map_path=layout_map,
+            attribution_path=attribution,
             out_dir=out_dir / "sessions" / md.stem.replace("session-", ""),
         )
         index_doc = json.loads(result["index"].read_text())
@@ -204,6 +240,11 @@ def build_corpus(
         "competencies": dict(sorted(competencies.items())),
         "slides": slides,
         "credentials": credentials,
+        # The funder credit travels with the content, so any surface
+        # showing a library (the pane's footer, a future viewer) can
+        # display the right one without hard-coding a grant it will
+        # outlive. Null when the library declares none.
+        "attribution": _catalog_attribution(attribution, out_dir),
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / "catalog.json"
@@ -232,12 +273,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="competencies framework yaml (labels win over frontmatter)")
     ap.add_argument("--credentials", type=Path, default=None,
                     help="directory of credential yaml definitions")
+    ap.add_argument("--attribution", type=Path, default=None,
+                    help="attribution.yaml (default: beside the sessions directory)")
     args = ap.parse_args(argv)
 
     try:
         summary = build_corpus(
             args.sessions, args.template, args.layout_map, args.out,
             framework=args.framework, credentials_dir=args.credentials,
+            attribution=args.attribution,
         )
     except CorpusError as e:
         print(f"error: {e}", file=sys.stderr)

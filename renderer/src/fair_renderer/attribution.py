@@ -19,6 +19,15 @@ Config: attribution.yaml at the library root (next to sessions/):
     text: "CC-BY 4.0 · FAIR Consortium"
     logo: branding/logo.png      # optional, relative to this file
     corner: bottom-right         # or bottom-left
+    opacity: 0.45                # optional, 0-1; the stamp text
+    scale: 1.0                   # optional, multiplies the text size
+    logo_height_cm: 1.0          # optional, overrides the logo's height
+    logo_opacity: 1.0            # optional, defaults to opaque
+
+The logo is sized and faded independently of the text on purpose. An
+EU emblem carries rules the wording does not: a 1 cm minimum height,
+and no alteration — so it must be able to sit at full strength beside
+text that is small and faded.
 
 No file -> no visible stamp; the provenance extension is written
 regardless, from the session's frontmatter (dc.creator, dc.license).
@@ -61,7 +70,39 @@ def load_attribution(path: Path) -> dict:
             raise AttributionError(f"{path}: logo not found: {logo}")
         data["_logo_path"] = logo_path
     data["corner"] = corner
+
+    opacity = data.get("opacity", 1.0)
+    if not isinstance(opacity, (int, float)) or not 0 < opacity <= 1:
+        raise AttributionError(f"{path}: opacity must be a number in (0, 1]")
+    data["opacity"] = float(opacity)
+
+    scale = data.get("scale", 1.0)
+    if not isinstance(scale, (int, float)) or not 0 < scale <= 4:
+        raise AttributionError(f"{path}: scale must be a number in (0, 4]")
+    data["scale"] = float(scale)
+
+    # The logo is sized and faded on its own terms: an EU emblem has a
+    # 1 cm minimum height and must not be altered, so it cannot be tied
+    # to whatever keeps the wording unobtrusive.
+    height_cm = data.get("logo_height_cm")
+    if height_cm is not None:
+        if not isinstance(height_cm, (int, float)) or not 0 < height_cm <= 10:
+            raise AttributionError(f"{path}: logo_height_cm must be a number in (0, 10]")
+        data["logo_height_cm"] = float(height_cm)
+
+    logo_opacity = data.get("logo_opacity", 1.0)
+    if not isinstance(logo_opacity, (int, float)) or not 0 < logo_opacity <= 1:
+        raise AttributionError(f"{path}: logo_opacity must be a number in (0, 1]")
+    data["logo_opacity"] = float(logo_opacity)
     return data
+
+
+def _apply_alpha(color_element, opacity: float) -> None:
+    """DrawingML alpha: 0-100000, on a colour or a blip fix."""
+    if opacity >= 1:
+        return
+    alpha = etree.SubElement(color_element, f"{{{A_NS}}}alpha")
+    alpha.set("val", str(int(round(opacity * 100000))))
 
 
 def _lock(nv_pr_element, tag: str, attrs: tuple[str, ...]) -> None:
@@ -97,11 +138,18 @@ def stamp_slide(slide, prs, config: dict, build_dir: Path, meta: dict) -> None:
     """Layer 1: the visible, locked stamp."""
     text = config["text"]
     corner = config["corner"]
+    opacity = config.get("opacity", 1.0)
+    scale = config.get("scale", 1.0)
+    logo_opacity = config.get("logo_opacity", 1.0)
+    height_cm = config.get("logo_height_cm")
     margin = Emu(int(0.12 * _EMU_IN))
-    box_h = Emu(int(0.24 * _EMU_IN))
-    box_w = Emu(int(3.4 * _EMU_IN))
-    logo_h = Emu(int(0.26 * _EMU_IN))
-    top = prs.slide_height - box_h - margin
+    box_h = Emu(int(0.24 * scale * _EMU_IN))
+    box_w = Emu(int(3.4 * scale * _EMU_IN))
+    logo_h = Emu(
+        int((height_cm / 2.54 if height_cm else 0.26 * scale) * _EMU_IN)
+    )
+    # Sit the wording on the logo's baseline band when the logo is taller.
+    top = prs.slide_height - max(box_h, logo_h) - margin + (max(box_h, logo_h) - box_h)
 
     logo_path = config.get("_logo_path")
     logo_w = Emu(0)
@@ -127,6 +175,12 @@ def stamp_slide(slide, prs, config: dict, build_dir: Path, meta: dict) -> None:
             "picLocks",
             ("noSelect", "noMove", "noResize", "noGrp", "noChangeAspect"),
         )
+        # alphaModFix inside the blip is how DrawingML fades a picture;
+        # it survives re-theming because it is part of the fill, not a style.
+        if logo_opacity < 1:
+            blip = pic._element.blipFill.find(f"{{{A_NS}}}blip")
+            fix = etree.SubElement(blip, f"{{{A_NS}}}alphaModFix")
+            fix.set("amt", str(int(round(logo_opacity * 100000))))
 
     gap = Emu(int(0.06 * _EMU_IN)) if logo_path else Emu(0)
     if corner == "bottom-right":
@@ -143,10 +197,12 @@ def stamp_slide(slide, prs, config: dict, build_dir: Path, meta: dict) -> None:
     paragraph.alignment = align
     run = paragraph.add_run()
     run.text = text
-    run.font.size = Pt(8)
+    run.font.size = Pt(max(1, round(8 * scale)))
     from pptx.dml.color import RGBColor
 
     run.font.color.rgb = RGBColor(0x8A, 0x8A, 0x8A)
+    # Same fade on the text, so mark and wording read as one stamp.
+    _apply_alpha(run.font.color._xFill.find(f"{{{A_NS}}}srgbClr"), opacity)
     _lock(
         tb._element.nvSpPr.cNvSpPr,
         "spLocks",

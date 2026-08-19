@@ -1,12 +1,77 @@
+/* Palette as tokens, defined light-first on bare :root.
+   The pane previously set a text colour but no background, so in
+   PowerPoint's dark theme the host painted dark grey behind near-black
+   text — unreadable. Every colour below is paired: nothing inherits a
+   background from the host, and each pair clears WCAG AA (4.5:1 for
+   body text, 3:1 for large text and UI boundaries). */
 :root {
-  --accent: #2c6e9e;
-  --border: #d5dbe1;
-  --muted: #5a6672;
+  --bg: #ffffff;
+  --bg-sunken: #f4f6f8;
+  --fg: #1c2530;          /* on --bg: 15.5:1 */
+  --muted: #55606c;       /* on --bg:  6.4:1 */
+  --border: #c3ccd5;
+  --border-strong: #8a95a1;
+  --accent: #1d5a86;      /* on --bg:  7.4:1 */
+  --accent-fg: #ffffff;   /* on --accent: 7.4:1 */
+  --danger: #b3261e;      /* on --bg:  6.5:1 */
+  --ok-bg: #eef7ef;
+  --ok-border: #2e7d32;
+  --error-bg: #fdf0ee;
+  --focus: #0f6cbd;
+
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
+  color-scheme: light dark;
 }
 
-body { margin: 0; color: #1c2530; }
+/* Office stamps no attribute for "follow the system", so the media query
+   carries the default and the explicit-choice selectors below win over it. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1f2329;
+    --bg-sunken: #272c33;
+    --fg: #e9edf1;        /* on --bg: 13.4:1 */
+    --muted: #b0bac4;     /* on --bg:  8.0:1 */
+    --border: #414a54;
+    --border-strong: #6c7783;
+    --accent: #6fb3e8;    /* on --bg:  7.0:1 */
+    --accent-fg: #10151a; /* on --accent: 8.1:1 */
+    --danger: #f2938c;    /* on --bg:  7.0:1 */
+    --ok-bg: #1d2b1f;
+    --ok-border: #6cc070;
+    --error-bg: #33211f;
+    --focus: #6fb3e8;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #1f2329;
+  --bg-sunken: #272c33;
+  --fg: #e9edf1;
+  --muted: #b0bac4;
+  --border: #414a54;
+  --border-strong: #6c7783;
+  --accent: #6fb3e8;
+  --accent-fg: #10151a;
+  --danger: #f2938c;
+  --ok-bg: #1d2b1f;
+  --ok-border: #6cc070;
+  --error-bg: #33211f;
+  --focus: #6fb3e8;
+}
+
+body {
+  margin: 0;
+  /* Explicit, always: a transparent body borrows the host's colour. */
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* The UA's [hidden] rule is display:none at the lowest specificity, so
+   any id or class rule setting display (#funder, .add-source) silently
+   beats it and the element stays on screen. The pane toggles visibility
+   with .hidden throughout, so make it win. */
+[hidden] { display: none !important; }
 
 header {
   padding: 12px 16px;
@@ -19,56 +84,61 @@ main { padding: 12px 16px; display: grid; gap: 16px; }
 
 label { display: block; margin-bottom: 4px; font-weight: 600; }
 
-select {
+select,
+input[type="search"],
+input[type="text"] {
   width: 100%;
+  box-sizing: border-box;
   padding: 6px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+/* Every interactive control keeps a visible focus ring — the tree is
+   fully keyboard-operable and invisible focus would strand a keyboard
+   user mid-tree. Never removed, only styled. */
+:where(a, button, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 h2 { font-size: 13px; margin: 0 0 8px; }
 
-.add-source { display: flex; gap: 6px; margin-top: 6px; }
-.add-source input {
-  flex: 1;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 12px;
-}
-.add-source button {
-  border: 1px solid var(--border);
-  background: #fff;
-  border-radius: 4px;
-  padding: 5px 10px;
-  cursor: pointer;
-}
-
 .corpus-row { display: flex; gap: 6px; align-items: center; }
 .corpus-row select { flex: 1; min-width: 0; }
 .corpus-row button {
-  border: 1px solid var(--border);
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--fg);
   border-radius: 4px;
-  width: 28px;
-  height: 28px;
+  /* 28px+ keeps the icon buttons at a usable pointer target. */
+  min-width: 30px;
+  height: 30px;
   line-height: 1;
   font-size: 15px;
   cursor: pointer;
   flex: none;
 }
+.corpus-row button:hover { background: var(--bg-sunken); }
 
-#search {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
+.add-source { display: flex; gap: 6px; margin-top: 6px; }
+.add-source input { flex: 1; font-size: 12px; }
+.add-source button {
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--fg);
   border-radius: 4px;
-  margin-bottom: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
 }
 
-.tree-head { display: flex; align-items: baseline; justify-content: space-between; }
-button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
+#search { margin-bottom: 6px; }
+
+.tree-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 
 #tree { max-height: 46vh; overflow-y: auto; }
 
@@ -84,7 +154,7 @@ button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
   background: none;
   cursor: pointer;
   padding: 0;
-  width: 14px;
+  width: 16px;
   flex: none;
   color: var(--muted);
   font-size: 10px;
@@ -96,7 +166,7 @@ button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
 .node-kind-module > .node-row > .node-label,
 .node-kind-day > .node-row > .node-label { font-weight: 600; font-size: 13px; }
 .node-kind-session > .node-row > .node-label { color: var(--muted); font-size: 12px; }
-.node-children { margin-left: 14px; border-left: 1px solid var(--border); padding-left: 6px; }
+.node-children { margin-left: 15px; border-left: 1px solid var(--border); padding-left: 6px; }
 .count, .dok, .ects { color: var(--muted); font-size: 11px; flex: none; }
 
 .hit { padding: 6px 0; border-bottom: 1px solid var(--border); }
@@ -107,25 +177,32 @@ button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #fff;
-  background: var(--muted);
+  color: var(--accent-fg);
+  background: var(--accent);
   border-radius: 3px;
   padding: 1px 4px;
 }
-.hit-field[data-field="notes"] { background: var(--accent); }
+/* The badge reads as bare "notes" without help, so taskpane.js gives it
+   an aria-label of "matched in <field>". */
 .hit-snippet { color: var(--muted); font-size: 12px; margin: 2px 0 0 22px; }
 .empty { color: var(--muted); font-size: 12px; padding: 8px 0; }
 
 button.primary {
   background: var(--accent);
-  color: #fff;
-  border: none;
+  color: var(--accent-fg);
+  border: 1px solid var(--accent);
   border-radius: 4px;
   padding: 8px 14px;
   font-size: 14px;
   cursor: pointer;
 }
-button.primary:disabled { opacity: 0.5; cursor: default; }
+/* Not opacity: fading the whole button drags contrast under AA. */
+button.primary:disabled {
+  background: var(--bg-sunken);
+  color: var(--muted);
+  border-color: var(--border);
+  cursor: default;
+}
 
 .hint { color: var(--muted); font-size: 12px; }
 
@@ -133,18 +210,52 @@ button.primary:disabled { opacity: 0.5; cursor: default; }
   padding: 8px 10px;
   border-radius: 4px;
   border: 1px solid var(--border);
-  background: #f4f6f8;
+  background: var(--bg-sunken);
+  color: var(--fg);
 }
-.status.error { border-color: #c0392b; background: #fdf0ee; }
-.status.ok { border-color: #2e7d32; background: #eef7ef; }
+.status.error { border-color: var(--danger); background: var(--error-bg); }
+.status.ok { border-color: var(--ok-border); background: var(--ok-bg); }
 
 button.link {
   margin-top: 6px;
   padding: 0;
   border: 0;
   background: none;
-  color: #a4262c;
+  color: var(--danger);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
+
+#funder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 14px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+#funder-logo { height: 26px; width: auto; flex: none; }
+.funder-text { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
+.funder-text .grant { font-variant-numeric: tabular-nums; }
+
+/* Available to screen readers, invisible on screen. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Windows High Contrast: let the system palette through rather than
+   fighting it with forced colours of our own. */
+@media (forced-colors: active) {
+  .hit-field, button.primary { forced-color-adjust: none; }
+  :where(button, input, select):focus-visible { outline: 2px solid Highlight; }
 }

@@ -9,12 +9,20 @@
 // determinism — because it IS the same package, served as static .py
 // files under /py/ and imported inside Pyodide.
 
+const LIB_DIR = "/fairlib";
+const OUT_DIR = "/out";
+
 const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 
-// fair_renderer modules to load into the Pyodide filesystem.
-const MODULES = [
+// fair_renderer modules to load into the Pyodide filesystem. This must
+// cover every module reachable from corpus.build_corpus — a missing name
+// is a ModuleNotFoundError at render time, in the browser, where nothing
+// else would catch it. tests/wasm-modules.test.mjs derives the required
+// set from the Python sources and fails if this list drifts.
+export const MODULES = [
   "__init__",
   "assets",
+  "attribution",
   "corpus",
   "creation_id",
   "layoutmap",
@@ -126,19 +134,19 @@ import json, shutil, sys
 from pathlib import Path
 if "/py" not in sys.path:
     sys.path.insert(0, "/py")
-shutil.rmtree("/out", ignore_errors=True)
+shutil.rmtree("${OUT_DIR}", ignore_errors=True)
 from fair_renderer.corpus import build_corpus
-fw = Path("/lib/competencies/framework.yaml")
-cd = Path("/lib/credentials")
+fw = Path("${LIB_DIR}/competencies/framework.yaml")
+cd = Path("${LIB_DIR}/credentials")
 build_corpus(
-    sessions_dir=Path("/lib/sessions"),
-    template=Path("/lib/template.pptx"),
-    layout_map=Path("/lib/layout-map.yaml"),
-    out_dir=Path("/out"),
+    sessions_dir=Path("${LIB_DIR}/sessions"),
+    template=Path("${LIB_DIR}/template.pptx"),
+    layout_map=Path("${LIB_DIR}/layout-map.yaml"),
+    out_dir=Path("${OUT_DIR}"),
     framework=fw if fw.exists() else None,
     credentials_dir=cd if cd.exists() else None,
 )
-Path("/out/catalog.json").read_text()
+Path("${OUT_DIR}/catalog.json").read_text()
 `;
 
 /**
@@ -153,9 +161,10 @@ export async function loadLibraryFromGitHub(owner, repo, status = () => {}) {
   const paths = selectLibraryPaths(await fetchRepoTree(owner, repo));
   const files = await fetchFiles(owner, repo, paths, status);
 
-  py.runPython('import shutil; shutil.rmtree("/lib", ignore_errors=True)');
+  // Clear only our own mount. Never /lib — that is Pyodide's stdlib.
+  py.runPython(`import shutil; shutil.rmtree("${LIB_DIR}", ignore_errors=True)`);
   for (const [path, bytes] of files) {
-    const full = `/lib/${path}`;
+    const full = `${LIB_DIR}/${path}`;
     py.FS.mkdirTree(full.slice(0, full.lastIndexOf("/")));
     py.FS.writeFile(full, bytes);
   }
@@ -166,8 +175,21 @@ export async function loadLibraryFromGitHub(owner, repo, status = () => {}) {
 
   const decks = new Map();
   for (const session of catalog.sessions) {
-    decks.set(session.pptx, py.FS.readFile(`/out/${session.pptx}`));
+    decks.set(session.pptx, py.FS.readFile(`${OUT_DIR}/${session.pptx}`));
   }
+
+  // The funder logo the build copied beside the catalog. Comes back as
+  // bytes because there is no server to fetch it from.
+  const assets = new Map();
+  const logo = catalog.attribution?.logo;
+  if (logo) {
+    try {
+      assets.set(logo, py.FS.readFile(`${OUT_DIR}/${logo}`));
+    } catch {
+      /* library declares a logo the build did not emit: text-only credit */
+    }
+  }
+
   status("");
-  return { catalog, decks };
+  return { catalog, decks, assets };
 }

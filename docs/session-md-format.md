@@ -124,6 +124,11 @@ hierarchy without writing anything.
 
 ### Layouts
 
+Layouts are addressed by key and bound to the template's own layouts
+by `layout-map.yaml`. The Core profile below is what any stock
+PowerPoint template already provides — see `template-profile.md` for
+the contract and `fair-template` for generating the map.
+
 The stand-in template ships ten layouts (regions in parentheses):
 
 | Layout       | Regions                                              |

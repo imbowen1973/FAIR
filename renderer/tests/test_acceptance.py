@@ -433,8 +433,11 @@ def test_attribution_logo_stamped_with_metadata(tmp_path):
     lib = tmp_path / "lib"
     (lib / "branding").mkdir(parents=True)
     Image.new("RGBA", (120, 120), (44, 110, 158, 255)).save(lib / "branding" / "logo.png")
+    # Explicit utf-8: the loader reads utf-8, and on Windows the default
+    # locale encoding is cp1252, which mangles the middle dot on write.
     (lib / "attribution.yaml").write_text(
-        'text: "CC-BY 4.0 · FAIR Consortium"\nlogo: branding/logo.png\n'
+        'text: "CC-BY 4.0 · FAIR Consortium"\nlogo: branding/logo.png\n',
+        encoding="utf-8",
     )
     out = tmp_path / "out"
     result = render_session(
@@ -585,3 +588,228 @@ def test_container_with_both_sessions_and_days_raises(tmp_path):
                 ],
             },
         )
+
+
+def test_attribution_opacity_and_scale_reach_the_xml(tmp_path):
+    """Semi-transparency is a render concern: alpha lands in the slide XML."""
+    from PIL import Image
+
+    lib = tmp_path / "lib"
+    (lib / "branding").mkdir(parents=True)
+    Image.new("RGBA", (240, 80), (44, 110, 158, 255)).save(lib / "branding" / "logo.png")
+    (lib / "attribution.yaml").write_text(
+        'text: "Funded by the European Union · Agreement No: 101183898"\n'
+        "logo: branding/logo.png\n"
+        "corner: bottom-right\n"
+        "opacity: 0.45\n"
+        "scale: 0.9\n"
+        # Fading a mark is opt-in: logo_opacity defaults to fully opaque
+        # so an emblem is never altered by accident.
+        "logo_opacity: 0.45\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    result = render_session(
+        session_path=EXAMPLES / "sessions" / "session-02.md",
+        template_path=EXAMPLES / "template.pptx",
+        layout_map_path=EXAMPLES / "layout-map.yaml",
+        out_dir=out,
+        attribution_path=lib / "attribution.yaml",
+    )
+    with zipfile.ZipFile(result["pptx"]) as z:
+        xml = z.read("ppt/slides/slide1.xml").decode("utf-8")
+    # 0.45 -> 45000 in DrawingML's 0-100000 alpha scale.
+    assert 'alphaModFix amt="45000"' in xml, "logo is not faded"
+    assert '<a:alpha val="45000"/>' in xml, "stamp text is not faded"
+
+
+def test_attribution_rejects_out_of_range_opacity(tmp_path):
+    from fair_renderer.attribution import AttributionError, load_attribution
+
+    path = tmp_path / "attribution.yaml"
+    path.write_text('text: "x"\nopacity: 1.5\n', encoding="utf-8")
+    with pytest.raises(AttributionError, match="opacity"):
+        load_attribution(path)
+
+
+def test_attribution_defaults_to_opaque(tmp_path):
+    from fair_renderer.attribution import load_attribution
+
+    path = tmp_path / "attribution.yaml"
+    path.write_text('text: "x"\n', encoding="utf-8")
+    config = load_attribution(path)
+    assert config["opacity"] == 1.0 and config["scale"] == 1.0
+
+
+def test_catalog_carries_attribution_and_copies_the_logo(tmp_path):
+    """The funder credit travels with the content, not with the tool."""
+    import shutil
+
+    from PIL import Image
+
+    from fair_renderer.corpus import build_corpus
+
+    lib = tmp_path / "lib"
+    shutil.copytree(EXAMPLES / "sessions", lib / "sessions")
+    for stale in (lib / "sessions").glob("session-0[23].md"):
+        stale.unlink()
+    (lib / "branding").mkdir()
+    Image.new("RGBA", (200, 60), (0, 51, 153, 255)).save(lib / "branding" / "eu.png")
+    (lib / "attribution.yaml").write_text(
+        'text: "Funded by the European Union · Agreement No: 101183898"\n'
+        "logo: branding/eu.png\nopacity: 0.45\n",
+        encoding="utf-8",
+    )
+
+    out = tmp_path / "out"
+    # attribution.yaml sits beside sessions/, so it is found without asking.
+    build_corpus(
+        sessions_dir=lib / "sessions",
+        template=EXAMPLES / "template.pptx",
+        layout_map=EXAMPLES / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda msg: None,
+    )
+    catalog = json.loads((out / "catalog.json").read_text())
+    credit = catalog["attribution"]
+    assert "101183898" in credit["text"]
+    assert credit["opacity"] == 0.45
+    # Referenced relatively and actually present, so a consumer needs
+    # nothing but the data directory.
+    assert credit["logo"] == "attribution-logo.png"
+    assert (out / "attribution-logo.png").exists()
+
+
+def test_catalog_attribution_is_null_without_a_config(tmp_path):
+    import shutil
+
+    from fair_renderer.corpus import build_corpus
+
+    lib = tmp_path / "lib"
+    shutil.copytree(EXAMPLES / "sessions", lib / "sessions")
+    out = tmp_path / "out"
+    build_corpus(
+        sessions_dir=lib / "sessions",
+        template=EXAMPLES / "template.pptx",
+        layout_map=EXAMPLES / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda msg: None,
+    )
+    catalog = json.loads((out / "catalog.json").read_text())
+    assert catalog["attribution"] is None
+
+
+def test_logo_sizing_and_opacity_are_independent_of_the_text(tmp_path):
+    """EU rules: emblem >= 1 cm and unaltered, while the wording stays faded."""
+    from PIL import Image
+
+    lib = tmp_path / "lib"
+    (lib / "branding").mkdir(parents=True)
+    # 4.75:1, the real emblem's aspect ratio.
+    Image.new("RGBA", (1130, 238), (0, 51, 153, 255)).save(lib / "branding" / "eu.png")
+    (lib / "attribution.yaml").write_text(
+        'text: "Co-funded by the European Union · Agreement No: 101183898"\n'
+        "logo: branding/eu.png\nopacity: 0.45\nscale: 0.9\n"
+        "logo_height_cm: 1.0\nlogo_opacity: 1.0\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    result = render_session(
+        session_path=EXAMPLES / "sessions" / "session-02.md",
+        template_path=EXAMPLES / "template.pptx",
+        layout_map_path=EXAMPLES / "layout-map.yaml",
+        out_dir=out,
+        attribution_path=lib / "attribution.yaml",
+    )
+    with zipfile.ZipFile(result["pptx"]) as z:
+        xml = z.read("ppt/slides/slide1.xml").decode("utf-8")
+
+    # The wording is faded; the emblem is not touched.
+    assert '<a:alpha val="45000"/>' in xml, "stamp text should be faded"
+    assert "alphaModFix" not in xml, "the EU emblem must not be altered"
+
+    # 1 cm = 360000 EMU, within rounding.
+    root = etree.fromstring(xml.encode("utf-8"))
+    ext = root.find(f".//{{{P_NS}}}pic/{{{P_NS}}}spPr/{{{A_NS}}}xfrm/{{{A_NS}}}ext")
+    assert ext is not None, "no picture on the slide"
+    cy = int(ext.get("cy"))
+    assert abs(cy - 360000) < 2000, f"emblem is {cy / 360000:.2f} cm high, not 1 cm"
+
+
+# --- template profile / fair-template ------------------------------------
+
+STOCK = Path(__import__("pptx").__file__).parent / "templates" / "default.pptx"
+
+
+def test_stock_powerpoint_template_conforms_to_the_core_profile():
+    """The whole point: a plain PowerPoint template works unedited."""
+    from fair_renderer.template_inspect import CORE, inspect_template
+
+    results = {r.key: r for r in inspect_template(STOCK)}
+    for spec in CORE:
+        result = results[spec.key]
+        assert result.layout_name is not None, f"{spec.key} unmatched in a stock template"
+        assert not result.missing, f"{spec.key} unbound regions: {result.missing}"
+
+
+def test_generated_map_renders_real_content_on_a_stock_template(tmp_path):
+    from fair_renderer.layoutmap import load_layout_map
+    from fair_renderer.template_inspect import inspect_template, to_layout_map
+
+    map_path = tmp_path / "layout-map.yaml"
+    map_path.write_text(to_layout_map(inspect_template(STOCK)), encoding="utf-8")
+    # It must survive the same loader the build uses, then actually bind.
+    load_layout_map(map_path)
+    result = render_session(
+        session_path=EXAMPLES / "sessions" / "session-02.md",
+        template_path=STOCK,
+        layout_map_path=map_path,
+        out_dir=tmp_path / "out",
+    )
+    assert result["pptx"].exists()
+
+
+def test_inspector_reproduces_the_hand_written_map():
+    """The generator agrees with the map this repo has used all along."""
+    import yaml
+
+    from fair_renderer.template_inspect import inspect_template, to_layout_map
+
+    generated = yaml.safe_load(to_layout_map(inspect_template(EXAMPLES / "template.pptx")))
+    committed = yaml.safe_load((EXAMPLES / "layout-map.yaml").read_text(encoding="utf-8"))
+    for key, entry in committed.items():
+        assert key in generated, f"inspector lost layout {key}"
+        assert generated[key]["layout_name"] == entry["layout_name"]
+        assert generated[key]["regions"] == entry["regions"], key
+
+
+def test_left_and_right_come_from_geometry_not_index_order(tmp_path):
+    """A designer may ship Two Content with the right pane at the lower idx.
+
+    Binding by index order would mirror every split slide silently.
+    """
+    from pptx import Presentation
+
+    from fair_renderer.template_inspect import _by_x, _r_two_content, Placeholder
+
+    # idx 1 sits on the RIGHT, idx 2 on the left.
+    title = Placeholder(0, None, 0, 0, 100, 10)
+    right_at_idx1 = Placeholder(1, None, 5_000_000, 1_000_000, 4_000_000, 3_000_000)
+    left_at_idx2 = Placeholder(2, None, 500_000, 1_000_000, 4_000_000, 3_000_000)
+    bound = _r_two_content(title, [right_at_idx1, left_at_idx2])
+    assert bound["left"] == 2 and bound["right"] == 1
+    assert [p.idx for p in _by_x([right_at_idx1, left_at_idx2])] == [2, 1]
+
+
+def test_missing_picture_placeholder_is_reported_not_silently_bound():
+    from fair_renderer.template_inspect import LayoutResult, report
+
+    result = LayoutResult(
+        key="Picture",
+        layout_name="Picture with Caption",
+        regions={"title": 0, "caption": 2},
+        missing=["picture"],
+        notes=["no PICTURE placeholder: images here would be free-positioned, not template-bound"],
+    )
+    text = report([result])
+    assert "PARTIAL" in text and "picture" in text and "free-positioned" in text

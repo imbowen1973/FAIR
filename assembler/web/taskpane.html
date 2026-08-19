@@ -14,7 +14,9 @@
   </header>
 
   <main>
-    <div id="status" class="status" hidden></div>
+    <!-- Progress and errors are announced, not just shown: the render can
+         take tens of seconds and a silent pane looks hung. -->
+    <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 
     <section id="step-source">
       <label for="source">Corpus</label>
@@ -32,6 +34,7 @@
     <section id="step-find">
       <label for="search">Find</label>
       <input id="search" type="search" placeholder="Search titles and speaker notes…" spellcheck="false"/>
+      <label for="competency" class="visually-hidden">Filter by competency</label>
       <select id="competency" disabled>
         <option value="">All competencies</option>
       </select>
@@ -42,7 +45,7 @@
         <h2 id="tree-heading">Course</h2>
         <button id="expand-all" class="link quiet">Expand all</button>
       </div>
-      <div id="tree"></div>
+      <div id="tree" role="tree" aria-labelledby="tree-heading"></div>
     </section>
 
     <section id="step-assemble" hidden>
@@ -54,6 +57,14 @@
       </p>
     </section>
   </main>
+
+  <!-- Funder credit for the library currently open. Filled from that
+       library's attribution.yaml via the catalog — never hard-coded
+       here, because it differs per library and outlives any one grant. -->
+  <footer id="funder" hidden>
+    <img id="funder-logo" alt="" hidden/>
+    <p id="funder-text" class="funder-text"></p>
+  </footer>
 
   <script type="module" src="taskpane.js"></script>
 </body>

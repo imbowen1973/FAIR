@@ -14,6 +14,7 @@ test = ["pytest>=7.0"]
 [project.scripts]
 fair-render = "fair_renderer.cli:main"
 fair-corpus = "fair_renderer.corpus:main"
+fair-template = "fair_renderer.template_inspect:main"
 fair-assets = "fair_renderer.assets:main"
 fair-audit = "fair_renderer.audit:main"
 
