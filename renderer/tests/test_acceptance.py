@@ -411,7 +411,7 @@ def test_attribution_notes_line(rendered):
         notes = b"".join(
             z.read(n) for n in z.namelist() if n.startswith("ppt/notesSlides/notesSlide")
         )
-    assert b"Source: CC-BY 4.0" in notes
+    assert b"Source: Example Grant" in notes
     assert b"01/s01-03" in notes
 
 
