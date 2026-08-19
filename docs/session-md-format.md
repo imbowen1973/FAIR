@@ -178,12 +178,17 @@ Enforced by `scripts/check_assets.py`, which gates every corpus build
 ## Attribution
 
 An optional `attribution.yaml` at the library root (next to
-`sessions/`) stamps every rendered slide:
+`sessions/`) stamps every rendered slide. It is configured **per
+library, at creation**, and identifies the **grant / funding
+programme** behind the content — for EU co-funded projects that means
+the exact grant name and the official "Co-funded by the European
+Union" emblem (from the Commission's visual identity portal), per the
+programme's visibility rules:
 
 ```yaml
-text: "CC-BY 4.0 · FAIR Consortium"
-logo: branding/logo.png   # optional
-corner: bottom-right      # or bottom-left
+text: "Co-funded by the European Union · <Project name, grant no.> · CC-BY 4.0"
+logo: branding/eu-cofunded.png   # optional
+corner: bottom-right             # or bottom-left
 ```
 
 Three layers, all injected at render time — including when someone

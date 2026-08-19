@@ -1,4 +1,17 @@
-text: "CC-BY 4.0 · FAIR Consortium"
+# Attribution is configured PER LIBRARY, at creation. It identifies the
+# grant / funding programme behind the content — not the tooling.
+#
+# For an EU co-funded project the visibility rules apply: use the exact
+# grant name and the official "Co-funded by the European Union" emblem
+# (download it from the European Commission's visual identity portal —
+# never a redrawn copy) as the logo.
+#
+# text:   what appears on every slide, e.g.
+#         "Co-funded by the European Union · <Project name, grant no.>"
+# logo:   path relative to this file, e.g. branding/eu-cofunded.png
+# corner: bottom-right (default) or bottom-left
+
+# Example-fixture values (this repo's examples are not a real project):
+text: "Example Grant 2026-1-XX01-KA220-VET-000000 · CC-BY 4.0"
 corner: bottom-right
-# Optional logo, relative to this file, e.g.:
-# logo: branding/logo.png
+# logo: branding/eu-cofunded.png
