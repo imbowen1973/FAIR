@@ -172,7 +172,11 @@ function fillRegion(box, value, style, theme, scale, commit, editable) {
  */
 export function drawSlide(
   host,
-  { geometry, layoutKey, slide, activeRegion, editable = false, compact = false, onChange, onSelectRegion }
+  {
+    geometry, layoutKey, slide, activeRegion,
+    editable = false, compact = false, maxHeightPx = null,
+    onChange, onSelectRegion,
+  }
 ) {
   host.innerHTML = "";
   const layout = geometry?.layouts?.[layoutKey];
@@ -192,7 +196,15 @@ export function drawSlide(
   stage.style.background = theme.bg1 || "#fff";
   stage.style.color = theme.tx1 || "#000";
 
-  const stageWidth = host.clientWidth || (compact ? 150 : 640);
+  const aspect = geometry.slide?.aspect || 1.7778;
+  // Fit the room available. A slide sized only by width fills the pane
+  // and pushes the notes below the fold, which is where they get
+  // forgotten — and they are the longest thing an author writes.
+  const available = host.clientWidth || (compact ? 150 : 640);
+  const stageWidth = maxHeightPx
+    ? Math.min(available, Math.round(maxHeightPx * aspect))
+    : available;
+  stage.style.width = `${stageWidth}px`;
   const scale = stageWidth / (geometry.slide?.widthPt || 720);
 
   const unplaced = new Set();
@@ -214,6 +226,15 @@ export function drawSlide(
     box.style.width = `${rect.w * 100}%`;
     box.style.height = `${rect.h * 100}%`;
     box.dataset.region = region;
+    // PowerPoint insets text inside a placeholder — a tenth of an inch by
+    // default, which is most of the gutter between two columns. Without
+    // it, side-by-side regions look like they collide.
+    const inset = rect.inset;
+    if (inset) {
+      box.style.padding =
+        `${inset.t * stageWidth / aspect}px ${inset.r * stageWidth}px ` +
+        `${inset.b * stageWidth / aspect}px ${inset.l * stageWidth}px`;
+    }
 
     fillRegion(
       box,

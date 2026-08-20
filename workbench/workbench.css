@@ -107,6 +107,11 @@ button.link.danger { color: var(--danger); }
   padding: 10px 18px; border-bottom: 1px solid var(--border);
 }
 .bar h2 { margin: 0; font-size: 15px; }
+.bar-repo { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+#repo-switch {
+  font-size: 12px; padding: 3px 6px; max-width: 260px;
+  color: var(--muted); border-color: var(--border);
+}
 .actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .muted { color: var(--muted); font-size: 12px; }
 
@@ -208,7 +213,7 @@ button.mark {
 }
 .region {
   position: absolute; overflow: hidden;
-  padding: 1px 2px;
+  /* Padding comes from the template's own text insets, set inline. */
   display: flex; flex-direction: column; justify-content: flex-start;
 }
 .region p { margin: 0 0 0.25em; }
@@ -279,6 +284,7 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
 /* ---- the editing surface ------------------------------------------- */
 .editor { display: flex; flex-direction: column; gap: 10px; }
 .canvas { max-width: 900px; width: 100%; }
+.canvas .stage { margin: 0 auto; }
 .canvas-hint { max-width: 900px; margin: 0; }
 
 .stage.editable .region[data-editable] { cursor: text; }
@@ -304,3 +310,10 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
 .notes-head { display: flex; align-items: baseline; gap: 10px; }
 .notes-head h3 { font-size: 13px; margin: 0 0 4px; }
 .notes-field .rt { min-height: 6em; }
+
+/* Icons sit on the text line and follow the theme through currentColor. */
+.icon { flex: none; vertical-align: -2px; }
+button.with-icon {
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.actions { flex-wrap: wrap; }

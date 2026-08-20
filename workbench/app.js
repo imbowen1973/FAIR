@@ -8,6 +8,7 @@
 import { brokerProvider, patProvider, signOut, storedLogin, storedToken } from "./auth.js";
 import { BROKER_URL, CLIENT_ID } from "./config.js";
 import { draftBranch, GitHub, parseRepo } from "./github.js";
+import { decorate } from "./icons.js";
 import {
   blankSlide,
   isLibrary,
@@ -96,6 +97,25 @@ async function afterSignIn(token, login) {
   await listRepos();
 }
 
+/** The library picker, in the bar, once one is open. */
+function renderRepoSwitch(current) {
+  const select = $("repo-switch");
+  select.innerHTML = "";
+  for (const option of [...$("repo").options]) {
+    const copy = document.createElement("option");
+    copy.value = option.value;
+    copy.textContent = option.value;
+    select.appendChild(copy);
+  }
+  if (![...select.options].some((o) => o.value === current)) {
+    const extra = document.createElement("option");
+    extra.value = current;
+    extra.textContent = current;
+    select.appendChild(extra);
+  }
+  select.value = current;
+}
+
 async function listRepos() {
   status("Loading your repositories…");
   const select = $("repo");
@@ -153,7 +173,11 @@ async function openRepo(fullName) {
     state.slideIndex = 0;
 
     $("workspace").hidden = false;
+    // The picker moves into the bar: once a library is open, the panel it
+    // came from is a screenful of nothing between the header and the work.
+    $("signed-in").hidden = true;
     $("course-title").textContent = state.library.course.title || fullName;
+    renderRepoSwitch(fullName);
     renderOutline();
     renderSlide();
     if (state.canWrite) {
@@ -389,6 +413,9 @@ function renderCanvas({ redraw = true } = {}) {
       slide: data,
       activeRegion,
       editable: true,
+      // Leave room for the metadata and notes beneath, or they sit below
+      // the fold and get forgotten.
+      maxHeightPx: Math.max(260, Math.round(window.innerHeight * 0.46)),
       onChange: (region, value) => {
         const current = slideData(state.slideIndex);
         const next = { ...current };
@@ -434,10 +461,20 @@ function renderRibbon() {
       if (!region) return;
       const current = slideData(state.slideIndex);
       const value = current[region];
+
       // Colour belongs to the region, not to a run: the grammar has no
       // inline colour, precisely so a rebrand can recolour every deck.
-      if (typeof value !== "object" || value === null) return;
-      const next = { ...value };
+      // A bare string has nowhere to carry one, so colouring a title
+      // promotes it to a paragraph — same words, same look, now with a
+      // place to put the slot.
+      let next;
+      if (typeof value === "object" && value !== null) {
+        next = { ...value };
+      } else if (slot) {
+        next = { type: "p", text: String(value ?? "") };
+      } else {
+        return; // a bare string has no colour to clear
+      }
       if (slot) next.color = slot;
       else delete next.color;
       commitSlide({ ...current, [region]: next });
@@ -694,6 +731,25 @@ $("signout").addEventListener("click", () => {
   location.reload();
 });
 $("open").addEventListener("click", () => openRepo($("repo").value));
+$("repo-switch").addEventListener("change", (e) => {
+  if (dirty() && !confirm("You have unsaved changes. Switch library anyway?")) {
+    e.target.value = `${state.repo.owner}/${state.repo.repo}`;
+    return;
+  }
+  openRepo(e.target.value);
+});
+
+for (const [id, name] of [
+  ["validate", "check"],
+  ["preview", "preview"],
+  ["history", "history"],
+  ["save", "save"],
+  ["submit", "submit"],
+  ["open", "open"],
+  ["open-manual", "open"],
+]) {
+  decorate($(id), name);
+}
 $("open-manual").addEventListener("click", () => openRepo($("manual-repo").value));
 $("validate").addEventListener("click", runValidate);
 $("preview").addEventListener("click", previewDeck);

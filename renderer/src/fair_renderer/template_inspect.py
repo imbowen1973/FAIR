@@ -464,6 +464,26 @@ def _region_text_style(placeholder_el, master, is_title: bool) -> dict:
     return style
 
 
+# PowerPoint's own defaults when bodyPr says nothing, in EMU.
+DEFAULT_INSETS = {"l": 91440, "r": 91440, "t": 45720, "b": 45720}
+
+
+def _region_insets(placeholder_el) -> dict:
+    """The text inset PowerPoint will apply inside this placeholder.
+
+    A tenth of an inch left and right by default — which at preview size
+    is most of the gutter between two side-by-side columns. Drawing text
+    hard against the box edge makes adjacent regions look like they
+    collide when in the deck they will not.
+    """
+    body = placeholder_el.find(f".//{{{PPTX_A_NS}}}bodyPr")
+    out = {}
+    for side, attr in (("l", "lIns"), ("r", "rIns"), ("t", "tIns"), ("b", "bIns")):
+        raw = body.get(attr) if body is not None else None
+        out[side] = int(raw) if raw is not None else DEFAULT_INSETS[side]
+    return out
+
+
 def layout_geometry(path: Path, results: list[LayoutResult]) -> dict:
     """Where each bound region actually sits, for a schematic preview.
 
@@ -508,6 +528,15 @@ def layout_geometry(path: Path, results: list[LayoutResult]) -> dict:
                 entry["style"] = _region_text_style(
                     element, master, ph.type in TITLES
                 )
+                insets = _region_insets(element)
+                # As fractions of the slide, like the rectangles, so a
+                # consumer never converts units.
+                entry["inset"] = {
+                    "l": round(insets["l"] / slide_w, 5),
+                    "r": round(insets["r"] / slide_w, 5),
+                    "t": round(insets["t"] / slide_h, 5),
+                    "b": round(insets["b"] / slide_h, 5),
+                }
             regions[region] = entry
         if regions:
             layouts[result.key] = {"layoutName": result.layout_name, "regions": regions}
