@@ -53,15 +53,24 @@ is what lets the add-in address individual slides through PowerPoint's
 ## Quick start
 
 ```bash
-# render the example corpus (Python ≥ 3.10)
-pip install -e "renderer[test]"
-python scripts/build_corpus.py
-
 # serve the task pane
 cd assembler && npm install && npm start
 
-# then sideload assembler/manifest.xml into PowerPoint
-# (web: Add-ins → Upload My Add-in), pick a competency, insert.
+# sideload assembler/manifest.xml into PowerPoint
+# (web: Add-ins → Upload My Add-in)
+```
+
+Then in the pane, add a library by its repo: `Agrifoodskills/Clinical-Educator-`.
+It is fetched from git and rendered **in your browser** — there is no
+content server, and no deck is stored anywhere. Pick a competency or
+browse the course tree, tick slides, insert.
+
+To render locally instead, without the pane:
+
+```bash
+pip install -e "renderer[test]"     # Python >= 3.10
+fair-corpus --sessions sessions --template template.pptx \
+  --layout-map layout-map.yaml --out /tmp/build
 ```
 
 Tests: `cd renderer && python -m pytest tests/` and
@@ -76,8 +85,10 @@ Tests: `cd renderer && python -m pytest tests/` and
 | `docs/platform-architecture.md` | The road ahead: GitHub as identity, middle layer, generation API |
 | `renderer/` | Component A — markdown → template-bound `.pptx` (Python) |
 | `assembler/` | Component B — PowerPoint task pane add-in (Office.js) |
-| `examples/` | Template, layout map, three example sessions |
-| `scripts/build_corpus.py` | Renders all sessions, emits the aggregated `catalog.json` |
+| `docs/template-profile.md` | The layout contract: bring your own PowerPoint template |
+| `examples/` | Template, layout map, example sessions, and the layout gallery |
+| `scripts/build_corpus.py` | Builds *this repo's* example corpus (used by CI) |
+| `scripts/pull_library.py` | Clones a library repo and renders it at point of use |
 
 ## Authoring in one glance
 
@@ -103,12 +114,52 @@ dok: 2
 ---
 ```
 
-Ten layouts (`Title`, `Full`, `Split`, `Section`, `Comparison`,
-`Caption`, `Picture`, `TitleOnly`, `Blank`, and `Cards` — a heading
-over four colour-tabbed cards), inline
-`**bold**`/`*italic*`, and colours restricted to theme slots — so a
-template rebrand recolours every deck with zero content edits. Full
+Inline `**bold**`/`*italic*`, and colours restricted to theme slots — so
+a template rebrand recolours every deck with zero content edits. Full
 grammar in [`docs/session-md-format.md`](docs/session-md-format.md).
+
+## The layouts
+
+A slide's `layout:` names a key, not a design. `layout-map.yaml` binds
+each key to a layout in *that library's* template, and the renderer only
+writes text and images into placeholders — never a colour, size or
+position. The look belongs entirely to the template.
+
+**Core** — the nine every stock PowerPoint template already provides,
+under Microsoft's own names, so an ordinary template works unedited:
+
+| Key | Stock layout | Regions |
+|---|---|---|
+| `Title` | Title Slide | `title`, `subtitle` |
+| `Full` | Title and Content | `title`, `full` |
+| `Section` | Section Header | `title`, `subtitle` |
+| `Split` | Two Content | `title`, `left`, `right` |
+| `Comparison` | Comparison | `title`, `left_head`, `left`, `right_head`, `right` |
+| `Caption` | Content with Caption | `title`, `content`, `caption` |
+| `Picture` | Picture with Caption | `title`, `picture`, `caption` |
+| `TitleOnly` | Title Only | `title` |
+| `Blank` | Blank | — |
+
+**Extended** — optional, and not in stock templates:
+
+| Key | Regions |
+|---|---|
+| `Cards` | `title`, `head1`–`head4`, `card1`–`card4` — a heading over four colour-tabbed panels |
+
+Any region takes `ul`, `ol`, `p`, `image`, `mermaid` or `video`; a plain
+string gives one unadorned paragraph in the layout's own style.
+
+Bind a template and see what it offers:
+
+```bash
+fair-template their-template.pptx --out layout-map.yaml   # draft map + conformance report
+fair-template their-template.pptx --add-cards out.pptx    # add Cards in their theme colours
+```
+
+To see how a template treats all of them, render
+[`examples/layout-gallery/gallery.md`](examples/layout-gallery/gallery.md)
+against it — one slide per layout, every region filled. The contract is
+in [`docs/template-profile.md`](docs/template-profile.md).
 
 ## Principles
 

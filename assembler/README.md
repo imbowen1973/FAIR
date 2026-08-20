@@ -1,21 +1,28 @@
 # fair-assembler (Component B)
 
 Office.js task pane add-in for PowerPoint that assembles one deck from
-slides across rendered sessions, selected by competency. Implements
+slides across a course, found by browsing its hierarchy or searching the
+speaker notes. Implements
 Component B of
 [`docs/md-to-powerpoint-pipeline.md`](../docs/md-to-powerpoint-pipeline.md).
 
 ## How it works
 
-1. `scripts/build_corpus.py` renders every session in `examples/sessions/`
-   and writes `web/data/`: the decks plus `catalog.json` (the aggregated
-   index the spec calls "index.json, aggregated across sessions").
-2. The pane lists competencies from the catalog. Picking one runs
-   `slidesForCompetency(cId)` (`web/assembler.js`) — matching slides
-   grouped by source deck.
+1. You add a corpus: `owner/repo`. The pane fetches that library's
+   markdown from git and renders it, producing the same `catalog.json`
+   the renderer emits anywhere else. **There is no built-in corpus** —
+   every library is an explicit pick, so the tool never depends on a
+   server holding content.
+2. `buildTree(catalog)` (`web/assembler.js`) turns the catalog into
+   credential → module → day → block → session → slide;
+   `searchCatalog` finds slides by title, session, competency label or
+   **speaker notes**. Absent levels collapse, and sessions no credential
+   claims fall under a trailing root, so a library without
+   `credentials/` still browses.
 3. Insert uses one `insertSlidesFromBase64` call per source deck with
    `sourceSlideIds` set to the renderer-emitted `slideId#creationId`
-   refs and `formatting: UseDestinationTheme`.
+   refs and `formatting: UseDestinationTheme`, anchored below the
+   selected slide.
 
 Swapping `slidesForCompetency` for a FalkorDB query later changes only
 that function body (spec B.2).
@@ -37,9 +44,11 @@ use — most people only ever need the first:
    itself is a static app published to GitHub Pages by
    `publish-pane.yml` (tool only — no content, no decks);
    `manifest.web.xml` points there.
-2. **Local.** Clone, `python scripts/build_corpus.py`, `npm start`;
-   the pane reads `localhost:3000`. Full control, private repos work
-   with your git credentials.
+2. **Local.** Clone the library, `python scripts/pull_library.py <repo>`
+   to render it, `npm start` to serve, then add
+   `https://localhost:3000` as a corpus URL in the picker. Full
+   control, and private repos work with your git credentials — which
+   the browser has none of.
 3. **A hosted pull server** (`docs/deploy-server.md`, optional). The
    same flow run server-side — useful later as the authenticated
    middle layer for private libraries.
@@ -50,17 +59,19 @@ the identical deck everywhere.
 ## Run it
 
 ```bash
-# 1. Build the data set (from the repo root)
-python scripts/build_corpus.py
-
-# 2. Serve the pane
+# 1. Serve the pane
 cd assembler
 npm install        # once — provides trusted localhost HTTPS certs
 npm start          # serves https://localhost:3000
 
-# 3. Unit tests
+# 2. Unit tests
 npm test
 ```
+
+Sideload (below), then add a corpus in the pane: `owner/repo` renders in
+your browser. Nothing needs building first — `scripts/build_corpus.py`
+builds *this repo's* example corpus for CI, and the pane no longer reads
+it.
 
 ## Sideload into PowerPoint
 
