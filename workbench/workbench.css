@@ -283,9 +283,29 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
 
 /* ---- the editing surface ------------------------------------------- */
 .editor { display: flex; flex-direction: column; gap: 10px; }
-.canvas { max-width: 900px; width: 100%; }
+.canvas { width: 100%; }
 .canvas .stage { margin: 0 auto; }
-.canvas-hint { max-width: 900px; margin: 0; }
+.canvas-hint { margin: 0; }
+
+/* Wide enough for both: the notes sit beside the slide rather than below
+   the fold, and the slide gets the height it was wasting on white space. */
+@media (min-width: 1180px) {
+  .editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 27%);
+    grid-template-rows: auto 1fr;
+    column-gap: 18px; align-content: start;
+  }
+  .canvas { grid-column: 1; grid-row: 1; }
+  .canvas-hint { grid-column: 1; grid-row: 2; align-self: start; }
+  .meta {
+    grid-column: 2; grid-row: 1 / span 2;
+    border-top: 0; border-left: 1px solid var(--border);
+    padding-top: 0; padding-left: 16px;
+  }
+  .meta-row { flex-direction: column; gap: 10px; }
+  .meta-field.grow { min-width: 0; }
+}
 
 .stage.editable .region[data-editable] { cursor: text; }
 .stage.editable .region[data-editable]:hover {

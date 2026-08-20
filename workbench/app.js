@@ -415,7 +415,12 @@ function renderCanvas({ redraw = true } = {}) {
       editable: true,
       // Leave room for the metadata and notes beneath, or they sit below
       // the fold and get forgotten.
-      maxHeightPx: Math.max(260, Math.round(window.innerHeight * 0.46)),
+      // Beside the notes on a wide screen, above them on a narrow one —
+      // so the slide can take more height when it is not competing.
+      maxHeightPx: Math.max(
+        260,
+        Math.round(window.innerHeight * (window.innerWidth >= 1180 ? 0.62 : 0.44))
+      ),
       onChange: (region, value) => {
         const current = slideData(state.slideIndex);
         const next = { ...current };
