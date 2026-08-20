@@ -43,6 +43,27 @@ jobs:
           mkdir -p _site/workbench
           cp workbench/*.js workbench/*.css workbench/*.html _site/workbench/
           rm -rf _site/workbench/node_modules
+      - name: Stamp the build so no browser can serve a stale module
+        run: |
+          # ES modules are cached hard, and Pages sends max-age=600 on every
+          # file. Without this, a deploy can leave an author running a mix of
+          # old and new modules with no way to tell -- which has already cost
+          # a debugging round trip. Every relative import gets the commit sha,
+          # so a new build simply cannot resolve to an old file.
+          V="${GITHUB_SHA::8}"
+          cd _site/workbench
+          sed -i -E 's#from "[.]/[A-Za-z0-9_.-]+[.]js#&?v='"$V"'#g' *.js
+          sed -i -E 's#src="app[.]js#&?v='"$V"'#; s#href="workbench[.]css#&?v='"$V"'#' index.html
+          # And show it, so "which build am I on?" is answerable at a glance.
+          sed -i "s#>dev<#>$V<#" index.html
+          # A module that escaped stamping would quietly reintroduce the
+          # stale-cache bug, so fail the deploy rather than ship it.
+          if grep -q 'from "[.]/[A-Za-z0-9_.-]*[.]js"' *.js; then
+            echo "unstamped import -- would be cacheable and stale:"
+            grep -n 'from "[.]/[A-Za-z0-9_.-]*[.]js"' *.js
+            exit 1
+          fi
+          echo "stamped workbench build $V"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

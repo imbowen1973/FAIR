@@ -340,3 +340,19 @@ button.with-icon {
   display: inline-flex; align-items: center; gap: 6px;
 }
 .actions { flex-wrap: wrap; }
+
+/* Which build this tab is running. Small, quiet, and always there: when a
+   fix is live on the server but not on screen, this is the difference
+   between guessing and knowing. */
+.build {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+.build code {
+  font-size: inherit;
+  background: none;
+  padding: 0;
+  color: inherit;
+}
