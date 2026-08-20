@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>FAIR Workbench</title>
+  <link rel="icon" href="../assets/icon-64.png"/>
+  <link rel="stylesheet" href="workbench.css"/>
+</head>
+<body>
+  <header>
+    <img src="../assets/fair-logo.png" alt="" class="brand"/>
+    <div class="titles">
+      <h1>FAIR Workbench</h1>
+      <p class="sub">Author a course in git. The template owns how it looks.</p>
+    </div>
+    <div class="who-box">
+      <span id="who" class="who"></span>
+      <button id="signout" class="link" hidden>sign out</button>
+    </div>
+  </header>
+
+  <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+
+  <!-- Sign in ------------------------------------------------------- -->
+  <section id="signed-out" class="panel">
+    <h2>Sign in to GitHub</h2>
+    <button id="broker-signin" class="primary" hidden>Sign in with GitHub</button>
+
+    <details open>
+      <summary>Use a token instead</summary>
+      <p class="hint">
+        Create a <a href="https://github.com/settings/personal-access-tokens/new"
+        target="_blank" rel="noopener">fine-grained token</a> with
+        <strong>Contents: read and write</strong> and
+        <strong>Pull requests: read and write</strong> on the library repos
+        you author. It is held for this tab only and never written to disk.
+      </p>
+      <div class="row">
+        <input id="pat" type="password" placeholder="github_pat_…" autocomplete="off"/>
+        <button id="pat-signin">Use token</button>
+      </div>
+    </details>
+  </section>
+
+  <!-- Pick a library ------------------------------------------------ -->
+  <section id="signed-in" class="panel" hidden>
+    <h2>Open a library</h2>
+    <div class="row">
+      <select id="repo"></select>
+      <button id="open" class="primary">Open</button>
+    </div>
+    <div class="row">
+      <input id="manual-repo" placeholder="owner/repo"/>
+      <button id="open-manual">Open by name</button>
+    </div>
+  </section>
+
+  <!-- The workbench ------------------------------------------------- -->
+  <main id="workspace" hidden>
+    <div class="bar">
+      <h2 id="course-title"></h2>
+      <div class="actions">
+        <span id="dirty" class="muted">no changes</span>
+        <button id="validate">Check</button>
+        <button id="preview">Preview deck</button>
+        <button id="history">History</button>
+        <button id="save" disabled>Save</button>
+        <button id="submit" class="primary" disabled>Submit for review</button>
+      </div>
+    </div>
+
+    <div class="panes">
+      <aside id="outline" class="pane outline" aria-label="Course outline"></aside>
+      <section id="form" class="pane form" aria-label="Slide"></section>
+      <aside class="pane preview" aria-label="Schematic">
+        <div id="schematic"></div>
+        <p class="hint">
+          Boxes are the template's real placeholders. This shows
+          <em>where</em> content lands, never how it will look —
+          <strong>Preview deck</strong> renders the actual file.
+        </p>
+      </aside>
+    </div>
+
+    <div id="problems" class="problems"></div>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

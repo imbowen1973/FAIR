@@ -27,6 +27,9 @@ import { fileURLToPath } from "node:url";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = join(HERE, "web");
+// The workbench is a sibling static app; serving it here means one dev
+// server for both, and the same /py/ route feeds Pyodide in each.
+const WORKBENCH = join(HERE, "..", "workbench");
 const REPO = join(HERE, "..");
 const PORT = Number(process.env.PORT ?? 3000);
 
@@ -187,6 +190,22 @@ async function handler(req, res) {
     // Published deployments serve these as static files under /py/.
     const PY_ROOT = join(REPO, "renderer", "src");
     let filePath;
+    if (urlPath.startsWith("/workbench")) {
+      const rest = urlPath.replace(/^\/workbench\/?/, "") || "index.html";
+      filePath = normalize(join(WORKBENCH, rest));
+      if (!filePath.startsWith(WORKBENCH)) {
+        res.writeHead(403).end();
+        return;
+      }
+      const body = await readFile(filePath);
+      res.writeHead(200, {
+        "Content-Type": MIME[extname(filePath)] ?? "application/octet-stream",
+        "Cache-Control": "no-store",
+      });
+      res.end(body);
+      return;
+    }
+
     if (urlPath.startsWith("/py/")) {
       filePath = normalize(join(PY_ROOT, urlPath.slice(4)));
       if (!filePath.startsWith(PY_ROOT)) {

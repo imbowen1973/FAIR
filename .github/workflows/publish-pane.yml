@@ -38,6 +38,11 @@ jobs:
           cp renderer/src/fair_renderer/*.py _site/py/fair_renderer/
           # The landing page offers this for download; it lives a level up.
           cp assembler/manifest.web.xml _site/
+          # The workbench is the authoring SPA; same static hosting, same
+          # /py/ modules, so it ships alongside the pane.
+          mkdir -p _site/workbench
+          cp workbench/*.js workbench/*.css workbench/*.html _site/workbench/
+          rm -rf _site/workbench/node_modules
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

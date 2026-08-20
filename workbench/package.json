@@ -1,0 +1,13 @@
+{
+  "name": "fair-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Git-backed authoring SPA for FAIR libraries",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/"
+  },
+  "devDependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}
