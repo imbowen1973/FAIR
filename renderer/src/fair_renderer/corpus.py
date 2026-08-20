@@ -37,6 +37,7 @@ from pathlib import Path
 import yaml
 
 from .assets import check_assets
+from .library import Library, LibraryError, load_library
 from .render import render_session
 
 
@@ -144,75 +145,158 @@ def _catalog_attribution(path: Path | None, out_dir: Path) -> dict | None:
     return entry
 
 
+def _units(lib: Library | None, sessions_dir: Path | None) -> list[dict]:
+    """One entry per thing that renders to a deck, from either shape."""
+    if lib is not None:
+        return [
+            {
+                "id": block.block_id,
+                "source": block.slides,
+                "dir": block.directory,
+                "title": block.title,
+                "duration": block.duration_minutes,
+                "competencies": block.competencies,
+                "resources": block.resources,
+            }
+            for block in lib.blocks.values()
+            if block.has_slides
+        ]
+    return [
+        {
+            "id": md.stem.replace("session-", ""),
+            "source": md,
+            "dir": md.parent,
+            "title": None,
+            "duration": None,
+            "competencies": {},
+            "resources": [],
+        }
+        for md in sorted(sessions_dir.glob("*.md"))
+    ]
+
+
 def build_corpus(
-    sessions_dir: Path,
-    template: Path,
-    layout_map: Path,
-    out_dir: Path,
+    sessions_dir: Path = None,
+    template: Path = None,
+    layout_map: Path = None,
+    out_dir: Path = None,
     framework: Path | None = None,
     credentials_dir: Path | None = None,
     attribution: Path | None = None,
+    library: Path | None = None,
     warn=lambda msg: print(f"warning: {msg}", file=sys.stderr),
 ) -> dict:
+    """Render a library: one deck per block, plus its catalog.
+
+    `library` is the repo root holding course.yaml and blocks/. The
+    older `sessions_dir` argument names a directory of flat session
+    files and is still honoured, so a library mid-migration builds.
+    """
+    if library is not None:
+        lib = load_library(library)
+        root = library
+    elif sessions_dir is not None:
+        lib = None
+        root = sessions_dir.parent
+    else:
+        raise CorpusError("build_corpus needs either library= or sessions_dir=")
+
     # Rendering is the only path from content to deck, so attribution has
     # to ride this path or it is not enforced at all. Default to the
-    # library-root convention (attribution.yaml beside sessions/) rather
-    # than requiring every caller to pass it.
+    # library-root convention rather than requiring every caller to pass it.
     if attribution is None:
-        candidate = sessions_dir.parent / "attribution.yaml"
+        candidate = root / "attribution.yaml"
         attribution = candidate if candidate.exists() else None
+    if framework is None:
+        candidate = root / "competencies" / "framework.yaml"
+        framework = candidate if candidate.exists() else None
+    if credentials_dir is None:
+        candidate = root / "credentials"
+        credentials_dir = candidate if candidate.is_dir() else None
 
-    violations = check_assets(sessions_dir)
+    violations = check_assets(root if lib else sessions_dir)
     if violations:
         raise CorpusError(
-            "asset policy violations (fix before building):\n  " + "\n  ".join(violations)
+            "asset policy violations (fix before building):\n  "
+            + "\n  ".join(violations)
         )
-
-    session_files = sorted(sessions_dir.glob("*.md"))
-    if not session_files:
-        raise CorpusError(f"no session files in {sessions_dir}")
 
     sessions: list[dict] = []
     competencies: dict[str, str] = {}
     slides: list[dict] = []
     durations: dict[str, int] = {}
+    blocks_out: list[dict] = []
 
-    for md in session_files:
+    units = _units(lib, sessions_dir)
+    if not units:
+        raise CorpusError(f"no content to render in {root}")
+
+    for unit in units:
         result = render_session(
-            session_path=md,
+            session_path=unit["source"],
             template_path=template,
             layout_map_path=layout_map,
             attribution_path=attribution,
-            out_dir=out_dir / "sessions" / md.stem.replace("session-", ""),
+            out_dir=out_dir / "sessions" / unit["id"],
         )
         index_doc = json.loads(result["index"].read_text())
         meta = index_doc["session"]
-        sid = str(meta["session"])
-        pptx_rel = f"sessions/{md.stem.replace('session-', '')}/{result['pptx'].name}"
+        sid = str(meta.get("session") or unit["id"])
+        pptx_rel = f"sessions/{unit['id']}/{result['pptx'].name}"
         sessions.append(
             {
                 "sessionId": sid,
-                "title": meta.get("title"),
+                "blockId": unit["id"],
+                "title": unit["title"] or meta.get("title"),
                 "version": meta.get("version"),
                 "pptx": pptx_rel,
                 # The tree totals durations at block and day level.
-                "durationMinutes": meta.get("duration_minutes"),
+                "durationMinutes": unit["duration"] or meta.get("duration_minutes"),
                 "outcomes": meta.get("outcomes") or [],
             }
         )
-        if isinstance(meta.get("duration_minutes"), int):
-            durations[sid] = meta["duration_minutes"]
-        for cid, label in (meta.get("competencies") or {}).items():
+        if isinstance(sessions[-1]["durationMinutes"], int):
+            durations[sid] = sessions[-1]["durationMinutes"]
+        for cid, label in {**(meta.get("competencies") or {}), **unit["competencies"]}.items():
             existing = competencies.get(cid)
-            if existing and existing != label:
+            if existing and existing != label and existing != cid and label != cid:
                 raise CorpusError(
                     f"competency {cid} has conflicting labels: {existing!r} vs {label!r}"
                 )
-            competencies[cid] = label
+            competencies.setdefault(cid, label)
         for entry in index_doc["slides"]:
             entry = dict(entry)
             entry["sourcePptx"] = pptx_rel
+            entry["blockId"] = unit["id"]
             slides.append(entry)
+
+        # Resources are copied and indexed, never parsed: the renderer has
+        # no opinion about a workbook beyond where it lives.
+        resources = []
+        for res in unit["resources"]:
+            dest = out_dir / "blocks" / unit["id"] / res.path
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes((unit["dir"] / res.path).read_bytes())
+            resources.append(
+                {
+                    "type": res.type,
+                    "title": res.title,
+                    "path": f"blocks/{unit['id']}/{res.path}",
+                }
+            )
+        if lib is None:
+            # A flat library has sessions, not blocks. Emitting pseudo-blocks
+            # would make the two shapes indistinguishable downstream.
+            continue
+        blocks_out.append(
+            {
+                "blockId": unit["id"],
+                "title": unit["title"] or meta.get("title"),
+                "durationMinutes": sessions[-1]["durationMinutes"],
+                "pptx": pptx_rel,
+                "resources": resources,
+            }
+        )
 
     if framework and framework.exists():
         competencies.update(_load_framework(framework))
@@ -236,6 +320,15 @@ def build_corpus(
             credentials.append(cred)
 
     catalog = {
+        # The recipe: identity and delivery structure, holding no content
+        # itself. Stable while the blocks beneath it churn.
+        "course": {
+            "id": (lib.course.get("id") if lib else None),
+            "title": (lib.title if lib else None),
+            "description": (lib.course.get("description") if lib else None),
+        },
+        "structure": (lib.structure if lib else []),
+        "blocks": blocks_out,
         "sessions": sessions,
         "competencies": dict(sorted(competencies.items())),
         "slides": slides,
@@ -265,9 +358,12 @@ def main(argv: list[str] | None = None) -> int:
         prog="fair-corpus",
         description="Render every session in a library and emit its catalog (data/ directory)",
     )
-    ap.add_argument("--sessions", type=Path, required=True)
-    ap.add_argument("--template", type=Path, required=True)
-    ap.add_argument("--layout-map", type=Path, required=True)
+    ap.add_argument("library", type=Path, nargs="?", default=None,
+                    help="library root: the repo holding course.yaml and blocks/")
+    ap.add_argument("--sessions", type=Path, default=None,
+                    help="legacy: a directory of flat session files")
+    ap.add_argument("--template", type=Path, default=None)
+    ap.add_argument("--layout-map", type=Path, default=None)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--framework", type=Path, default=None,
                     help="competencies framework yaml (labels win over frontmatter)")
@@ -277,13 +373,28 @@ def main(argv: list[str] | None = None) -> int:
                     help="attribution.yaml (default: beside the sessions directory)")
     args = ap.parse_args(argv)
 
+    if args.library is None and args.sessions is None:
+        print("error: give a library root, or --sessions for the legacy shape",
+              file=sys.stderr)
+        return 1
+
+    # Template and layout map live in the library, so a library build
+    # needs nothing else on the command line.
+    root = args.library if args.library is not None else args.sessions.parent
+    template = args.template or root / "template.pptx"
+    layout_map = args.layout_map or root / "layout-map.yaml"
+
     try:
         summary = build_corpus(
-            args.sessions, args.template, args.layout_map, args.out,
+            sessions_dir=args.sessions,
+            library=args.library,
+            template=template,
+            layout_map=layout_map,
+            out_dir=args.out,
             framework=args.framework, credentials_dir=args.credentials,
             attribution=args.attribution,
         )
-    except CorpusError as e:
+    except (CorpusError, LibraryError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     print(

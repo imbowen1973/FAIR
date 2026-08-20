@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import re
 import zipfile
+
+import yaml
 from pathlib import Path
 
 import pytest
@@ -1009,3 +1011,263 @@ def test_regenerating_the_template_reproduces_the_committed_cards():
         return (off.get("x"), off.get("y"), ext.get("cx"), ext.get("cy"))
 
     assert [geometry(el) for el in rebuilt] == [geometry(el) for el in committed]
+
+
+# --- the course recipe and its blocks ------------------------------------
+
+
+def _make_library(root: Path, *, resources: bool = True) -> Path:
+    """A minimal course: one block, a deck, and non-slide resources."""
+    import shutil
+
+    root.mkdir(parents=True, exist_ok=True)
+    shutil.copy(EXAMPLES / "template.pptx", root / "template.pptx")
+    shutil.copy(EXAMPLES / "layout-map.yaml", root / "layout-map.yaml")
+
+    block = root / "blocks" / "01-foundations"
+    (block / "media").mkdir(parents=True)
+    shutil.copy(
+        EXAMPLES / "sessions" / "session-02.md", block / "slides.md"
+    )
+
+    meta = {
+        "title": "Foundations of clinical teaching",
+        "duration_minutes": 180,
+        "competencies": {"CE1": "Designing clinical teaching sessions"},
+        "resources": [],
+    }
+    if resources:
+        (block / "lessonplan.md").write_text("# Lesson plan\n", encoding="utf-8")
+        (block / "questions.xml").write_text("<questions/>\n", encoding="utf-8")
+        meta["resources"] = [
+            {"type": "lessonplan", "title": "Facilitator lesson plan", "path": "lessonplan.md"},
+            {"type": "questions", "title": "Assessment bank", "path": "questions.xml"},
+        ]
+    (block / "block.yaml").write_text(
+        yaml.safe_dump(meta, sort_keys=False, allow_unicode=True), encoding="utf-8"
+    )
+
+    (root / "course.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "clinical-educator",
+                "title": "Clinical Educator",
+                "structure": [
+                    {
+                        "kind": "module",
+                        "title": "Foundations",
+                        "children": [
+                            {
+                                "kind": "day",
+                                "title": "Day 1",
+                                "children": [{"block": "01-foundations"}],
+                            }
+                        ],
+                    }
+                ],
+            },
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_library_loads_course_blocks_and_resources(tmp_path):
+    from fair_renderer.library import load_library
+
+    lib = load_library(_make_library(tmp_path / "lib"))
+    assert lib.title == "Clinical Educator"
+    assert list(lib.blocks) == ["01-foundations"]
+
+    block = lib.blocks["01-foundations"]
+    assert block.has_slides
+    assert block.duration_minutes == 180
+    assert [r.type for r in block.resources] == ["lessonplan", "questions"]
+
+    # Arbitrary container depth under the course's own words.
+    assert lib.structure[0]["kind"] == "module"
+    assert lib.structure[0]["children"][0]["kind"] == "day"
+    assert lib.structure[0]["children"][0]["children"][0] == {
+        "kind": "block",
+        "block": "01-foundations",
+    }
+
+
+def test_library_rejects_a_reference_to_a_missing_block(tmp_path):
+    from fair_renderer.library import LibraryError, load_library
+
+    root = _make_library(tmp_path / "lib")
+    course = yaml.safe_load((root / "course.yaml").read_text(encoding="utf-8"))
+    course["structure"] = [{"block": "99-does-not-exist"}]
+    (root / "course.yaml").write_text(yaml.safe_dump(course), encoding="utf-8")
+
+    with pytest.raises(LibraryError, match="unknown block"):
+        load_library(root)
+
+
+def test_library_rejects_a_resource_that_is_not_there(tmp_path):
+    from fair_renderer.library import LibraryError, load_library
+
+    root = _make_library(tmp_path / "lib")
+    meta_path = root / "blocks" / "01-foundations" / "block.yaml"
+    meta = yaml.safe_load(meta_path.read_text(encoding="utf-8"))
+    meta["resources"].append({"type": "workbook", "path": "workbook.md"})
+    meta_path.write_text(yaml.safe_dump(meta), encoding="utf-8")
+
+    with pytest.raises(LibraryError, match="no such resource"):
+        load_library(root)
+
+
+def test_a_block_missing_from_the_recipe_is_unplaced_not_an_error(tmp_path):
+    """Drafting a block before placing it must not break the build."""
+    from fair_renderer.library import load_library
+
+    root = _make_library(tmp_path / "lib")
+    extra = root / "blocks" / "02-draft"
+    extra.mkdir()
+    (extra / "slides.md").write_text(
+        (EXAMPLES / "sessions" / "session-03.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    lib = load_library(root)
+    assert "02-draft" in lib.blocks
+    assert lib.structure[-1]["title"] == "Unplaced blocks"
+
+
+def test_corpus_from_a_course_carries_structure_and_resources(tmp_path):
+    from fair_renderer.corpus import build_corpus
+
+    root = _make_library(tmp_path / "lib")
+    out = tmp_path / "out"
+    build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda m: None,
+    )
+    catalog = json.loads((out / "catalog.json").read_text())
+
+    assert catalog["course"]["id"] == "clinical-educator"
+    assert catalog["structure"][0]["kind"] == "module"
+
+    block = catalog["blocks"][0]
+    assert block["blockId"] == "01-foundations"
+    assert block["durationMinutes"] == 180
+    assert [r["type"] for r in block["resources"]] == ["lessonplan", "questions"]
+
+    # Resources are copied beside the catalog, never parsed.
+    for resource in block["resources"]:
+        assert (out / resource["path"]).is_file()
+
+    # Slides still carry their block, so the pane can group them.
+    assert all(s["blockId"] == "01-foundations" for s in catalog["slides"])
+
+
+def test_flat_sessions_still_build(tmp_path):
+    """The legacy shape has to keep working while libraries migrate."""
+    from fair_renderer.corpus import build_corpus
+
+    out = tmp_path / "out"
+    summary = build_corpus(
+        sessions_dir=EXAMPLES / "sessions",
+        template=EXAMPLES / "template.pptx",
+        layout_map=EXAMPLES / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda m: None,
+    )
+    assert summary["sessions"] == 3
+    catalog = json.loads((out / "catalog.json").read_text())
+    assert catalog["structure"] == []
+    assert catalog["blocks"] == []
+
+
+# --- migration -----------------------------------------------------------
+
+
+def _flat_library(root: Path) -> Path:
+    import shutil
+
+    (root / "sessions").mkdir(parents=True)
+    for name in ("session-01.md", "session-02.md"):
+        shutil.copy(EXAMPLES / "sessions" / name, root / "sessions" / name)
+    shutil.copytree(EXAMPLES / "sessions" / "assets", root / "sessions" / "assets")
+    shutil.copy(EXAMPLES / "template.pptx", root / "template.pptx")
+    shutil.copy(EXAMPLES / "layout-map.yaml", root / "layout-map.yaml")
+
+    (root / "credentials").mkdir()
+    (root / "credentials" / "c.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "cold-chain",
+                "title": "Cold Chain",
+                "modules": [
+                    {"title": "Fundamentals", "sessions": ["01"]},
+                    {"title": "Practice", "sessions": ["02"]},
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_migration_is_a_dry_run_until_asked(tmp_path):
+    from fair_renderer.migrate import plan_migration
+
+    root = _flat_library(tmp_path / "lib")
+    plan = plan_migration(root)
+    assert len(plan["moves"]) == 2
+    # Nothing written by planning alone.
+    assert not (root / "course.yaml").exists()
+    assert not (root / "blocks").exists()
+
+
+def test_migration_builds_blocks_and_keeps_delivery_order(tmp_path):
+    from fair_renderer.corpus import build_corpus
+    from fair_renderer.library import load_library
+    from fair_renderer.migrate import apply_migration, plan_migration
+
+    root = _flat_library(tmp_path / "lib")
+    apply_migration(plan_migration(root))
+
+    lib = load_library(root)
+    # Identity comes from the credential, not the folder name.
+    assert lib.course["id"] == "cold-chain"
+    assert len(lib.blocks) == 2
+    assert all(b.has_slides for b in lib.blocks.values())
+
+    # The credential's modules survive as the course structure, at the top
+    # level: the credential's own title names the course, not a container.
+    assert [n["title"] for n in lib.structure] == ["Fundamentals", "Practice"]
+    assert [n["kind"] for n in lib.structure] == ["module", "module"]
+    assert lib.structure[0]["children"][0]["kind"] == "block"
+
+    # Media referenced by a session moved into that block and still resolves.
+    with_image = next(
+        b for b in lib.blocks.values() if "media/" in b.slides.read_text(encoding="utf-8")
+    )
+    assert list((with_image.directory / "media").iterdir()), "media not copied"
+
+    # And the migrated library renders.
+    out = tmp_path / "out"
+    summary = build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda m: None,
+    )
+    assert summary["sessions"] == 2
+
+
+def test_migration_refuses_a_library_already_migrated(tmp_path):
+    from fair_renderer.migrate import MigrationError, apply_migration, plan_migration
+
+    root = _flat_library(tmp_path / "lib")
+    apply_migration(plan_migration(root))
+    with pytest.raises(MigrationError, match="already exists"):
+        plan_migration(root)

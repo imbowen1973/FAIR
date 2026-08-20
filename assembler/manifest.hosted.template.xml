@@ -10,7 +10,7 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:type="TaskPaneApp">
   <Id>b7e2d4a9-1c56-4f83-9d02-8e6f5a3c7b21</Id>
-  <Version>0.3.0</Version>
+  <Version>0.5.0</Version>
   <ProviderName>FAIR Consortium</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="FAIR Deck Assembler"/>

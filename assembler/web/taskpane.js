@@ -283,6 +283,30 @@ function renderNode(node, path, allowed) {
     return el;
   }
 
+  // A resource is part of the block but not of the deck: shown and
+  // linked, never selectable, because PowerPoint cannot insert a
+  // workbook. Hidden while a competency filter is narrowing to slides.
+  if (node.kind === "resource") {
+    if (allowed) return null;
+    const row = document.createElement("div");
+    row.className = "node-row";
+    const spacer = document.createElement("span");
+    spacer.className = "twisty leaf";
+    spacer.setAttribute("aria-hidden", "true");
+    const link = document.createElement("a");
+    link.className = "node-label resource-link";
+    link.textContent = node.title;
+    link.href = resourceUrl(node.meta.path);
+    link.target = "_blank";
+    link.rel = "noopener";
+    const kind = document.createElement("span");
+    kind.className = "res-type";
+    kind.textContent = node.meta.type;
+    row.append(spacer, link, kind);
+    el.appendChild(row);
+    return el;
+  }
+
   const open = expanded.has(path);
   el.setAttribute("aria-expanded", String(open));
   const row = document.createElement("div");
@@ -612,6 +636,14 @@ function renderFunder() {
     img.hidden = false;
   }, { once: true });
   img.src = src;
+}
+
+/** Where a block resource lives for the current source. */
+function resourceUrl(path) {
+  const blobs = memoryAssets.get(currentSource?.url);
+  if (blobs?.has(path)) return blobs.get(path);
+  if (currentSource?.url?.startsWith("wasm:")) return "#";
+  return joinUrl(currentSource.url, joinUrl("data", path));
 }
 
 /** Where the credit's logo lives for the current source. */

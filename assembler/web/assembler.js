@@ -141,6 +141,14 @@ export function buildTree(catalog) {
     slidesBySession.get(slide.sessionId).push(slide);
   }
 
+  // A course recipe wins when present: the structure is the course's own,
+  // and blocks carry resources that are not slides at all.
+  if ((catalog.structure || []).length > 0) {
+    return catalog.structure.map((node) =>
+      courseNode(node, catalog, byId, slidesBySession)
+    );
+  }
+
   const claimed = new Set();
   const roots = (catalog.credentials || []).map((cred) => {
     const node = containerNode(cred, 0, "credential", byId, slidesBySession);
@@ -166,6 +174,62 @@ export function buildTree(catalog) {
     });
   }
   return roots;
+}
+
+/**
+ * One node of the course recipe. A group nests; a block leaf carries its
+ * deck's slides and, beside them, the resources that are not slides —
+ * lesson plans, workbooks, question banks. Those are shown and linked,
+ * never selectable: PowerPoint cannot insert a workbook.
+ */
+function courseNode(node, catalog, byId, slidesBySession) {
+  if (node.kind !== "block") {
+    const children = (node.children || []).map((child) =>
+      courseNode(child, catalog, byId, slidesBySession)
+    );
+    return {
+      kind: node.kind || "group",
+      title: node.title || "",
+      meta: {},
+      children,
+      slideIds: children.flatMap((c) => c.slideIds),
+    };
+  }
+
+  const blockId = node.block;
+  const block = (catalog.blocks || []).find((b) => b.blockId === blockId);
+  const session = (catalog.sessions || []).find((s) => s.blockId === blockId);
+  const slides = session ? slidesBySession.get(session.sessionId) || [] : [];
+
+  const children = slides.map((s) => ({
+    kind: "slide",
+    title: s.title ?? s.slideId,
+    meta: { slideId: s.slideId, dok: s.dok, develops: s.develops || [] },
+    children: [],
+    slideIds: [s.slideId],
+  }));
+
+  for (const resource of block?.resources || []) {
+    children.push({
+      kind: "resource",
+      title: resource.title,
+      meta: { type: resource.type, path: resource.path },
+      children: [],
+      slideIds: [],
+    });
+  }
+
+  return {
+    kind: "block",
+    title: block?.title || blockId,
+    meta: {
+      blockId,
+      durationMinutes: block?.durationMinutes ?? null,
+      resources: (block?.resources || []).length,
+    },
+    children,
+    slideIds: slides.map((s) => s.slideId),
+  };
 }
 
 /** Depth-first visit, used for tri-state selection and counting. */

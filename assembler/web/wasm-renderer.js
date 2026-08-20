@@ -26,6 +26,7 @@ export const MODULES = [
   "corpus",
   "creation_id",
   "layoutmap",
+  "library",
   "mermaid",
   "parser",
   "render",
@@ -46,14 +47,18 @@ export function selectLibraryPaths(paths) {
       p === "template.pptx" ||
       p === "layout-map.yaml" ||
       p === "attribution.yaml" ||
+      p === "course.yaml" ||
       p === "competencies/framework.yaml" ||
       p.startsWith("branding/") ||
+      p.startsWith("blocks/") ||
       p.startsWith("sessions/") ||
       (p.startsWith("credentials/") && p.endsWith(".yaml"))
   );
   const missing = REQUIRED.filter((r) => !wanted.includes(r));
-  if (!wanted.some((p) => p.startsWith("sessions/") && p.endsWith(".md"))) {
-    missing.push("sessions/*.md");
+  const hasBlocks = wanted.some((p) => /^blocks\/[^/]+\/slides\.md$/.test(p));
+  const hasSessions = wanted.some((p) => p.startsWith("sessions/") && p.endsWith(".md"));
+  if (!hasBlocks && !hasSessions) {
+    missing.push("blocks/*/slides.md");
   }
   if (missing.length) {
     throw new Error(`not a library repo — missing ${missing.join(", ")}`);
@@ -136,12 +141,15 @@ if "/py" not in sys.path:
     sys.path.insert(0, "/py")
 shutil.rmtree("${OUT_DIR}", ignore_errors=True)
 from fair_renderer.corpus import build_corpus
-fw = Path("${LIB_DIR}/competencies/framework.yaml")
-cd = Path("${LIB_DIR}/credentials")
+root = Path("${LIB_DIR}")
+fw = root / "competencies/framework.yaml"
+cd = root / "credentials"
+is_course = (root / "course.yaml").exists() and (root / "blocks").is_dir()
 build_corpus(
-    sessions_dir=Path("${LIB_DIR}/sessions"),
-    template=Path("${LIB_DIR}/template.pptx"),
-    layout_map=Path("${LIB_DIR}/layout-map.yaml"),
+    library=root if is_course else None,
+    sessions_dir=None if is_course else root / "sessions",
+    template=root / "template.pptx",
+    layout_map=root / "layout-map.yaml",
     out_dir=Path("${OUT_DIR}"),
     framework=fw if fw.exists() else None,
     credentials_dir=cd if cd.exists() else None,

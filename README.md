@@ -61,16 +61,15 @@ cd assembler && npm install && npm start
 ```
 
 Then in the pane, add a library by its repo: `Agrifoodskills/Clinical-Educator-`.
-It is fetched from git and rendered **in your browser** — there is no
-content server, and no deck is stored anywhere. Pick a competency or
-browse the course tree, tick slides, insert.
+It is fetched from git and rendered **in your browser** — no server holds
+content, and no deck is stored anywhere. Browse the course tree or search
+the speaker notes, tick slides, insert.
 
-To render locally instead, without the pane:
+Authoring a library needs the renderer:
 
 ```bash
-pip install -e "renderer[test]"     # Python >= 3.10
-fair-corpus --sessions sessions --template template.pptx \
-  --layout-map layout-map.yaml --out /tmp/build
+pip install -e "renderer[test]"                # Python >= 3.10
+fair-corpus path/to/library --out /tmp/build   # dry-run a build
 ```
 
 Tests: `cd renderer && python -m pytest tests/` and
@@ -81,14 +80,13 @@ Tests: `cd renderer && python -m pytest tests/` and
 | Path | What it is |
 |---|---|
 | `docs/md-to-powerpoint-pipeline.md` | The founding spec: renderer + assembler, acceptance criteria |
+| `docs/library-format.md` | The repo shape: course recipe, blocks, resources, media |
 | `docs/session-md-format.md` | The authoring format: layouts, lists, colours, emphasis, images |
+| `docs/template-profile.md` | The layout contract: bring your own PowerPoint template |
 | `docs/platform-architecture.md` | The road ahead: GitHub as identity, middle layer, generation API |
 | `renderer/` | Component A — markdown → template-bound `.pptx` (Python) |
 | `assembler/` | Component B — PowerPoint task pane add-in (Office.js) |
-| `docs/template-profile.md` | The layout contract: bring your own PowerPoint template |
 | `examples/` | Template, layout map, example sessions, and the layout gallery |
-| `scripts/build_corpus.py` | Builds *this repo's* example corpus (used by CI) |
-| `scripts/pull_library.py` | Clones a library repo and renders it at point of use |
 
 ## Authoring in one glance
 

@@ -74,9 +74,14 @@ body {
 [hidden] { display: none !important; }
 
 header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
 }
+/* Decorative: the h1 beside it already names the tool. */
+.brand { width: 32px; height: 32px; flex: none; }
 header h1 { margin: 0; font-size: 16px; }
 header .sub { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
 
@@ -258,4 +263,13 @@ button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
 @media (forced-colors: active) {
   .hit-field, button.primary { forced-color-adjust: none; }
   :where(button, input, select):focus-visible { outline: 2px solid Highlight; }
+}
+
+.resource-link { color: var(--accent); text-decoration: underline; }
+.res-type {
+  flex: none;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }

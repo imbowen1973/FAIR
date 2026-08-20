@@ -159,14 +159,26 @@ and the assembler. Renders every `examples/sessions/*.md` into
 
 ```json
 {
-  "sessions":     [{"sessionId", "title", "version", "pptx",
+  "course":       {"id", "title", "description"},
+  "structure":    [ <the recipe's tree; leaves are {"kind":"block","block":id}> ],
+  "blocks":       [{"blockId", "title", "durationMinutes", "pptx",
+                    "resources": [{"type", "title", "path"}]}],
+  "sessions":     [{"sessionId", "blockId", "title", "version", "pptx",
                     "durationMinutes", "outcomes"}],
   "competencies": {"C1": "Cold chain monitoring", ...},
-  "slides":       [ <all index entries, session order,
+  "slides":       [ <all index entries, with blockId,
                      sourcePptx rewritten data-relative> ],
-  "credentials":  [ <credential definitions, passthrough> ]
+  "credentials":  [ <credential definitions, passthrough> ],
+  "attribution":  {"text", "corner", "opacity", "logo"}
 }
 ```
+
+`course` and `structure` come from the library's `course.yaml`, and
+`blocks` from each `block.yaml` — see `library-format.md`. Resources are
+copied beside the catalog and indexed, never parsed: the renderer has no
+opinion about a workbook beyond where it lives. A flat `sessions/`
+library predates the recipe, so it emits empty `structure` and `blocks`
+and the pane falls back to the credential tree.
 
 ### 4.1 Delivery structure (`credentials/*.yaml`)
 

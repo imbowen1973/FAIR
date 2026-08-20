@@ -30,8 +30,7 @@ that function body (spec B.2).
 ## The distribution model
 
 The repo holds markdown; **the .pptx is never stored anywhere**.
-Rendering happens at the point of use, and there are three points of
-use — most people only ever need the first:
+Rendering happens at the point of use:
 
 1. **In your browser (serverless — the flagship).** Type `owner/repo`
    into the pane's picker. The pane fetches the markdown straight from
@@ -44,17 +43,13 @@ use — most people only ever need the first:
    itself is a static app published to GitHub Pages by
    `publish-pane.yml` (tool only — no content, no decks);
    `manifest.web.xml` points there.
-2. **Local.** Clone the library, `python scripts/pull_library.py <repo>`
-   to render it, `npm start` to serve, then add
-   `https://localhost:3000` as a corpus URL in the picker. Full
-   control, and private repos work with your git credentials — which
-   the browser has none of.
-3. **A hosted pull server** (`docs/deploy-server.md`, optional). The
-   same flow run server-side — useful later as the authenticated
-   middle layer for private libraries.
+2. **A hosted pull server** (`docs/deploy-server.md`, optional). The
+   same flow run server-side — the authenticated middle layer for
+   private libraries, which a browser cannot reach because it holds no
+   git credentials.
 
-All three run the identical renderer package, so a given commit yields
-the identical deck everywhere.
+Both run the identical renderer package, so a given commit yields the
+identical deck either way.
 
 ## Run it
 
@@ -69,9 +64,7 @@ npm test
 ```
 
 Sideload (below), then add a corpus in the pane: `owner/repo` renders in
-your browser. Nothing needs building first — `scripts/build_corpus.py`
-builds *this repo's* example corpus for CI, and the pane no longer reads
-it.
+your browser. Nothing needs building or installing first.
 
 ## Sideload into PowerPoint
 

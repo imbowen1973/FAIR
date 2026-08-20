@@ -12,7 +12,7 @@ the input grammar is
 pip install -e "renderer[test]"
 ```
 
-Four commands ship with it:
+Five commands ship with it:
 
 ```bash
 # one session -> one deck
@@ -41,6 +41,11 @@ Outputs, per spec A.4:
 - `slide-id-map.json` — authored slide id → `slideId#creationId`
 - `index.json` — semantic index (`sourceRef`, `title`, `develops`, `dok`,
   and `notes`, so a consumer can search narration and not just titles)
+
+A library is a course of blocks — one deck per block, beside the lesson
+plans, workbooks and media taught with it. `fair-corpus` copies and
+indexes those resources without ever parsing them. See
+[`docs/library-format.md`](../docs/library-format.md).
 
 ## Acceptance tests
 
