@@ -125,10 +125,45 @@ function fillRegion(box, value, style, theme, scale) {
 }
 
 /**
+ * Shrink a region's text until it fits, the way PowerPoint's
+ * "shrink text on overflow" does.
+ *
+ * Without this, content longer than its placeholder simply spills, and
+ * two regions' text appears to collide even though their boxes do not.
+ * PowerPoint would have scaled it, so scaling here is the more faithful
+ * behaviour, not a cosmetic trick — and the amount of shrink is worth
+ * seeing, because it is the signal that a slide is overfull.
+ *
+ * Returns the scale applied, 1 when nothing was needed.
+ */
+function shrinkToFit(box, minScale = 0.45) {
+  const overflowing = () => box.scrollHeight > box.clientHeight + 1;
+  if (!overflowing()) return 1;
+
+  const sized = [box, ...box.querySelectorAll("p, li")];
+  const base = sized.map((el) => parseFloat(getComputedStyle(el).fontSize) || 0);
+
+  let scale = 1;
+  // Coarse steps: a preview does not need PowerPoint's exact algorithm,
+  // and a binary search would reflow the box a dozen times per keystroke.
+  for (let attempt = 0; attempt < 12 && overflowing(); attempt += 1) {
+    scale -= 0.05;
+    if (scale < minScale) break;
+    sized.forEach((el, i) => {
+      if (base[i]) el.style.fontSize = `${base[i] * scale}px`;
+    });
+  }
+  return Math.max(scale, minScale);
+}
+
+/**
  * Draw `slide` into `host` at the layout's real geometry.
  * Returns the set of regions the layout has no place for.
  */
-export function drawSchematic(host, { geometry, layoutKey, slide, activeRegion }) {
+export function drawSchematic(
+  host,
+  { geometry, layoutKey, slide, activeRegion, compact = false }
+) {
   host.innerHTML = "";
   const layout = geometry?.layouts?.[layoutKey];
   const theme = geometry?.theme ?? {};
@@ -149,11 +184,12 @@ export function drawSchematic(host, { geometry, layoutKey, slide, activeRegion }
 
   // Points-to-pixels for this rendering width, so 44pt in the template
   // looks like 44pt relative to the slide rather than a guessed size.
-  const stageWidth = host.clientWidth || 420;
+  const stageWidth = host.clientWidth || (compact ? 150 : 420);
   const scale = stageWidth / (geometry.slide?.widthPt || 720);
 
   const unplaced = new Set();
   const drawn = new Set();
+  const overfull = [];
 
   for (const [region, value] of Object.entries(slide || {})) {
     const rect = layout.regions[region];
@@ -172,12 +208,13 @@ export function drawSchematic(host, { geometry, layoutKey, slide, activeRegion }
     box.dataset.region = region;
     fillRegion(box, value, rect.style ?? {}, theme, scale);
     stage.appendChild(box);
+    overfull.push(box);
   }
 
   // Regions the layout offers but this slide leaves empty — outlined so an
   // author can see what is available without them competing with content.
   for (const [region, rect] of Object.entries(layout.regions)) {
-    if (drawn.has(region)) continue;
+    if (drawn.has(region) || compact) continue;
     const box = document.createElement("div");
     box.className = "region vacant";
     box.style.left = `${rect.x * 100}%`;
@@ -192,5 +229,17 @@ export function drawSchematic(host, { geometry, layoutKey, slide, activeRegion }
   }
 
   host.appendChild(stage);
+
+  // Measuring needs the boxes laid out, so this runs after they are in
+  // the document. A region shrunk a long way is flagged: PowerPoint will
+  // do the same and the author should know before it surprises them.
+  for (const box of compact ? [] : overfull) {
+    const applied = shrinkToFit(box);
+    if (applied < 0.8) {
+      box.classList.add("overfull");
+      box.title = `This content is too long for the ${box.dataset.region} placeholder — PowerPoint will shrink it to about ${Math.round(applied * 100)}%.`;
+    }
+  }
+
   return unplaced;
 }

@@ -111,7 +111,7 @@ button.link.danger { color: var(--danger); }
 .muted { color: var(--muted); font-size: 12px; }
 
 /* Three panes: outline, form, schematic. */
-.panes { display: grid; grid-template-columns: 260px minmax(0, 1fr) minmax(0, 40%); }
+.panes { display: grid; grid-template-columns: 210px minmax(0, 1fr) minmax(0, 38%); }
 .pane { padding: 14px; overflow-y: auto; height: calc(100vh - 165px); }
 .outline { border-right: 1px solid var(--border); background: var(--bg-sunken); }
 .preview { border-left: 1px solid var(--border); }
@@ -126,30 +126,41 @@ button.link.danger { color: var(--danger); }
   font-weight: 600; padding: 6px 4px; border-radius: 4px;
 }
 .block-head.on { background: var(--accent); color: var(--accent-fg); }
+/* The slide strip, as PowerPoint shows it: number, thumbnail, title. */
 .slide-row {
-  display: flex; align-items: center; gap: 2px;
-  border-radius: 4px; font-size: 13px; padding-left: 8px;
+  display: flex; align-items: flex-start; gap: 4px;
+  border-radius: 4px; padding: 4px 2px; margin-bottom: 2px;
 }
+.slide-row.on { background: var(--bg-raised); box-shadow: inset 0 0 0 1px var(--border); }
 .slide-pick {
   flex: 1; min-width: 0; text-align: left; border: 0; background: none;
-  display: flex; gap: 8px; align-items: baseline; padding: 4px;
-  border-radius: 4px; font-size: 13px;
+  display: grid; grid-template-columns: 1.4em 1fr; gap: 2px 5px;
+  padding: 2px; border-radius: 4px; align-items: start;
 }
-.slide-tools { display: flex; gap: 1px; flex: none; opacity: 0; }
+.slide-no {
+  color: var(--muted); font-size: 11px; text-align: right;
+  padding-top: 2px; font-variant-numeric: tabular-nums;
+}
+/* The thumbnail hosts a .stage, which sizes itself by aspect ratio. */
+.thumb { display: block; min-width: 0; }
+.slide-row.on .thumb .stage { box-shadow: 0 0 0 2px var(--accent); }
+.thumb-caption {
+  grid-column: 2; font-size: 11px; line-height: 1.3; color: var(--fg);
+  overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.slide-row .dot { color: var(--accent); font-size: 15px; line-height: 1; flex: none; }
+.slide-tools { display: flex; flex-direction: column; gap: 1px; flex: none; opacity: 0; }
 .slide-row:hover .slide-tools, .slide-row.on .slide-tools { opacity: 1; }
 button.tool {
-  border: 0; background: none; padding: 1px 5px; font-size: 12px;
-  color: var(--muted); border-radius: 3px; line-height: 1.4;
+  border: 0; background: none; padding: 0 4px; font-size: 11px;
+  color: var(--muted); border-radius: 3px; line-height: 1.5;
 }
 button.tool:hover { background: var(--bg); color: var(--fg); }
 .add-slide {
-  width: 100%; margin-top: 4px; border: 1px dashed var(--border-strong);
-  background: none; color: var(--accent); font-size: 12px; padding: 4px;
+  width: 100%; margin-top: 6px; border: 1px dashed var(--border-strong);
+  background: none; color: var(--accent); font-size: 12px; padding: 5px;
 }
-.slide-row.on { background: var(--bg-raised); border: 1px solid var(--border); }
-.slide-row .layout { color: var(--muted); font-size: 11px; flex: none; width: 74px; }
-.slide-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.slide-row .dot { color: var(--accent); font-size: 16px; line-height: 1; }
 
 .field { margin: 10px 0; }
 .field label { display: block; font-weight: 600; margin-bottom: 3px; font-size: 12px; }
@@ -208,7 +219,16 @@ button.mark {
   font-family: Consolas, monospace;
   background: rgba(127, 127, 127, 0.15); padding: 0 2px; border-radius: 2px;
 }
-.region sup, .region sub { font-size: 0.7em; line-height: 0; }
+.region sup, .region sub {
+  font-size: 0.7em;
+  /* Not line-height: 0 — that lets a raised glyph collide with the line
+     above. vertical-align does the lifting without shrinking the box. */
+  line-height: inherit;
+  vertical-align: baseline;
+  position: relative;
+}
+.region sup { top: -0.4em; }
+.region sub { bottom: -0.25em; }
 .region .media {
   border: 1px dashed currentColor; opacity: 0.55;
   padding: 4px; font-size: 11px; text-align: center;
@@ -237,3 +257,6 @@ button.mark {
 
 .empty { color: var(--muted); font-size: 12px; }
 details summary { cursor: pointer; font-size: 13px; margin: 8px 0; }
+
+/* Shrunk a long way: PowerPoint will do the same, so say so. */
+.region.overfull { box-shadow: inset 0 -2px 0 0 var(--danger); }

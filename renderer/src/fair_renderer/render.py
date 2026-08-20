@@ -154,10 +154,31 @@ def _fill_video(slide, placeholder, region: Region, base_dir: Path, build_dir: P
     pic.click_action.hyperlink.address = region.url
 
 
+def _shrink_on_overflow(placeholder) -> None:
+    """Let PowerPoint scale text that outgrows its placeholder.
+
+    Without this a long list simply spills past the bottom of its box and
+    collides with whatever is beneath it — the placeholder bounds are a
+    frame, not a clip. `normAutofit` is PowerPoint's own "shrink text on
+    overflow", so the deck stays readable instead of overlapping, and it
+    is the template's geometry doing the deciding rather than the author
+    guessing how much will fit.
+    """
+    from pptx.enum.text import MSO_AUTO_SIZE
+
+    try:
+        placeholder.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        placeholder.text_frame.word_wrap = True
+    except (AttributeError, ValueError):  # pragma: no cover - picture ph
+        pass
+
+
 def _fill_region(
     slide, placeholder, region: Region, base_dir: Path, build_dir: Path,
     code_typeface: str = DEFAULT_CODE_TYPEFACE,
 ) -> None:
+    if region.type in ("text", "p", "ul", "ol"):
+        _shrink_on_overflow(placeholder)
     if region.type == "text":
         # Plain string region: emphasis-aware, keeps the layout's own
         # paragraph style (titles and heads are unbulleted by design).

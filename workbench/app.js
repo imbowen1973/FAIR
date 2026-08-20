@@ -283,16 +283,46 @@ function renderOutline() {
         const pick = document.createElement("button");
         pick.type = "button";
         pick.className = "slide-pick";
-        pick.innerHTML =
-          `<span class="layout">${data.layout ?? "?"}</span>` +
-          `<span class="t">${escapeHtml(data.title ?? data.id ?? "untitled")}</span>` +
-          (entry.dirty ? '<span class="dot" title="unsaved">•</span>' : "");
+        pick.setAttribute(
+          "aria-label",
+          `Slide ${index + 1}: ${data.title ?? data.id ?? "untitled"} (${data.layout ?? "no layout"})`
+        );
+
+        const number = document.createElement("span");
+        number.className = "slide-no";
+        number.textContent = String(index + 1);
+
+        // The thumbnail is the same renderer as the big preview, in
+        // compact mode — so what the strip shows and what the pane shows
+        // can never disagree about a slide.
+        const thumb = document.createElement("span");
+        thumb.className = "thumb";
+        drawSchematic(thumb, {
+          geometry: state.library.geometry,
+          layoutKey: data.layout,
+          slide: data,
+          compact: true,
+        });
+
+        const caption = document.createElement("span");
+        caption.className = "thumb-caption";
+        caption.textContent = data.title ?? data.id ?? "untitled";
+
+        pick.append(number, thumb, caption);
         pick.addEventListener("click", () => {
           state.slideIndex = index;
           renderOutline();
           renderSlide();
         });
         row.appendChild(pick);
+
+        if (entry.dirty) {
+          const dot = document.createElement("span");
+          dot.className = "dot";
+          dot.title = "unsaved";
+          dot.textContent = "•";
+          row.appendChild(dot);
+        }
 
         const tools = document.createElement("span");
         tools.className = "slide-tools";
@@ -306,7 +336,7 @@ function renderOutline() {
           b.className = "tool";
           b.textContent = label;
           b.title = title;
-          b.setAttribute("aria-label", `${title}: ${data.title ?? data.id ?? "slide"}`);
+          b.setAttribute("aria-label", `${title}: slide ${index + 1}`);
           b.addEventListener("click", (e) => {
             e.stopPropagation();
             fn();
