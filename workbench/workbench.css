@@ -184,20 +184,48 @@ button.mark {
 .chip { padding: 2px 9px; border-radius: 11px; font-size: 12px; }
 .chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 
-/* The schematic. Deliberately plain: it shows placement, not appearance. */
+/* The preview. Content at the template's own geometry, type sizes and
+   theme colours — close enough to judge by, never the artifact itself. */
 .stage {
-  position: relative; width: 100%; border: 1px solid var(--border-strong);
-  background: var(--bg-sunken); border-radius: 3px;
+  position: relative; width: 100%;
+  border: 1px solid var(--border-strong); border-radius: 3px;
+  overflow: hidden;
+  /* The template owns these; only the fallback lives here. */
+  background: #fff; color: #000;
+  font-family: "Segoe UI", Calibri, system-ui, sans-serif;
+  line-height: 1.2;
 }
 .region {
-  position: absolute; border: 1px solid var(--accent); border-radius: 2px;
-  padding: 3px 4px; overflow: hidden; background: var(--bg);
-  display: flex; flex-direction: column; gap: 2px;
+  position: absolute; overflow: hidden;
+  padding: 1px 2px;
+  display: flex; flex-direction: column; justify-content: flex-start;
 }
-.region.active { border-width: 2px; box-shadow: 0 0 0 2px var(--focus); }
-.region.vacant { border-style: dashed; border-color: var(--border-strong); background: transparent; }
-.region-name { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; flex: none; }
-.region-body { font-size: 10px; line-height: 1.25; overflow: hidden; }
+.region p { margin: 0 0 0.25em; }
+.region ul, .region ol { margin: 0; padding-left: 1.1em; }
+.region li { margin-bottom: 0.15em; }
+.region ul ul, .region ol ol { padding-left: 1em; margin-top: 0.15em; }
+.region code {
+  font-family: Consolas, monospace;
+  background: rgba(127, 127, 127, 0.15); padding: 0 2px; border-radius: 2px;
+}
+.region sup, .region sub { font-size: 0.7em; line-height: 0; }
+.region .media {
+  border: 1px dashed currentColor; opacity: 0.55;
+  padding: 4px; font-size: 11px; text-align: center;
+  flex: 1; display: flex; align-items: center; justify-content: center;
+}
+/* Focus follows the form: the region being edited is outlined, and only
+   then, so the preview normally shows the slide and not our chrome. */
+.region.active { outline: 2px solid var(--focus); outline-offset: -1px; }
+.region.vacant {
+  border: 1px dashed var(--border-strong); opacity: 0.5;
+  align-items: flex-start; justify-content: flex-start;
+}
+.region-name {
+  font-size: 9px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
 
 .problems { padding: 10px 18px; border-top: 1px solid var(--border); }
 .problems h3 { font-size: 13px; margin: 0 0 6px; }

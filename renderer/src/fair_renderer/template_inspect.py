@@ -365,6 +365,105 @@ def inspect_template(path: Path) -> list[LayoutResult]:
     return results
 
 
+PPTX_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+PPTX_P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+THEME_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme"
+
+
+def _theme_colours(master) -> dict[str, str]:
+    """The theme's colour scheme, as hex — what schemeClr slots resolve to."""
+    from lxml import etree
+
+    try:
+        part = master.part.part_related_by(THEME_REL)
+    except KeyError:
+        return {}
+    scheme = etree.fromstring(part.blob).find(f".//{{{PPTX_A_NS}}}clrScheme")
+    if scheme is None:
+        return {}
+
+    out = {}
+    for child in scheme:
+        name = etree.QName(child).localname
+        srgb = child.find(f"{{{PPTX_A_NS}}}srgbClr")
+        system = child.find(f"{{{PPTX_A_NS}}}sysClr")
+        value = srgb.get("val") if srgb is not None else (
+            system.get("lastClr") if system is not None else None
+        )
+        if value:
+            out[name] = f"#{value}"
+    # bg1/tx1 are the map's aliases; slides refer to both spellings.
+    out.setdefault("bg1", out.get("lt1", "#FFFFFF"))
+    out.setdefault("tx1", out.get("dk1", "#000000"))
+    out.setdefault("bg2", out.get("lt2", "#EEECE1"))
+    out.setdefault("tx2", out.get("dk2", "#1F497D"))
+    return out
+
+
+def _default_text_style(master, is_title: bool) -> dict:
+    """The master's own default for titles or bodies."""
+    styles = master.element.find(f"{{{PPTX_P_NS}}}txStyles")
+    if styles is None:
+        return {}
+    node = styles.find(f"{{{PPTX_P_NS}}}{'titleStyle' if is_title else 'bodyStyle'}")
+    if node is None:
+        return {}
+    lvl1 = node.find(f"{{{PPTX_A_NS}}}lvl1pPr")
+    if lvl1 is None:
+        return {}
+    rpr = lvl1.find(f"{{{PPTX_A_NS}}}defRPr")
+    style = {"align": lvl1.get("algn") or "l"}
+    if rpr is not None:
+        if rpr.get("sz"):
+            style["sizePt"] = int(rpr.get("sz")) / 100
+        if rpr.get("b") == "1":
+            style["bold"] = True
+    return style
+
+
+def _region_text_style(placeholder_el, master, is_title: bool) -> dict:
+    """How this placeholder styles its first level, master default beneath.
+
+    Only enough for a schematic to be *representative*: size, weight,
+    alignment and colour. Not a rendering engine — that is the deck.
+    """
+    from lxml import etree
+
+    style = _default_text_style(master, is_title)
+    lst = placeholder_el.find(f".//{{{PPTX_A_NS}}}lstStyle")
+    if lst is None:
+        return style
+
+    lvl1 = lst.find(f"{{{PPTX_A_NS}}}lvl1pPr")
+    if lvl1 is None:
+        return style
+    if lvl1.get("algn"):
+        style["align"] = lvl1.get("algn")
+
+    rpr = lvl1.find(f"{{{PPTX_A_NS}}}defRPr")
+    if rpr is not None:
+        if rpr.get("sz"):
+            style["sizePt"] = int(rpr.get("sz")) / 100
+        if rpr.get("b") is not None:
+            style["bold"] = rpr.get("b") == "1"
+        scheme = rpr.find(f".//{{{PPTX_A_NS}}}schemeClr")
+        srgb = rpr.find(f".//{{{PPTX_A_NS}}}srgbClr")
+        if scheme is not None:
+            style["colorSlot"] = scheme.get("val")
+        elif srgb is not None:
+            style["color"] = f"#{srgb.get('val')}"
+
+    # Second level, so nested bullets can be drawn smaller.
+    lvl2 = lst.find(f"{{{PPTX_A_NS}}}lvl2pPr")
+    if lvl2 is not None:
+        rpr2 = lvl2.find(f"{{{PPTX_A_NS}}}defRPr")
+        if rpr2 is not None and rpr2.get("sz"):
+            style["sizePt2"] = int(rpr2.get("sz")) / 100
+
+    style["bulleted"] = lvl1.find(f"{{{PPTX_A_NS}}}buNone") is None
+    return style
+
+
 def layout_geometry(path: Path, results: list[LayoutResult]) -> dict:
     """Where each bound region actually sits, for a schematic preview.
 
@@ -374,24 +473,29 @@ def layout_geometry(path: Path, results: list[LayoutResult]) -> dict:
     schematic scales to whatever width it is given.
     """
     prs = Presentation(str(path))
-    by_name = {
-        layout.name: layout
-        for master in prs.slide_masters
-        for layout in master.slide_layouts
-    }
+    master_of = {}
+    by_name = {}
+    for master in prs.slide_masters:
+        for layout in master.slide_layouts:
+            by_name[layout.name] = layout
+            master_of[layout.name] = master
     slide_w, slide_h = prs.slide_width, prs.slide_height
+    first_master = prs.slide_masters[0]
 
     layouts = {}
     for result in results:
         if result.layout_name is None or not result.regions:
             continue
-        placeholders = {p.idx: p for p in _placeholders(by_name[result.layout_name])}
+        layout = by_name[result.layout_name]
+        master = master_of[result.layout_name]
+        placeholders = {p.idx: p for p in _placeholders(layout)}
+        elements = {p.placeholder_format.idx: p._element for p in layout.placeholders}
         regions = {}
         for region, idx in result.regions.items():
             ph = placeholders.get(idx)
             if ph is None or not ph.positioned or not ph.width or not ph.height:
                 continue  # inherits geometry from the master: nothing to draw
-            regions[region] = {
+            entry = {
                 "idx": idx,
                 "x": round(ph.left / slide_w, 5),
                 "y": round(ph.top / slide_h, 5),
@@ -399,6 +503,12 @@ def layout_geometry(path: Path, results: list[LayoutResult]) -> dict:
                 "h": round(ph.height / slide_h, 5),
                 "type": str(ph.type).split()[0].lower(),
             }
+            element = elements.get(idx)
+            if element is not None:
+                entry["style"] = _region_text_style(
+                    element, master, ph.type in TITLES
+                )
+            regions[region] = entry
         if regions:
             layouts[result.key] = {"layoutName": result.layout_name, "regions": regions}
 
@@ -407,7 +517,14 @@ def layout_geometry(path: Path, results: list[LayoutResult]) -> dict:
             "widthEmu": slide_w,
             "heightEmu": slide_h,
             "aspect": round(slide_w / slide_h, 5),
+            # Points across the slide, so a schematic can scale type to
+            # whatever width it is drawn at and stay proportionate.
+            "widthPt": round(slide_w / 12700, 2),
         },
+        # What schemeClr slots resolve to in this template. A preview that
+        # invented colours would be lying about the one thing the template
+        # most obviously owns.
+        "theme": _theme_colours(first_master),
         "layouts": layouts,
     }
 
