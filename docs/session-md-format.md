@@ -108,8 +108,41 @@ A region contains text or an image, never both (per spec A.2).
 
 ### Emphasis and colour
 
-Inline emphasis inside any text: `**bold**`, `*italic*`,
-`***bold italic***`.
+Inline marks inside any text:
+
+| Mark | Syntax | Example |
+|---|---|---|
+| bold | `**text**` | **bold** |
+| italic | `*text*` | *italic* |
+| bold italic | `***text***` | ***both*** |
+| superscript | `x^2^` | 12 cm^2^ |
+| subscript | `H~2~O` | CO~2~ |
+| strikethrough | `~~text~~` | ~~withdrawn~~ |
+| underline | `__text__` | __underlined__ |
+| inline code | `` `text` `` | run `fair-corpus` |
+
+**Marks nest**: `**CO~2~ uptake**` is bold throughout with a subscript 2.
+
+Two deliberate details. `~~` is read before a single `~`, so
+strikethrough never swallows a subscript. Underline uses `__` rather
+than a third tilde form, and a single `_` is never a mark — so
+`snake_case_name` is left alone.
+
+A code span is literal: markers inside it are content, not marks.
+
+Underline is offered because content sometimes demands it, but on a
+slide it usually reads as a hyperlink — prefer the template's own
+emphasis where you can.
+
+Inline code is the one place a typeface is named. OOXML themes define
+major and minor fonts but no monospace slot, so the font comes from the
+library, not this renderer — set `_style.code_typeface` at the top of
+`layout-map.yaml` (default `Consolas`):
+
+```yaml
+_style:
+  code_typeface: JetBrains Mono
+```
 
 Colour is declared in YAML, not inline, and only as **theme colour
 slots** — `accent1`–`accent6`, `dk1`, `lt1`, `dk2`, `lt2`, `hlink`,

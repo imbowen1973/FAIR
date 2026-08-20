@@ -21,10 +21,16 @@ from .attribution import (
     stamp_slide,
 )
 from .creation_id import derive_creation_id, inject_creation_id
-from .layoutmap import LayoutBinding, LayoutMapError, load_layout_map, validate_against_template
+from .layoutmap import (
+    LayoutBinding,
+    LayoutMapError,
+    load_layout_map,
+    load_style,
+    validate_against_template,
+)
 from .mermaid import resolve_mermaid
 from .parser import ListItem, Region, Session, Slide, parse_session
-from .runs import write_runs
+from .runs import DEFAULT_CODE_TYPEFACE, plain_text, write_runs
 from .zipnorm import normalize_zip
 
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -56,7 +62,7 @@ def _suppress_bullet(paragraph) -> None:
     etree.SubElement(pPr, f"{{{A_NS}}}buNone")
 
 
-def _fill_list(placeholder, region: Region, numbered: bool) -> None:
+def _fill_list(placeholder, region: Region, numbered: bool, code_typeface: str) -> None:
     tf = placeholder.text_frame
     first = True
 
@@ -69,7 +75,12 @@ def _fill_list(placeholder, region: Region, numbered: bool) -> None:
             else:
                 paragraph = tf.add_paragraph()
             paragraph.level = level
-            write_runs(paragraph, item.text, color=item.color or region.color)
+            write_runs(
+                paragraph,
+                item.text,
+                color=item.color or region.color,
+                code_typeface=code_typeface,
+            )
             if numbered:
                 _apply_auto_numbering(paragraph)
             if item.children:
@@ -78,12 +89,12 @@ def _fill_list(placeholder, region: Region, numbered: bool) -> None:
     write_items(region.items, 0)
 
 
-def _fill_plain(placeholder, region: Region, suppress_bullets: bool) -> None:
+def _fill_plain(placeholder, region: Region, suppress_bullets: bool, code_typeface: str) -> None:
     tf = placeholder.text_frame
     lines = (region.text or "").splitlines() or [""]
     for i, line in enumerate(lines):
         paragraph = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        write_runs(paragraph, line, color=region.color)
+        write_runs(paragraph, line, color=region.color, code_typeface=code_typeface)
         if suppress_bullets:
             _suppress_bullet(paragraph)
 
@@ -143,15 +154,25 @@ def _fill_video(slide, placeholder, region: Region, base_dir: Path, build_dir: P
     pic.click_action.hyperlink.address = region.url
 
 
-def _fill_region(slide, placeholder, region: Region, base_dir: Path, build_dir: Path) -> None:
+def _fill_region(
+    slide, placeholder, region: Region, base_dir: Path, build_dir: Path,
+    code_typeface: str = DEFAULT_CODE_TYPEFACE,
+) -> None:
     if region.type == "text":
         # Plain string region: emphasis-aware, keeps the layout's own
         # paragraph style (titles and heads are unbulleted by design).
-        write_runs(placeholder.text_frame.paragraphs[0], region.text or "")
+        write_runs(
+            placeholder.text_frame.paragraphs[0],
+            region.text or "",
+            code_typeface=code_typeface,
+        )
     elif region.type == "p":
-        _fill_plain(placeholder, region, suppress_bullets=True)
+        _fill_plain(placeholder, region, suppress_bullets=True, code_typeface=code_typeface)
     elif region.type in ("ul", "ol"):
-        _fill_list(placeholder, region, numbered=(region.type == "ol"))
+        _fill_list(
+            placeholder, region, numbered=(region.type == "ol"),
+            code_typeface=code_typeface,
+        )
     elif region.type == "image":
         _fill_image(slide, placeholder, base_dir / region.src)
     elif region.type == "mermaid":
@@ -171,6 +192,7 @@ def _render_slide(
     session_id: str,
     base_dir: Path,
     build_dir: Path,
+    code_typeface: str = DEFAULT_CODE_TYPEFACE,
 ):
     layout = layouts_by_name[binding.layout_name]
     slide = prs.slides.add_slide(layout)
@@ -189,7 +211,7 @@ def _render_slide(
             raise RenderError(
                 f"slide {slide_src.id!r}: placeholder idx {idx} missing on new slide"
             )
-        _fill_region(slide, placeholder, region, base_dir, build_dir)
+        _fill_region(slide, placeholder, region, base_dir, build_dir, code_typeface)
 
     if slide_src.notes:
         slide.notes_slide.notes_text_frame.text = slide_src.notes
@@ -213,6 +235,7 @@ def render_session(
     """
     session = parse_session(session_path)
     bindings = load_layout_map(layout_map_path)
+    code_typeface = load_style(layout_map_path).get("code_typeface", DEFAULT_CODE_TYPEFACE)
 
     if attribution_path is None:
         candidate = session_path.parent.parent / "attribution.yaml"
@@ -244,7 +267,8 @@ def render_session(
                 f"available: {sorted(bindings)}"
             )
         slide, creation_id = _render_slide(
-            prs, layouts_by_name, binding, slide_src, session_id, base_dir, build_dir
+            prs, layouts_by_name, binding, slide_src, session_id, base_dir,
+            build_dir, code_typeface,
         )
 
         dc = session.frontmatter.get("dc") or {}
@@ -264,11 +288,7 @@ def render_session(
         slide_id_map[slide_src.id] = source_ref
 
         title_region = next((r for r in slide_src.regions if r.name == "title"), None)
-        plain_title = None
-        if title_region and title_region.text:
-            from .runs import parse_emphasis
-
-            plain_title = "".join(r.text for r in parse_emphasis(title_region.text))
+        plain_title = plain_text(title_region.text) if title_region and title_region.text else None
         index_entries.append(
             {
                 "slideId": slide_src.id,

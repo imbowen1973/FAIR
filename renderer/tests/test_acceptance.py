@@ -1271,3 +1271,368 @@ def test_migration_refuses_a_library_already_migrated(tmp_path):
     apply_migration(plan_migration(root))
     with pytest.raises(MigrationError, match="already exists"):
         plan_migration(root)
+
+
+# --- inline marks --------------------------------------------------------
+
+
+def _marks(spec):
+    return {
+        name
+        for name in ("bold", "italic", "superscript", "subscript", "strike", "underline", "code")
+        if getattr(spec, name)
+    }
+
+
+def test_every_mark_parses():
+    from fair_renderer.runs import parse_emphasis
+
+    runs = parse_emphasis("**b** *i* ***bi*** x^2^ H~2~O ~~s~~ __u__ `c`")
+    by_text = {r.text: _marks(r) for r in runs if r.text.strip()}
+    assert by_text["b"] == {"bold"}
+    assert by_text["i"] == {"italic"}
+    assert by_text["bi"] == {"bold", "italic"}
+    assert by_text["s"] == {"strike"}
+    assert by_text["u"] == {"underline"}
+    assert by_text["c"] == {"code"}
+    # Both "2" runs exist: one superscript, one subscript.
+    twos = [_marks(r) for r in runs if r.text == "2"]
+    assert {"superscript"} in twos and {"subscript"} in twos
+
+
+def test_marks_nest():
+    """A split regex cannot express this; the tokenizer must."""
+    from fair_renderer.runs import parse_emphasis, plain_text
+
+    runs = parse_emphasis("**CO~2~ uptake**")
+    assert all(r.bold for r in runs), "bold must survive across the nested mark"
+    assert _marks(next(r for r in runs if r.text == "2")) == {"bold", "subscript"}
+    assert plain_text("**CO~2~ uptake**") == "CO2 uptake"
+
+
+def test_tilde_pairs_before_single_tilde():
+    """Otherwise strikethrough would swallow subscript."""
+    from fair_renderer.runs import parse_emphasis
+
+    runs = parse_emphasis("~~struck~~ and H~2~O")
+    assert _marks(next(r for r in runs if r.text == "struck")) == {"strike"}
+    assert _marks(next(r for r in runs if r.text == "2")) == {"subscript"}
+
+
+def test_code_spans_are_literal():
+    from fair_renderer.runs import parse_emphasis
+
+    (run,) = [r for r in parse_emphasis("`**not bold**`") if r.text.strip()]
+    assert run.code and not run.bold
+    assert run.text == "**not bold**"
+
+
+def test_unclosed_and_underscores_stay_literal():
+    """Authors write snake_case and stray asterisks; neither is a mark."""
+    from fair_renderer.runs import parse_emphasis, plain_text
+
+    assert plain_text("unclosed ** stays") == "unclosed ** stays"
+    assert plain_text("snake_case_name") == "snake_case_name"
+    assert len(parse_emphasis("snake_case_name")) == 1
+
+
+def test_marks_reach_the_slide_xml(tmp_path):
+    """The attributes are the contract; the syntax is just how we get there."""
+    import shutil
+
+    lib = tmp_path / "lib"
+    (lib / "sessions").mkdir(parents=True)
+    shutil.copy(EXAMPLES / "template.pptx", lib / "template.pptx")
+    shutil.copy(EXAMPLES / "layout-map.yaml", lib / "layout-map.yaml")
+    (lib / "sessions" / "session-99.md").write_text(
+        "---\n"
+        'session: "99"\n'
+        "title: Marks\n"
+        "version: 1.0.0\n"
+        "---\n\n"
+        "--- slide\n"
+        "id: m-01\n"
+        "layout: Full\n"
+        "title: Marks\n"
+        "full:\n"
+        "  type: p\n"
+        '  text: "H~2~O and x^2^ and ~~gone~~ and __u__ and `kod`"\n'
+        "---\n",
+        encoding="utf-8",
+    )
+    result = render_session(
+        session_path=lib / "sessions" / "session-99.md",
+        template_path=lib / "template.pptx",
+        layout_map_path=lib / "layout-map.yaml",
+        out_dir=tmp_path / "out",
+    )
+    with zipfile.ZipFile(result["pptx"]) as z:
+        xml = z.read("ppt/slides/slide1.xml").decode("utf-8")
+
+    assert 'baseline="-25000"' in xml, "subscript"
+    assert 'baseline="30000"' in xml, "superscript"
+    assert 'strike="sngStrike"' in xml, "strikethrough"
+    assert 'u="sng"' in xml, "underline"
+    assert 'typeface="Consolas"' in xml, "inline code typeface"
+
+
+def test_code_typeface_is_owned_by_the_library(tmp_path):
+    """OOXML has no monospace theme slot, so the library names the font."""
+    import shutil
+
+    lib = tmp_path / "lib"
+    (lib / "sessions").mkdir(parents=True)
+    shutil.copy(EXAMPLES / "template.pptx", lib / "template.pptx")
+    layout_map = (EXAMPLES / "layout-map.yaml").read_text(encoding="utf-8")
+    (lib / "layout-map.yaml").write_text(
+        "_style:\n  code_typeface: JetBrains Mono\n" + layout_map, encoding="utf-8"
+    )
+    (lib / "sessions" / "session-98.md").write_text(
+        "---\n"
+        'session: "98"\n'
+        "title: Code\n"
+        "version: 1.0.0\n"
+        "---\n\n"
+        "--- slide\n"
+        "id: c-01\n"
+        "layout: Full\n"
+        "title: Code\n"
+        "full:\n"
+        "  type: p\n"
+        '  text: "run `fair-corpus` now"\n'
+        "---\n",
+        encoding="utf-8",
+    )
+    result = render_session(
+        session_path=lib / "sessions" / "session-98.md",
+        template_path=lib / "template.pptx",
+        layout_map_path=lib / "layout-map.yaml",
+        out_dir=tmp_path / "out",
+    )
+    with zipfile.ZipFile(result["pptx"]) as z:
+        xml = z.read("ppt/slides/slide1.xml").decode("utf-8")
+    assert 'typeface="JetBrains Mono"' in xml
+    assert "Consolas" not in xml
+
+
+def test_style_block_is_not_mistaken_for_a_layout(tmp_path):
+    """_style sits in layout-map.yaml; the loader must skip it."""
+    from fair_renderer.layoutmap import load_layout_map, load_style
+
+    path = tmp_path / "layout-map.yaml"
+    path.write_text(
+        "_style:\n  code_typeface: Fira Code\n"
+        + (EXAMPLES / "layout-map.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    bindings = load_layout_map(path)
+    assert "_style" not in bindings
+    assert "Split" in bindings
+    assert load_style(path)["code_typeface"] == "Fira Code"
+
+
+def test_index_title_still_strips_every_marker(tmp_path):
+    """plain_text feeds the semantic index; markers must never leak in."""
+    import shutil
+
+    lib = tmp_path / "lib"
+    (lib / "sessions").mkdir(parents=True)
+    shutil.copy(EXAMPLES / "template.pptx", lib / "template.pptx")
+    shutil.copy(EXAMPLES / "layout-map.yaml", lib / "layout-map.yaml")
+    (lib / "sessions" / "session-97.md").write_text(
+        "---\n"
+        'session: "97"\n'
+        "title: T\n"
+        "version: 1.0.0\n"
+        "---\n\n"
+        "--- slide\n"
+        "id: t-01\n"
+        "layout: Full\n"
+        'title: "**CO~2~** in `air`"\n'
+        "full:\n"
+        "  type: p\n"
+        "  text: body\n"
+        "---\n",
+        encoding="utf-8",
+    )
+    result = render_session(
+        session_path=lib / "sessions" / "session-97.md",
+        template_path=lib / "template.pptx",
+        layout_map_path=lib / "layout-map.yaml",
+        out_dir=tmp_path / "out",
+    )
+    entry = json.loads(result["index"].read_text())["slides"][0]
+    assert entry["title"] == "CO2 in air"
+
+
+# --- curriculum in SQLite, completion against it -------------------------
+
+
+def _catalog_for_tracking() -> dict:
+    return {
+        "course": {"id": "clinical-educator", "title": "Clinical Educator",
+                   "description": None},
+        "structure": [],
+        "blocks": [
+            {"blockId": "01-foundations", "title": "Foundations",
+             "durationMinutes": 180, "pptx": "sessions/01/x.pptx",
+             "resources": [{"type": "workbook", "title": "Workbook",
+                            "path": "blocks/01-foundations/workbook.md"}]},
+            {"blockId": "02-feedback", "title": "Feedback",
+             "durationMinutes": 180, "pptx": "sessions/02/x.pptx", "resources": []},
+        ],
+        "sessions": [],
+        "competencies": {"CE1": "Designing", "CE2": "Teaching", "CE3": "Assessing"},
+        "slides": [
+            {"slideId": "a", "blockId": "01-foundations", "title": "A",
+             "dok": 3, "develops": ["CE1"]},
+            {"slideId": "b", "blockId": "01-foundations", "title": "B",
+             "dok": 2, "develops": ["CE2"]},
+            {"slideId": "c", "blockId": "02-feedback", "title": "C",
+             "dok": 3, "develops": ["CE3"]},
+        ],
+        "credentials": [
+            {"id": "ce", "title": "Clinical Educator", "ects": 5,
+             "requires": [
+                 {"competency": "CE1", "min_dok": 3},
+                 {"competency": "CE2", "min_dok": 3},
+                 {"competency": "CE3", "min_dok": 3},
+             ]},
+        ],
+        "attribution": None,
+    }
+
+
+def test_sync_projects_the_curriculum(tmp_path):
+    from fair_renderer.tracking import connect, sync_curriculum
+
+    conn = connect(tmp_path / "c.db")
+    counts = sync_curriculum(conn, _catalog_for_tracking())
+    assert counts["blocks"] == 2
+    assert counts["slides"] == 3
+    assert counts["credentials"] == 1
+    assert counts["resources"] == 1
+    conn.close()
+
+
+def test_resync_is_idempotent_and_never_touches_events(tmp_path):
+    """Curriculum is derived and rebuildable; events are the store of record."""
+    from fair_renderer.tracking import connect, record, sync_curriculum
+
+    conn = connect(tmp_path / "c.db")
+    catalog = _catalog_for_tracking()
+    sync_curriculum(conn, catalog)
+    record(conn, "ada", "completed", block_id="01-foundations")
+
+    # Content changed upstream: a slide is retitled and a block renamed.
+    catalog["blocks"][0]["title"] = "Foundations, revised"
+    sync_curriculum(conn, catalog)
+
+    assert conn.execute("SELECT COUNT(*) FROM blocks").fetchone()[0] == 2, "duplicated"
+    assert conn.execute(
+        "SELECT title FROM blocks WHERE block_id='01-foundations'"
+    ).fetchone()[0] == "Foundations, revised"
+    assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 1, "events lost"
+    conn.close()
+
+
+def test_completion_evidences_competencies_at_the_slides_dok(tmp_path):
+    from fair_renderer.tracking import connect, record, sync_curriculum
+
+    conn = connect(tmp_path / "c.db")
+    sync_curriculum(conn, _catalog_for_tracking())
+    record(conn, "ada", "completed", block_id="01-foundations")
+
+    evidence = {
+        row["competency_id"]: row["dok"]
+        for row in conn.execute(
+            "SELECT competency_id, dok FROM learner_competency WHERE learner='ada'"
+        )
+    }
+    assert evidence == {"CE1": 3, "CE2": 2}
+    conn.close()
+
+
+def test_credential_requires_the_dok_not_just_the_competency(tmp_path):
+    """DOK 2 evidence must not satisfy a DOK 3 requirement."""
+    from fair_renderer.tracking import (
+        connect,
+        credential_progress,
+        record,
+        sync_curriculum,
+    )
+
+    conn = connect(tmp_path / "c.db")
+    sync_curriculum(conn, _catalog_for_tracking())
+    record(conn, "ada", "completed", block_id="01-foundations")
+    record(conn, "ada", "completed", block_id="02-feedback")
+
+    (entry,) = credential_progress(conn, "ada")
+    met = {r["competency"]: r["met"] for r in entry["requirements"]}
+    assert met == {"CE1": True, "CE2": False, "CE3": True}
+    assert entry["complete"] is False, "CE2 is only evidenced at DOK 2"
+    conn.close()
+
+
+def test_a_learner_with_no_events_has_no_evidence(tmp_path):
+    from fair_renderer.tracking import connect, credential_progress, sync_curriculum
+
+    conn = connect(tmp_path / "c.db")
+    sync_curriculum(conn, _catalog_for_tracking())
+    (entry,) = credential_progress(conn, "nobody")
+    assert not any(r["met"] for r in entry["requirements"])
+    assert entry["complete"] is False
+    conn.close()
+
+
+def test_completion_against_an_unknown_block_is_refused(tmp_path):
+    """Otherwise the record accumulates events pointing at nothing."""
+    from fair_renderer.tracking import TrackingError, connect, record, sync_curriculum
+
+    conn = connect(tmp_path / "c.db")
+    sync_curriculum(conn, _catalog_for_tracking())
+    with pytest.raises(TrackingError, match="no such block"):
+        record(conn, "ada", "completed", block_id="99-does-not-exist")
+    conn.close()
+
+
+def test_sync_refuses_a_catalog_with_no_course(tmp_path):
+    """A flat library predates the recipe and has nothing to hang events on."""
+    from fair_renderer.tracking import TrackingError, connect, sync_curriculum
+
+    conn = connect(tmp_path / "c.db")
+    with pytest.raises(TrackingError, match="course id"):
+        sync_curriculum(conn, {"course": {}, "blocks": [], "slides": []})
+    conn.close()
+
+
+def test_tracking_syncs_a_really_rendered_catalog(tmp_path):
+    """End to end: render a library, project it, record against it."""
+    import shutil
+
+    from fair_renderer.corpus import build_corpus
+    from fair_renderer.tracking import connect, credential_progress, record, sync_curriculum
+
+    root = _make_library(tmp_path / "lib")
+    out = tmp_path / "out"
+    build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda m: None,
+    )
+    catalog = json.loads((out / "catalog.json").read_text())
+
+    conn = connect(tmp_path / "c.db")
+    counts = sync_curriculum(conn, catalog)
+    assert counts["blocks"] == 1
+    assert counts["resources"] == 2
+
+    record(conn, "ada", "completed", block_id="01-foundations", source="pr")
+    assert conn.execute(
+        "SELECT COUNT(*) FROM learner_competency WHERE learner='ada'"
+    ).fetchone()[0] >= 1
+    # No credentials in this fixture, so progress is simply empty.
+    assert credential_progress(conn, "ada") == []
+    conn.close()

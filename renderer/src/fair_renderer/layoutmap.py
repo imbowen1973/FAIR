@@ -26,6 +26,24 @@ class LayoutBinding:
     regions: dict[str, int]  # region name -> placeholder idx
 
 
+def load_style(path: Path) -> dict:
+    """Library-level style settings from the layout map's `_style` block.
+
+    Only appearance the theme cannot express belongs here — today just
+    `code_typeface`, because OOXML has major and minor font slots but no
+    monospace one. It lives with the library so the renderer never names
+    a font of its own.
+    """
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        raise LayoutMapError(f"{path}: invalid YAML: {e}") from e
+    style = (data or {}).get("_style") or {}
+    if not isinstance(style, dict):
+        raise LayoutMapError(f"{path}: '_style' must be a mapping")
+    return style
+
+
 def load_layout_map(path: Path) -> dict[str, LayoutBinding]:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -36,6 +54,9 @@ def load_layout_map(path: Path) -> dict[str, LayoutBinding]:
 
     bindings: dict[str, LayoutBinding] = {}
     for key, entry in data.items():
+        # Underscore keys are library settings, not layouts (see load_style).
+        if key.startswith("_"):
+            continue
         if not isinstance(entry, dict):
             raise LayoutMapError(f"{path}: entry {key!r} must be a mapping")
         layout_name = entry.get("layout_name")

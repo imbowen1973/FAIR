@@ -12,7 +12,7 @@ the input grammar is
 pip install -e "renderer[test]"
 ```
 
-Five commands ship with it:
+Six commands ship with it:
 
 ```bash
 # one session -> one deck
@@ -21,18 +21,31 @@ fair-render examples/sessions/session-01.md \
   --layout-map examples/layout-map.yaml \
   --out-dir out/session-01
 
-# a whole library -> decks + catalog.json
-fair-corpus --sessions sessions --template template.pptx \
-  --layout-map layout-map.yaml --framework competencies/framework.yaml \
-  --credentials credentials --out _site/data
+# a whole library -> decks, resources + catalog.json
+# (template, layout map, framework and credentials are found in the repo)
+fair-corpus path/to/library --out _site/data
+
+# an older flat sessions/ library -> a course of blocks
+fair-migrate path/to/library --apply
 
 # bind any PowerPoint template; add Cards to one that lacks it
 fair-template their-template.pptx --out layout-map.yaml
 fair-template their-template.pptx --add-cards their-template-cards.pptx
 
 # check images against the asset policy
-fair-assets sessions/
+fair-assets blocks/
+
+# project a curriculum into SQLite and record completion against it
+fair-track sync _site/data/catalog.json --db curriculum.db
+fair-track complete --learner ada --block 01-foundations --source pr
+fair-track report --learner ada
 ```
+
+`fair-track` keeps two kinds of table apart: the curriculum is a
+projection of `catalog.json` and can be dropped and rebuilt, while
+`events` is append-only and the only data not in git. Completion
+evidences competencies at the DOK its slides reach, so a credential
+needing DOK 3 is not satisfied by DOK 2 evidence.
 
 Outputs, per spec A.4:
 

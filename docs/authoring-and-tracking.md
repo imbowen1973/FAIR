@@ -103,7 +103,12 @@ should never discover errors there.
 
 ### 2.5 Save model — the authoring vocabulary, made literal
 
-GitHub device-flow OAuth from the static app (no server, no secret).
+GitHub OAuth needs one small piece of infrastructure, not none:
+`github.com/login/device/code` and the token endpoint send **no CORS
+headers**, so a browser cannot complete the exchange. A ~30-line token
+broker holds the client secret and does only that exchange; everything
+after login is browser-direct to `api.github.com`, which does send
+`Access-Control-Allow-Origin: *`. The broker never sees repo content.
 Verbs per `platform-architecture.md` §4.1: **Save** commits to the
 author's draft branch; **Submit for review** opens the PR; **History**
 lists commits with restore. The workbench holds no state the repo
@@ -137,6 +142,38 @@ Authoring-side tracking therefore needs **zero new behaviour from
 authors**: merging the PR *is* the record. Learner-side completion
 needs a delivery surface (assignment list; later assessment results
 feeding in automatically).
+
+### 3.1b The curriculum is in the database too — as a projection
+
+`fair-track` implements this in SQLite. Two kinds of table live there,
+and the difference is the whole design:
+
+- **Curriculum tables are derived.** courses, blocks, slides,
+  competencies, credentials, resources — all projected from a rendered
+  `catalog.json`, which comes from git. Drop them, re-sync, lose
+  nothing. They exist so completion has something to point at, and so
+  "who has evidence for CE3 at DOK 3" is a SQL question rather than a
+  walk over JSON.
+- **`events` is the store of record.** Append-only, and the only data
+  not in git. Losing it loses activity history, never content.
+
+Re-syncing after a content change replaces the projection and never
+touches events — the asymmetry is enforced, and tested.
+
+Competency evidence is derived, not asserted: completing a block
+evidences every competency its slides develop, at the highest DOK those
+slides reach. A credential requiring DOK 3 is therefore **not**
+satisfied by DOK 2 evidence, which is the point of recording DOK at all.
+
+```bash
+fair-track sync data/catalog.json --db curriculum.db
+fair-track complete --learner ada --block 01-foundations --source pr
+fair-track report --learner ada
+```
+
+The middle layer's API (§3.3) becomes a thin front to this schema; the
+CLI exists so the model can be used, and audited, with no service
+running at all.
 
 ### 3.2 Data model (append-only)
 
