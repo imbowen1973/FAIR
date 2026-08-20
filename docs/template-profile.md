@@ -58,6 +58,30 @@ wrong placeholder.
 |---|---|
 | `Cards` | `title`, `head1`–`head4`, `card1`–`card4` |
 
+### Adding Cards to a template that lacks it
+
+No stock template has `Cards`, and hand-building nine placeholders at
+exact indices would defeat the point of the profile. Inject it instead:
+
+```bash
+fair-template their-template.pptx --add-cards their-template-cards.pptx
+```
+
+The injected layout carries **no colour values**. Its tabs fill from
+`accent1`–`accent4`, its panels from `bg2`, its tab text from `lt1` —
+theme slots OOXML guarantees every theme defines. The cards therefore
+come out in the target template's own palette, and follow it again if
+that template is later re-themed.
+
+Geometry is derived from the target's slide size, so it fits a short
+widescreen slide as well as a 4:3 one.
+
+The command is idempotent, and matches an existing four-panel layout by
+shape as well as by name — a template that already has a quad layout
+under some other name is used as-is rather than growing a second one.
+Pass `--force` to add one anyway. The source file is never modified: an
+output path is required.
+
 ## Binding a template
 
 ```bash

@@ -58,66 +58,19 @@ LEVEL_BULLET_COLORS = {1: "accent1", 2: "accent2", 3: "accent3"}
 
 CARDS_SOURCE_LAYOUT = "Title and Vertical Text"
 
-NSMAP = (
-    f'xmlns:a="{A_NS}" '
-    f'xmlns:p="{P_NS}"'
-)
-
-_CARD_TAB_XML = """\
-<p:sp {ns}>
-  <p:nvSpPr>
-    <p:cNvPr id="{id}" name="Card {n} Tab"/>
-    <p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>
-    <p:nvPr><p:ph type="body" sz="quarter" idx="{idx}"/></p:nvPr>
-  </p:nvSpPr>
-  <p:spPr>
-    <a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>
-    <a:prstGeom prst="round2SameRect">
-      <a:avLst><a:gd name="adj1" fmla="val 25000"/><a:gd name="adj2" fmla="val 0"/></a:avLst>
-    </a:prstGeom>
-    <a:solidFill><a:schemeClr val="{accent}"/></a:solidFill>
-  </p:spPr>
-  <p:txBody>
-    <a:bodyPr anchor="ctr" lIns="91440" rIns="91440" tIns="0" bIns="0"/>
-    <a:lstStyle>
-      <a:lvl1pPr algn="ctr" marL="0" indent="0"><a:buNone/>
-        <a:defRPr sz="1500" b="1"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:defRPr>
-      </a:lvl1pPr>
-    </a:lstStyle>
-    <a:p><a:endParaRPr/></a:p>
-  </p:txBody>
-</p:sp>
-"""
-
-_CARD_BODY_XML = """\
-<p:sp {ns}>
-  <p:nvSpPr>
-    <p:cNvPr id="{id}" name="Card {n} Body"/>
-    <p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>
-    <p:nvPr><p:ph type="body" sz="quarter" idx="{idx}"/></p:nvPr>
-  </p:nvSpPr>
-  <p:spPr>
-    <a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>
-    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
-    <a:solidFill><a:schemeClr val="bg2"/></a:solidFill>
-  </p:spPr>
-  <p:txBody>
-    <a:bodyPr lIns="91440" rIns="91440" tIns="82296" bIns="82296">
-      <a:normAutofit/>
-    </a:bodyPr>
-    <a:lstStyle>
-      <a:lvl1pPr><a:defRPr sz="1300"/></a:lvl1pPr>
-      <a:lvl2pPr><a:defRPr sz="1100"/></a:lvl2pPr>
-    </a:lstStyle>
-    <a:p><a:endParaRPr/></a:p>
-  </p:txBody>
-</p:sp>
-"""
+# The card shapes themselves live in fair_renderer.cards_layout, which
+# also injects them into templates this tool did not generate.
 
 
 def build_cards_layout(prs: Presentation) -> None:
-    """Turn the unused vertical-text layout into the Cards layout."""
-    EMU_PER_IN = 914400
+    """Turn the unused vertical-text layout into the Cards layout.
+
+    Shares its shapes with fair_renderer.cards_layout, which injects the
+    same layout into templates we did not generate — one definition, so
+    the two can never drift.
+    """
+    from fair_renderer.cards_layout import build_card_shapes
+
     layout = next(
         (
             lo
@@ -139,27 +92,8 @@ def build_cards_layout(prs: Presentation) -> None:
             el.getparent().remove(el)
 
     sp_tree = layout.element.cSld.find(f"{{{P_NS}}}spTree")
-    slide_w = prs.slide_width
-
-    margin = int(0.33 * EMU_PER_IN)
-    gap = int(0.17 * EMU_PER_IN)
-    card_w = (slide_w - 2 * margin - 3 * gap) // 4
-    top = int(1.80 * EMU_PER_IN)
-    tab_h = int(0.55 * EMU_PER_IN)
-    body_h = int(4.75 * EMU_PER_IN)
-
-    for n in range(1, 5):
-        x = margin + (n - 1) * (card_w + gap)
-        tab = _CARD_TAB_XML.format(
-            ns=NSMAP, id=20 + n, n=n, idx=n,
-            x=x, y=top, cx=card_w, cy=tab_h, accent=f"accent{n}",
-        )
-        body = _CARD_BODY_XML.format(
-            ns=NSMAP, id=24 + n, n=n, idx=4 + n,
-            x=x, y=top + tab_h, cx=card_w, cy=body_h,
-        )
-        sp_tree.append(etree.fromstring(tab))
-        sp_tree.append(etree.fromstring(body))
+    for shape in build_card_shapes(prs.slide_width, prs.slide_height):
+        sp_tree.append(shape)
 
 
 # Members that must follow buClr inside CT_TextParagraphProperties, in

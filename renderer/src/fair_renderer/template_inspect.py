@@ -276,6 +276,49 @@ def _match(layouts: dict[str, object], spec: Spec):
     return None, None
 
 
+def _columns(phs: list[Placeholder], count: int) -> list[list[Placeholder]] | None:
+    """Group placeholders into `count` columns by x, or None if they don't."""
+    if not all(p.positioned for p in phs):
+        return None
+    groups: list[list[Placeholder]] = []
+    for ph in sorted(phs, key=lambda p: p.left):
+        # Same column when the left edges are within a placeholder's width.
+        if groups and abs(ph.left - groups[-1][0].left) < (ph.width or 0) * 0.5:
+            groups[-1].append(ph)
+        else:
+            groups.append([ph])
+    return groups if len(groups) == count else None
+
+
+def _find_cards(layouts: dict[str, object], claimed: set[str]):
+    """Find a four-panel layout under whatever name the designer gave it.
+
+    A template that already has a quad-panel layout should be used, not
+    made to grow a second one called "Cards". Match on shape: four
+    columns of two content placeholders, a heading above each panel.
+    """
+    best = None
+    for name, layout in layouts.items():
+        if name in claimed:
+            continue
+        title, content = _split(_placeholders(layout))
+        if len(content) < 8:
+            continue
+        groups = _columns(content, 4)
+        if not groups or any(len(g) < 2 for g in groups):
+            continue
+        bound = _resolve_cards(title, content)
+        if len({k for k in bound if k.startswith(("head", "card"))}) == 8:
+            # Prefer the tightest fit: exactly eight content placeholders.
+            score = abs(len(content) - 8)
+            if best is None or score < best[0]:
+                best = (score, name, layout, bound)
+    if best is None:
+        return None, None, None
+    _, name, layout, bound = best
+    return name, layout, bound
+
+
 def inspect_template(path: Path) -> list[LayoutResult]:
     prs = Presentation(str(path))
     layouts = {
@@ -284,9 +327,22 @@ def inspect_template(path: Path) -> list[LayoutResult]:
         for layout in master.slide_layouts
     }
     results: list[LayoutResult] = []
+    claimed: set[str] = set()
     for spec in CORE + EXTENDED:
         result = LayoutResult(key=spec.key)
         name, layout = _match(layouts, spec)
+        if layout is None and spec.key == "Cards":
+            # Fall back to shape: the four-panel layout may be called
+            # anything, and using theirs beats requiring ours.
+            name, layout, bound = _find_cards(layouts, claimed)
+            if layout is not None:
+                result.layout_name = name
+                result.regions = bound
+                result.missing = [r for r in spec.regions if r not in bound]
+                result.notes.append(f"matched by shape, not name: {name!r}")
+                claimed.add(name)
+                results.append(result)
+                continue
         if layout is None:
             result.missing = list(spec.regions)
             result.notes.append(
@@ -294,6 +350,7 @@ def inspect_template(path: Path) -> list[LayoutResult]:
             )
             results.append(result)
             continue
+        claimed.add(name)
         result.layout_name = name
         title, content = _split(_placeholders(layout))
         resolve = _resolve_cards if spec.key == "Cards" else spec.resolve
@@ -324,6 +381,26 @@ def to_layout_map(results: list[LayoutResult]) -> str:
         for region in result.regions:
             lines.append(f"    {region}: {result.regions[region]}")
     return "\n".join(lines) + "\n"
+
+
+def unmapped(path: Path, results: list[LayoutResult]) -> list[tuple[str, int, list[str]]]:
+    """Layouts the profile did not claim, with what they contain.
+
+    A designer's template usually carries more than the profile needs.
+    Listing them means a library can map its own extra keys by hand
+    instead of discovering them by accident.
+    """
+    prs = Presentation(str(path))
+    used = {r.layout_name for r in results if r.layout_name}
+    out = []
+    for master in prs.slide_masters:
+        for layout in master.slide_layouts:
+            if layout.name in used:
+                continue
+            title, content = _split(_placeholders(layout))
+            kinds = [str(p.type).split()[0].lower() for p in content]
+            out.append((layout.name, len(content), kinds))
+    return out
 
 
 def report(results: list[LayoutResult]) -> str:
@@ -365,6 +442,15 @@ def main(argv: list[str] | None = None) -> int:
         description="Inspect a .pptx and emit a draft layout-map.yaml plus a conformance report",
     )
     ap.add_argument("template", type=Path)
+    ap.add_argument(
+        "--add-cards",
+        type=Path,
+        metavar="OUT",
+        default=None,
+        help="write a copy of the template with a Cards layout added, in its own theme colours",
+    )
+    ap.add_argument("--force", action="store_true",
+                    help="add Cards even if the template already has a four-panel layout")
     ap.add_argument("--out", type=Path, default=None,
                     help="write layout-map.yaml here (default: stdout)")
     ap.add_argument("--quiet", action="store_true", help="suppress the report")
@@ -373,6 +459,29 @@ def main(argv: list[str] | None = None) -> int:
     if not args.template.exists():
         print(f"error: no such template: {args.template}", file=sys.stderr)
         return 1
+
+    if args.add_cards:
+        from .cards_layout import CardsError, inject_cards
+
+        try:
+            outcome = inject_cards(args.template, args.add_cards, force=args.force)
+        except CardsError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        if outcome["added"]:
+            print(
+                f"added the Cards layout to {args.add_cards} "
+                f"(cloned from {outcome['donor']!r}, filled from the template's own theme)"
+            )
+        else:
+            print(
+                f"{args.template} already has a four-panel layout "
+                f"({outcome['layout']!r}); copied unchanged to {args.add_cards}. "
+                "Use --force to add another."
+            )
+        # Report against the file we just wrote, not the original.
+        args.template = args.add_cards
+
     results = inspect_template(args.template)
 
     if args.out:
@@ -384,6 +493,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.quiet:
         print(report(results), file=sys.stderr)
+        extra = unmapped(args.template, results)
+        if extra:
+            print("\nAlso in this template, unmapped:", file=sys.stderr)
+            for name, count, kinds in extra:
+                shape = ", ".join(kinds) if kinds else "no content placeholders"
+                print(f"  {name!r}: {count} content ({shape})", file=sys.stderr)
     # Partial or missing core layouts are a real finding, not a crash.
     core_keys = {s.key for s in CORE}
     return 1 if any(r.key in core_keys and not r.ok for r in results) else 0

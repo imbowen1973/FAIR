@@ -813,3 +813,199 @@ def test_missing_picture_placeholder_is_reported_not_silently_bound():
     )
     text = report([result])
     assert "PARTIAL" in text and "picture" in text and "free-positioned" in text
+
+
+# --- injecting the Cards layout into someone else's template -------------
+
+
+def _theme_accents(pptx_path: Path) -> dict[str, str]:
+    with zipfile.ZipFile(pptx_path) as z:
+        theme = next(n for n in z.namelist() if n.startswith("ppt/theme/theme"))
+        scheme = etree.fromstring(z.read(theme)).find(f".//{{{A_NS}}}clrScheme")
+    return {
+        f"accent{i}": scheme.find(f"{{{A_NS}}}accent{i}/{{{A_NS}}}srgbClr").get("val")
+        for i in range(1, 5)
+    }
+
+
+def _card_tab_slots(pptx_path: Path) -> list[str]:
+    """The theme slot each card tab fills from, left to right."""
+    with zipfile.ZipFile(pptx_path) as z:
+        for name in sorted(z.namelist()):
+            if not name.startswith("ppt/slideLayouts/slideLayout"):
+                continue
+            root = etree.fromstring(z.read(name))
+            if root.find(f".//{{{P_NS}}}cSld").get("name") != "Cards":
+                continue
+            slots = []
+            for sp in root.findall(f".//{{{P_NS}}}sp"):
+                label = sp.find(f".//{{{P_NS}}}cNvPr").get("name") or ""
+                if "Tab" not in label:
+                    continue
+                clr = sp.find(f".//{{{P_NS}}}spPr/{{{A_NS}}}solidFill/{{{A_NS}}}schemeClr")
+                slots.append(clr.get("val"))
+            return slots
+    return []
+
+
+def _rebrand(src: Path, dst: Path, accents: dict[str, str]) -> Path:
+    """Copy a template with its theme accent colours replaced."""
+    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename.startswith("ppt/theme/theme"):
+                xml = data.decode("utf-8")
+                for slot, value in accents.items():
+                    pattern = r'(<a:' + slot + r'>)\s*<a:srgbClr val="[0-9A-Fa-f]{6}"/>'
+                    xml = re.sub(pattern, r'\1<a:srgbClr val="' + value + '"/>', xml)
+                data = xml.encode("utf-8")
+            zout.writestr(item, data)
+    return dst
+
+
+def test_cards_injects_into_a_stock_template(tmp_path):
+    from fair_renderer.cards_layout import inject_cards
+    from fair_renderer.template_inspect import inspect_template
+
+    out = tmp_path / "with-cards.pptx"
+    assert inject_cards(STOCK, out)["added"] is True
+
+    cards = {r.key: r for r in inspect_template(out)}["Cards"]
+    assert cards.layout_name == "Cards"
+    assert not cards.missing
+    assert [cards.regions[f"head{n}"] for n in range(1, 5)] == [1, 2, 3, 4]
+    assert [cards.regions[f"card{n}"] for n in range(1, 5)] == [5, 6, 7, 8]
+
+
+def test_injected_cards_take_the_target_theme_colours(tmp_path):
+    """The point of injection: theme slots travel, colour values do not."""
+    from fair_renderer.cards_layout import inject_cards
+
+    brand = {
+        "accent1": "E4572E",
+        "accent2": "17BEBB",
+        "accent3": "FFC914",
+        "accent4": "2E282A",
+    }
+    rebranded = _rebrand(STOCK, tmp_path / "rebranded.pptx", brand)
+    inject_cards(STOCK, tmp_path / "plain-cards.pptx")
+    inject_cards(rebranded, tmp_path / "brand-cards.pptx")
+
+    slots = ["accent1", "accent2", "accent3", "accent4"]
+    assert _card_tab_slots(tmp_path / "plain-cards.pptx") == slots
+    assert _card_tab_slots(tmp_path / "brand-cards.pptx") == slots
+
+    # Identical references, different palettes: the tabs resolve to each
+    # template's own accents rather than anything we shipped.
+    assert _theme_accents(tmp_path / "brand-cards.pptx") == brand
+    assert _theme_accents(tmp_path / "plain-cards.pptx") != brand
+
+
+def test_cards_injection_is_idempotent(tmp_path):
+    from pptx import Presentation
+
+    from fair_renderer.cards_layout import inject_cards
+
+    assert inject_cards(STOCK, tmp_path / "one.pptx")["added"] is True
+    second = inject_cards(tmp_path / "one.pptx", tmp_path / "two.pptx")
+    assert second["added"] is False and second["layout"] == "Cards"
+
+    names = [
+        layout.name
+        for master in Presentation(str(tmp_path / "two.pptx")).slide_masters
+        for layout in master.slide_layouts
+    ]
+    assert names.count("Cards") == 1
+
+
+def test_cards_geometry_fits_a_short_widescreen_slide(tmp_path):
+    """Fixed inch constants would push the panels off a 10 x 5.63 slide."""
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    from fair_renderer.cards_layout import inject_cards
+
+    wide = tmp_path / "wide.pptx"
+    prs = Presentation(str(STOCK))
+    prs.slide_width, prs.slide_height = Inches(10), Inches(5.63)
+    prs.save(str(wide))
+
+    assert inject_cards(wide, tmp_path / "wide-cards.pptx")["added"] is True
+    prs = Presentation(str(tmp_path / "wide-cards.pptx"))
+    layout = next(
+        lo for m in prs.slide_masters for lo in m.slide_layouts if lo.name == "Cards"
+    )
+    for ph in layout.placeholders:
+        if ph.placeholder_format.idx in range(1, 9):
+            assert ph.top + ph.height <= prs.slide_height, "card overflows the slide"
+
+
+def test_injected_cards_render_a_real_session(tmp_path):
+    from fair_renderer.cards_layout import inject_cards
+    from fair_renderer.template_inspect import inspect_template, to_layout_map
+
+    template = tmp_path / "with-cards.pptx"
+    inject_cards(STOCK, template)
+    map_path = tmp_path / "layout-map.yaml"
+    map_path.write_text(to_layout_map(inspect_template(template)), encoding="utf-8")
+
+    result = render_session(
+        session_path=REPO / "examples" / "layout-gallery" / "gallery.md",
+        template_path=template,
+        layout_map_path=map_path,
+        out_dir=tmp_path / "out",
+    )
+
+    cards_slide = None
+    with zipfile.ZipFile(result["pptx"]) as z:
+        for n in range(1, 11):
+            xml = z.read(f"ppt/slides/slide{n}.xml").decode("utf-8")
+            if "Tab is head1" in xml:
+                cards_slide = etree.fromstring(xml.encode("utf-8"))
+                break
+    assert cards_slide is not None, "the Cards slide did not render"
+
+    assert len(cards_slide.findall(f".//{{{P_NS}}}ph")) == 9
+    # Every card is inherited: the slide contributes no styling of its own.
+    for sp in cards_slide.findall(f".//{{{P_NS}}}sp"):
+        if sp.find(f".//{{{P_NS}}}ph") is None:
+            continue
+        spPr = sp.find(f"{{{P_NS}}}spPr")
+        assert spPr.find(f"{{{A_NS}}}solidFill") is None
+        assert spPr.find(f"{{{A_NS}}}xfrm") is None
+
+
+def test_regenerating_the_template_reproduces_the_committed_cards():
+    """Geometry is exact integer fractions, so the template stays stable."""
+    from pptx import Presentation
+
+    from fair_renderer.cards_layout import build_card_shapes
+
+    committed = []
+    with zipfile.ZipFile(EXAMPLES / "template.pptx") as z:
+        for name in sorted(z.namelist()):
+            if not name.startswith("ppt/slideLayouts/slideLayout"):
+                continue
+            root = etree.fromstring(z.read(name))
+            if root.find(f".//{{{P_NS}}}cSld").get("name") != "Cards":
+                continue
+            committed = [
+                sp
+                for sp in root.findall(f".//{{{P_NS}}}sp")
+                if "Card" in (sp.find(f".//{{{P_NS}}}cNvPr").get("name") or "")
+            ]
+            break
+    assert committed, "no Cards layout in the committed template"
+
+    prs = Presentation(str(EXAMPLES / "template.pptx"))
+    rebuilt = build_card_shapes(prs.slide_width, prs.slide_height)
+
+    # Compare geometry, not serialised bytes: a saved layout declares its
+    # namespaces at the root, so its <p:sp> never matches a freshly built
+    # element's serialisation even when the shapes are identical.
+    def geometry(el):
+        off = el.find(f".//{{{A_NS}}}off")
+        ext = el.find(f".//{{{A_NS}}}ext")
+        return (off.get("x"), off.get("y"), ext.get("cx"), ext.get("cy"))
+
+    assert [geometry(el) for el in rebuilt] == [geometry(el) for el in committed]
