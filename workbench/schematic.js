@@ -136,24 +136,40 @@ function fillRegion(box, value, style, theme, scale) {
  *
  * Returns the scale applied, 1 when nothing was needed.
  */
-function shrinkToFit(box, minScale = 0.45) {
+function shrinkToFit(box, minScale = 0.35) {
   const overflowing = () => box.scrollHeight > box.clientHeight + 1;
   if (!overflowing()) return 1;
 
-  const sized = [box, ...box.querySelectorAll("p, li")];
+  const sized = [...box.querySelectorAll("p, li")];
+  if (!sized.length) return 1;
   const base = sized.map((el) => parseFloat(getComputedStyle(el).fontSize) || 0);
 
-  let scale = 1;
-  // Coarse steps: a preview does not need PowerPoint's exact algorithm,
-  // and a binary search would reflow the box a dozen times per keystroke.
-  for (let attempt = 0; attempt < 12 && overflowing(); attempt += 1) {
-    scale -= 0.05;
-    if (scale < minScale) break;
+  // PowerPoint's normAutofit carries both a fontScale and a
+  // lnSpcReduction, and tightening the leading is what usually rescues a
+  // two-line heading. Doing only one of them shrinks type further than
+  // PowerPoint would, and the preview would then under-report how full a
+  // slide really is.
+  const steps = [
+    [1, 0.95],
+    [0.92, 0.9],
+    [0.85, 0.9],
+    [0.78, 0.85],
+    [0.7, 0.85],
+    [0.62, 0.8],
+    [0.55, 0.8],
+    [0.48, 0.8],
+    [0.42, 0.8],
+    [minScale, 0.8],
+  ];
+
+  for (const [fontScale, leading] of steps) {
     sized.forEach((el, i) => {
-      if (base[i]) el.style.fontSize = `${base[i] * scale}px`;
+      if (base[i]) el.style.fontSize = `${base[i] * fontScale}px`;
+      el.style.lineHeight = String(1.2 * leading);
     });
+    if (!overflowing()) return fontScale;
   }
-  return Math.max(scale, minScale);
+  return minScale;
 }
 
 /**
