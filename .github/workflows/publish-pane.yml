@@ -36,6 +36,8 @@ jobs:
           cp -r assembler/web/* _site/
           rm -rf _site/data _site/libraries
           cp renderer/src/fair_renderer/*.py _site/py/fair_renderer/
+          # The landing page offers this for download; it lives a level up.
+          cp assembler/manifest.web.xml _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

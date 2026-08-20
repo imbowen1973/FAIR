@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>FAIR Deck Assembler</title>
+  <link rel="icon" href="assets/icon-64.png"/>
+  <link rel="stylesheet" href="taskpane.css"/>
+  <style>
+    /* The landing page is one column of prose; the pane's tokens do the rest. */
+    .page { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+    .page h1 { font-size: 1.6rem; margin: 0; }
+    .page h2 { font-size: 1rem; margin: 2rem 0 0.5rem; }
+    .page p, .page li { line-height: 1.55; }
+    .lede { color: var(--muted); font-size: 1.05rem; }
+    .masthead { display: flex; align-items: center; gap: 0.9rem; margin-bottom: 1.5rem; }
+    .masthead img { width: 52px; height: 52px; }
+    code, pre { font-family: Consolas, "SF Mono", monospace; font-size: 0.9em; }
+    pre {
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.75rem 0.9rem;
+      overflow-x: auto;
+    }
+    a { color: var(--accent); }
+    .foot { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--border);
+            color: var(--muted); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="masthead">
+      <img src="assets/fair-logo.png" alt=""/>
+      <div>
+        <h1>FAIR Deck Assembler</h1>
+        <p class="lede">Teaching content lives as markdown in git. This builds it into
+        PowerPoint, in your browser.</p>
+      </div>
+    </div>
+
+    <p>
+      This page hosts the add-in itself — the tool, never content. No deck is
+      stored here and no catalog is published. A library is a plain git repo of
+      markdown; the pane fetches it straight from git and runs the renderer in
+      your browser tab, so the <code>.pptx</code> exists only while you are
+      using it.
+    </p>
+
+    <h2>Install it in PowerPoint</h2>
+    <p>
+      Download <a href="manifest.web.xml">manifest.web.xml</a>, then in
+      PowerPoint on the web: <strong>Add-ins → Upload My Add-in</strong>. On
+      desktop, sideload the same file. It points here, so there is nothing to
+      run locally.
+    </p>
+
+    <h2>Then add a library</h2>
+    <p>In the pane, type a repo:</p>
+    <pre>Agrifoodskills/Clinical-Educator-</pre>
+    <p>
+      Browse the course tree or search the speaker notes, tick the slides you
+      want, and insert them into the open deck. They arrive bound to your
+      template's placeholders and fully editable.
+    </p>
+
+    <h2>Author a library</h2>
+    <p>
+      A library repo holds a <code>course.yaml</code> recipe and a
+      <code>blocks/</code> directory — one folder per block, containing its
+      deck, its lesson plans and workbooks, and its media. See the
+      <a href="https://github.com/imbowen1973/FAIR/blob/main/docs/library-format.md">library
+      format</a> and the
+      <a href="https://github.com/imbowen1973/FAIR/blob/main/docs/session-md-format.md">authoring
+      grammar</a>.
+    </p>
+
+    <p class="foot">
+      <a href="taskpane.html">Open the pane directly</a> ·
+      <a href="https://github.com/imbowen1973/FAIR">Source on GitHub</a><br/>
+      Co-funded by the European Union · Agreement No: 101183898-EDU-2024-PI-ALL-INNO
+    </p>
+  </div>
+</body>
+</html>

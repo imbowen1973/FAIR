@@ -172,6 +172,7 @@ const MIME = {
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
   ".svg": "image/svg+xml",
+  ".xml": "text/xml; charset=utf-8",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 
@@ -193,7 +194,7 @@ async function handler(req, res) {
         return;
       }
     } else {
-      filePath = normalize(join(ROOT, urlPath === "/" ? "taskpane.html" : urlPath));
+      filePath = normalize(join(ROOT, urlPath === "/" ? "index.html" : urlPath));
       if (!filePath.startsWith(ROOT)) {
         res.writeHead(403).end();
         return;
