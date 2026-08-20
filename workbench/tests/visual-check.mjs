@@ -100,8 +100,59 @@ const result = await page.evaluate(async () => {
     .querySelector('.region[data-region="left"]')
     .dispatchEvent(new Event("input", { bubbles: true }));
 
+  // Numbered lists: the marker is drawn at the item's size, so a padding
+  // in em on the list clips "10." unless the sizes agree.
+  let markerRoom = null;
+  const numbered = parsed.slides.find((s) =>
+    Object.values(s.data).some((v) => v && v.type === "ol")
+  );
+  if (numbered) {
+    drawSlide(host, {
+      geometry, layoutKey: numbered.data.layout, slide: numbered.data,
+      editable: true, onChange: () => {},
+    });
+    const li = host.querySelector("li");
+    if (li) {
+      const box = li.closest(".region");
+      markerRoom = Math.round(
+        li.getBoundingClientRect().left - box.getBoundingClientRect().left
+      );
+    }
+  }
+
+  // Tab nests an item under the one above it; Shift+Tab lifts it back.
+  let tabbed = null;
+  let untabbed = null;
+  const listSlide = {
+    id: "t", layout: numbered?.data.layout ?? "Full",
+    ...(numbered ? {} : { full: { type: "ul", items: ["one", "two", "three"] } }),
+  };
+  if (!numbered) {
+    let latest = null;
+    drawSlide(host, {
+      geometry, layoutKey: listSlide.layout, slide: listSlide,
+      editable: true, onChange: (r, v) => (latest = v),
+    });
+    const lis = [...host.querySelectorAll("li")];
+    const box = lis[0]?.closest(".region");
+    if (box && lis[1]) {
+      const range = document.createRange();
+      range.selectNodeContents(lis[1]);
+      range.collapse(false);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      box.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+      tabbed = JSON.parse(JSON.stringify(latest));
+      box.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true })
+      );
+      untabbed = JSON.parse(JSON.stringify(latest));
+    }
+  }
+
   const vacant = host.querySelectorAll(".region.vacant").length;
-  return { fit, edited, markEdit, vacant };
+  return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -122,6 +173,13 @@ for (const r of overflowing) {
 console.log(`  not editable: ${notEditable.length}` +
   (notEditable.length ? ` (${notEditable.map((r) => r.region).join(", ")})` : ""));
 console.log(`  empty regions offered: ${result.vacant}`);
+if (result.markerRoom !== null) {
+  console.log(`  list marker room: ${result.markerRoom}px`);
+}
+if (result.tabbed) {
+  console.log(`  Tab nests:      ${JSON.stringify(result.tabbed.items)}`);
+  console.log(`  Shift+Tab lifts:${JSON.stringify(result.untabbed.items)}`);
+}
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
 console.log(`marks survived serialisation:`, JSON.stringify(result.markEdit));
 if (errors.length) console.log("console errors:", errors.slice(0, 5));
@@ -137,6 +195,8 @@ const failed =
   errors.length > 0 ||
   !result.edited ||
   !markText(result.markEdit).includes("~2~") ||
-  !markText(result.markEdit).includes("^o^");
+  !markText(result.markEdit).includes("^o^") ||
+  (result.markerRoom !== null && result.markerRoom < 12) ||
+  (result.tabbed && !Array.isArray(result.tabbed.items[0]?.items));
 console.log(failed ? "\nFAIL" : "\nPASS");
 process.exit(failed ? 1 : 0);

@@ -47,6 +47,132 @@ function shrinkToFit(box, minScale = 0.35) {
   return minScale;
 }
 
+// Which item each <li> came from, so colour and any other key survives a
+// round trip through the DOM. Reading the text back is easy; guessing
+// that a red bullet meant `color: accent2` is not.
+const itemOf = new WeakMap();
+
+/** Build a list, at whatever depth, from the grammar's items. */
+function buildList(items, type, style, theme, scale, depth) {
+  const list = document.createElement(type === "ol" ? "ol" : "ul");
+  const size = depth === 0 ? style.sizePt : style.sizePt2 ?? style.sizePt * 0.85;
+  // The marker is drawn at the item's font size, but a padding in `em` on
+  // the list resolves against the list's own. Leave them mismatched and
+  // "10." is clipped by the region's edge.
+  if (size) list.style.fontSize = `${size * scale}px`;
+  if (!style.bulleted) list.style.listStyle = "none";
+
+  for (const item of items) {
+    const li = document.createElement("li");
+    const text = typeof item === "string" ? item : item.text ?? "";
+    li.appendChild(toNodes(text));
+    itemOf.set(li, item);
+
+    const colour = themeColour(theme, typeof item === "object" ? item.color : null);
+    if (colour) li.style.color = colour;
+
+    const children = typeof item === "object" ? item.items ?? [] : [];
+    if (children.length) {
+      li.appendChild(buildList(children, type, style, theme, scale, depth + 1));
+    }
+    list.appendChild(li);
+  }
+  return list;
+}
+
+/** Read a list back, nesting and all. */
+function readList(list) {
+  return [...list.children].map((li) => {
+    const own = document.createElement("div");
+    let nested = null;
+    for (const node of li.childNodes) {
+      const tag = node.nodeName.toLowerCase();
+      if (tag === "ul" || tag === "ol") {
+        nested = node;
+        continue;
+      }
+      own.appendChild(node.cloneNode(true));
+    }
+    const text = fromElement(own);
+    const original = itemOf.get(li);
+    const children = nested ? readList(nested) : [];
+
+    // Keep whatever the item carried besides its words.
+    const extras =
+      typeof original === "object" && original !== null
+        ? Object.fromEntries(
+            Object.entries(original).filter(([k]) => k !== "text" && k !== "items")
+          )
+        : {};
+
+    if (!children.length && !Object.keys(extras).length) return text;
+    return { ...extras, text, ...(children.length ? { items: children } : {}) };
+  });
+}
+
+/** The <li> the caret is in, or null. */
+function currentItem(list) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return null;
+  let node = selection.getRangeAt(0).startContainer;
+  if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+  const li = node.closest?.("li");
+  return li && list.contains(li) ? li : null;
+}
+
+/**
+ * Tab nests the current item under the one above it; Shift+Tab lifts it
+ * back out. This is how every outliner behaves, and typing a level of
+ * hierarchy is far more common than needing a literal tab character.
+ *
+ * Returns true when something moved.
+ */
+function indent(list, outdent) {
+  const li = currentItem(list);
+  if (!li) return false;
+  const parentList = li.parentElement;
+
+  if (outdent) {
+    const parentItem = parentList.closest("li");
+    if (!parentItem) return false; // already at the top level
+    // Everything after it comes with it, or the order would scramble.
+    const following = [];
+    for (let next = li.nextElementSibling; next; next = next.nextElementSibling) {
+      following.push(next);
+    }
+    parentItem.after(li);
+    for (const node of following.reverse()) li.after(node);
+    if (!parentList.children.length) parentList.remove();
+    place(li);
+    return true;
+  }
+
+  const previous = li.previousElementSibling;
+  if (!previous) return false; // nothing to nest under
+  let sublist = [...previous.children].find((c) =>
+    ["ul", "ol"].includes(c.tagName.toLowerCase())
+  );
+  if (!sublist) {
+    sublist = document.createElement(parentList.tagName.toLowerCase());
+    sublist.style.fontSize = parentList.style.fontSize;
+    sublist.style.listStyle = parentList.style.listStyle;
+    previous.appendChild(sublist);
+  }
+  sublist.appendChild(li);
+  place(li);
+  return true;
+}
+
+/** Put the caret back at the end of `li` after it has moved. */
+function place(li) {
+  const range = document.createRange();
+  range.selectNodeContents(li);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
 /** A paragraph, sized from the layout's own style. */
 function paragraph(text, sizePx) {
   const p = document.createElement("p");
@@ -91,49 +217,19 @@ function fillRegion(box, value, style, theme, scale, commit, editable) {
   }
 
   if (type === "ul" || type === "ol") {
-    const list = document.createElement(type === "ol" ? "ol" : "ul");
-    if (!style.bulleted) list.style.listStyle = "none";
-    for (const item of value.items ?? [""]) {
-      const li = document.createElement("li");
-      const text = typeof item === "string" ? item : item.text ?? "";
-      li.appendChild(toNodes(text));
-      if (size) li.style.fontSize = `${size}px`;
-      const itemColour = themeColour(theme, typeof item === "object" ? item.color : null);
-      if (itemColour) li.style.color = itemColour;
-      // Nested items keep their shape but are edited one level at a time;
-      // deeper structure stays intact because only the text is rewritten.
-      if (typeof item === "object" && item.items?.length) {
-        const nested = document.createElement("ul");
-        for (const child of item.items) {
-          const sub = document.createElement("li");
-          sub.appendChild(toNodes(typeof child === "string" ? child : child.text ?? ""));
-          if (style.sizePt2) sub.style.fontSize = `${style.sizePt2 * scale}px`;
-          nested.appendChild(sub);
-        }
-        li.appendChild(nested);
-      }
-      list.appendChild(li);
-    }
+    const list = buildList(value.items ?? [""], type, style, theme, scale, 0);
     box.appendChild(list);
 
     if (editable) {
       box.contentEditable = "true";
       box.dataset.editable = "list";
-      box.addEventListener("input", () => {
-        const original = value.items ?? [];
-        const items = [...list.children].map((li, index) => {
-          // Read only this item's own text, not its children's.
-          const own = document.createElement("div");
-          for (const node of li.childNodes) {
-            if (node.nodeName.toLowerCase() === "ul" || node.nodeName.toLowerCase() === "ol") continue;
-            own.appendChild(node.cloneNode(true));
-          }
-          const text = fromElement(own);
-          const before = original[index];
-          if (typeof before === "object" && before !== null) return { ...before, text };
-          return text;
-        });
-        commit({ ...value, items });
+      box.addEventListener("input", () => commit({ ...value, items: readList(list) }));
+      box.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab") return;
+        event.preventDefault();
+        if (indent(list, event.shiftKey)) {
+          commit({ ...value, items: readList(list) });
+        }
       });
     }
     return;

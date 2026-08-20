@@ -217,7 +217,10 @@ button.mark {
   display: flex; flex-direction: column; justify-content: flex-start;
 }
 .region p { margin: 0 0 0.25em; }
-.region ul, .region ol { margin: 0; padding-left: 1.1em; }
+/* Room for the marker at the item's own size — "10." needs more than a
+   bullet does, and a clipped number is worse than a wide gutter. */
+.region ul, .region ol { margin: 0; padding-left: 1.6em; }
+.region ol { padding-left: 1.9em; }
 .region li { margin-bottom: 0.15em; }
 .region ul ul, .region ol ol { padding-left: 1em; margin-top: 0.15em; }
 .region code {
