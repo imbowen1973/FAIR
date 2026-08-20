@@ -245,3 +245,121 @@ test("a malformed slide is reported, not thrown", () => {
   assert.equal(parsed.slides.length, 2);
   assert.ok(parsed.slides[1].error, "the bad slide should carry its error");
 });
+
+// ---- adding, deleting and reordering slides ----------------------------
+
+import {
+  blankSlide,
+  renderSlidesFile,
+  workingSlides,
+} from "../library.js";
+
+const CRLF = SAMPLE.replace(/\n/g, "\r\n");
+
+test("a working list rebuilds the file unchanged", () => {
+  for (const [label, text] of [["LF", SAMPLE], ["CRLF", CRLF]]) {
+    const parsed = parseSlides(text);
+    assert.equal(renderSlidesFile(parsed, workingSlides(parsed)), text, label);
+  }
+});
+
+test("line endings are preserved, never mixed", () => {
+  // A CRLF repo rewritten with \n shows every touched slide as wholly
+  // changed, which makes review useless.
+  const parsed = parseSlides(CRLF);
+  const working = workingSlides(parsed);
+  working[0].data = { ...working[0].data, title: "Changed" };
+  working[0].dirty = true;
+  const out = renderSlidesFile(parsed, working);
+  assert.ok(out.includes("\r\n"), "lost CRLF");
+  assert.ok(!/[^\r]\n/.test(out), "introduced a bare LF into a CRLF file");
+});
+
+test("adding a slide leaves the existing ones byte-identical", () => {
+  const parsed = parseSlides(SAMPLE);
+  const working = workingSlides(parsed);
+  working.push(blankSlide("Full", "s-99"));
+
+  const out = renderSlidesFile(parsed, working);
+  const re = parseSlides(out);
+  assert.equal(re.slides.length, 3);
+  assert.equal(re.slides[2].data.id, "s-99");
+  assert.equal(re.slides[2].data.layout, "Full");
+  for (const i of [0, 1]) {
+    assert.equal(
+      out.slice(re.slides[i].start, re.slides[i].end),
+      SAMPLE.slice(parsed.slides[i].start, parsed.slides[i].end),
+      `slide ${i} was rewritten`
+    );
+  }
+});
+
+test("a new slide can be inserted in the middle", () => {
+  const parsed = parseSlides(SAMPLE);
+  const working = workingSlides(parsed);
+  working.splice(1, 0, blankSlide("Section", "s-mid"));
+
+  const re = parseSlides(renderSlidesFile(parsed, working));
+  assert.deepEqual(
+    re.slides.map((s) => s.data.id),
+    ["s-01", "s-mid", "s-02"]
+  );
+});
+
+test("deleting a slide removes only that slide", () => {
+  const parsed = parseSlides(SAMPLE);
+  const working = workingSlides(parsed);
+  working.splice(0, 1);
+
+  const out = renderSlidesFile(parsed, working);
+  const re = parseSlides(out);
+  assert.deepEqual(re.slides.map((s) => s.data.id), ["s-02"]);
+  // The survivor keeps its notes verbatim.
+  assert.ok(re.slides[0].data.notes.includes("several lines"));
+});
+
+test("reordering keeps each slide's own bytes", () => {
+  const parsed = parseSlides(SAMPLE);
+  const working = workingSlides(parsed);
+  const [first] = working.splice(0, 1);
+  working.push(first);
+
+  const out = renderSlidesFile(parsed, working);
+  const re = parseSlides(out);
+  assert.deepEqual(re.slides.map((s) => s.data.id), ["s-02", "s-01"]);
+  // Moved, not rewritten: the source of each is unchanged.
+  assert.equal(
+    out.slice(re.slides[0].start, re.slides[0].end),
+    SAMPLE.slice(parsed.slides[1].start, parsed.slides[1].end)
+  );
+  assert.equal(
+    out.slice(re.slides[1].start, re.slides[1].end),
+    SAMPLE.slice(parsed.slides[0].start, parsed.slides[0].end)
+  );
+});
+
+test("an added slide survives a re-parse and carries no junk", () => {
+  const parsed = parseSlides(SAMPLE);
+  const working = workingSlides(parsed);
+  working.push(blankSlide("Blank", "s-new"));
+
+  const re = parseSlides(renderSlidesFile(parsed, working));
+  const added = re.slides[2];
+  assert.equal(added.error, null);
+  assert.deepEqual(Object.keys(added.data).sort(), ["id", "layout"]);
+});
+
+test("everything still parses after a mix of operations", () => {
+  const parsed = parseSlides(SAMPLE);
+  const working = workingSlides(parsed);
+  working.push(blankSlide("Full", "s-03"));
+  working[0].data = { ...working[0].data, title: "Retitled" };
+  working[0].dirty = true;
+  const [moved] = working.splice(1, 1);
+  working.push(moved);
+
+  const re = parseSlides(renderSlidesFile(parsed, working));
+  assert.equal(re.slides.filter((s) => s.error).length, 0);
+  assert.deepEqual(re.slides.map((s) => s.data.id), ["s-01", "s-03", "s-02"]);
+  assert.equal(re.slides[0].data.title, "Retitled");
+});

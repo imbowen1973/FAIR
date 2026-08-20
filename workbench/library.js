@@ -86,11 +86,70 @@ export function parseSlides(text) {
 }
 
 /**
- * Write edited slides back into the original text.
+ * The editable working copy of a block's slides.
  *
- * `edits` is a Map of slide index -> new data object. Slides not in the
- * map are copied verbatim, so opening a session and saving one slide
- * produces a one-slide diff rather than a reformat of the whole file.
+ * An index-keyed edit map can express "change slide 3" but not "insert a
+ * slide", "delete one" or "move one" — the indices shift underneath it.
+ * So the app holds an ordered list instead, where each entry either
+ * points back at a slide in the original file or is new.
+ */
+export function workingSlides(parsed) {
+  return parsed.slides.map((slide, index) => ({
+    sourceIndex: index,
+    data: slide.data,
+    dirty: false,
+  }));
+}
+
+/** A new slide, with only what the grammar requires. */
+export function blankSlide(layout, id) {
+  return { sourceIndex: null, data: { id, layout }, dirty: true };
+}
+
+/**
+ * Rebuild slides.md from the working list.
+ *
+ * A slide that is neither edited nor moved is copied from the original
+ * text byte-for-byte, so opening a file and adding one slide leaves the
+ * others untouched in review. Anything edited, new, or whose neighbours
+ * changed around it is re-emitted from its data.
+ */
+/** The line ending this file already uses — a repo may hold either. */
+function newlineOf(text) {
+  return text.includes("\r\n") ? "\r\n" : "\n";
+}
+
+export function renderSlidesFile(parsed, working) {
+  const nl = newlineOf(parsed.text);
+  const hasSlides = parsed.slides.length > 0;
+  const header = hasSlides
+    ? parsed.text.slice(0, parsed.slides[0].start)
+    : parsed.text.endsWith(nl)
+      ? parsed.text
+      : parsed.text + nl;
+
+  const bodies = working.map((entry) => {
+    // Untouched, wherever it now sits: its own bytes, moved or not.
+    if (!entry.dirty && entry.sourceIndex !== null) {
+      const slide = parsed.slides[entry.sourceIndex];
+      return parsed.text.slice(slide.start, slide.end);
+    }
+    // js-yaml always emits \n; match the file rather than mixing endings,
+    // or every rewritten slide shows as wholly changed on a CRLF repo.
+    const body = stringifyYaml(entry.data).trimEnd().replace(/\r?\n/g, nl);
+    return `--- slide${nl}${body}${nl}---`;
+  });
+
+  const tail = hasSlides
+    ? parsed.text.slice(parsed.slides[parsed.slides.length - 1].end)
+    : "";
+  const out = header + bodies.join(nl + nl) + (tail.trim() ? tail : nl);
+  return out.endsWith(nl) ? out : out + nl;
+}
+
+/**
+ * Write edited slides back into the original text, by index.
+ * Kept for the simple edit path and for the tests that pin it.
  */
 export function writeSlides(parsed, edits) {
   if (!edits.size) return parsed.text;
@@ -100,7 +159,9 @@ export function writeSlides(parsed, edits) {
   parsed.slides.forEach((slide, index) => {
     out += parsed.text.slice(cursor, slide.start);
     if (edits.has(index)) {
-      out += `--- slide\n${stringifyYaml(edits.get(index)).trimEnd()}\n---`;
+      const nl = newlineOf(parsed.text);
+      const body = stringifyYaml(edits.get(index)).trimEnd().replace(/\r?\n/g, nl);
+      out += `--- slide${nl}${body}${nl}---`;
     } else {
       // Verbatim: trimming here would drop the separator and shift the file.
       out += parsed.text.slice(slide.start, slide.end);

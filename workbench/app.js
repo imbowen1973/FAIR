@@ -9,11 +9,14 @@ import { brokerProvider, patProvider, signOut, storedLogin, storedToken } from "
 import { BROKER_URL, CLIENT_ID } from "./config.js";
 import { draftBranch, GitHub, parseRepo } from "./github.js";
 import {
+  blankSlide,
   isLibrary,
+  layoutKeys,
   libraryPaths,
   placedBlocks,
   readLibrary,
-  writeSlides,
+  renderSlidesFile,
+  workingSlides,
 } from "./library.js";
 import { slideForm } from "./form.js";
 import { drawSchematic } from "./schematic.js";
@@ -30,7 +33,7 @@ const state = {
   blockId: null,
   slideIndex: 0,
   edits: new Map(), // path -> new text
-  slideEdits: new Map(), // blockId -> Map(index -> data)
+  working: new Map(), // blockId -> [{sourceIndex, data, dirty}]
   problems: [],
 };
 
@@ -41,8 +44,23 @@ function status(message, kind = "") {
   el.hidden = !message;
 }
 
+/** Run work with the button disabled and the status bar showing progress. */
+async function busy(button, label, work) {
+  const el = $(button);
+  const original = el.textContent;
+  el.disabled = true;
+  el.textContent = label;
+  status(`${label}…`, "busy");
+  try {
+    return await work((message) => status(message || `${label}…`, "busy"));
+  } finally {
+    el.disabled = false;
+    el.textContent = original;
+  }
+}
+
 function dirty() {
-  return state.edits.size > 0 || [...state.slideEdits.values()].some((m) => m.size);
+  return changedFiles().length > 0;
 }
 
 window.addEventListener("beforeunload", (e) => {
@@ -125,7 +143,7 @@ async function openRepo(fullName) {
     state.files = files;
     state.library = readLibrary(files);
     state.edits = new Map();
-    state.slideEdits = new Map();
+    state.working = new Map();
     state.blockId = [...state.library.blocks.keys()][0] ?? null;
     state.slideIndex = 0;
 
@@ -145,10 +163,72 @@ function currentBlock() {
   return state.library?.blocks.get(state.blockId) ?? null;
 }
 
+/** The working list for a block, created from the file on first use. */
+function working(blockId = state.blockId) {
+  if (!state.working.has(blockId)) {
+    const block = state.library.blocks.get(blockId);
+    state.working.set(blockId, workingSlides(block.parsed));
+  }
+  return state.working.get(blockId);
+}
+
 function slideData(index) {
-  const edits = state.slideEdits.get(state.blockId);
-  if (edits?.has(index)) return edits.get(index);
-  return currentBlock()?.parsed.slides[index]?.data ?? {};
+  return working()[index]?.data ?? {};
+}
+
+function nextSlideId() {
+  const used = new Set(working().map((w) => w.data.id).filter(Boolean));
+  const prefix = (working()[0]?.data.id || "s-01").replace(/\d+$/, "");
+  for (let n = 1; n < 999; n += 1) {
+    const candidate = `${prefix}${String(n).padStart(2, "0")}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  return `s-${Date.now()}`;
+}
+
+function addSlide() {
+  const layouts = layoutKeys(state.library.layoutMap);
+  const list = working();
+  // Insert after the slide in focus, which is where an author means it.
+  const at = Math.min(list.length, state.slideIndex + 1);
+  list.splice(at, 0, blankSlide(layouts.includes("Full") ? "Full" : layouts[0], nextSlideId()));
+  state.slideIndex = at;
+  renderOutline();
+  renderSlide();
+  updateActions();
+}
+
+function deleteSlide(index) {
+  const list = working();
+  if (list.length <= 1) {
+    status("A block needs at least one slide.", "error");
+    return;
+  }
+  const data = list[index].data;
+  if (!confirm(`Delete "${data.title ?? data.id ?? "this slide"}"?`)) return;
+  list.splice(index, 1);
+  state.slideIndex = Math.max(0, Math.min(index, list.length - 1));
+  renderOutline();
+  renderSlide();
+  updateActions();
+}
+
+function moveSlide(index, delta) {
+  const list = working();
+  const to = index + delta;
+  if (to < 0 || to >= list.length) return;
+  const [entry] = list.splice(index, 1);
+  list.splice(to, 0, entry);
+  state.slideIndex = to;
+  renderOutline();
+  renderSlide();
+  updateActions();
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = String(text);
+  return div.innerHTML;
 }
 
 function renderOutline() {
@@ -180,23 +260,55 @@ function renderOutline() {
     group.appendChild(head);
 
     if (id === state.blockId) {
-      block.parsed.slides.forEach((slide, index) => {
-        const data = slideData(index);
-        const row = document.createElement("button");
-        row.type = "button";
+      working(id).forEach((entry, index) => {
+        const data = entry.data;
+        const row = document.createElement("div");
         row.className = "slide-row";
         if (index === state.slideIndex) row.classList.add("on");
-        const edited = state.slideEdits.get(id)?.has(index);
-        row.innerHTML = `<span class="layout">${data.layout ?? "?"}</span>` +
-          `<span class="t">${(data.title ?? data.id ?? "untitled")}</span>` +
-          (edited ? '<span class="dot" title="edited">•</span>' : "");
-        row.addEventListener("click", () => {
+
+        const pick = document.createElement("button");
+        pick.type = "button";
+        pick.className = "slide-pick";
+        pick.innerHTML =
+          `<span class="layout">${data.layout ?? "?"}</span>` +
+          `<span class="t">${escapeHtml(data.title ?? data.id ?? "untitled")}</span>` +
+          (entry.dirty ? '<span class="dot" title="unsaved">•</span>' : "");
+        pick.addEventListener("click", () => {
           state.slideIndex = index;
           renderOutline();
           renderSlide();
         });
+        row.appendChild(pick);
+
+        const tools = document.createElement("span");
+        tools.className = "slide-tools";
+        for (const [label, title, fn] of [
+          ["↑", "move up", () => moveSlide(index, -1)],
+          ["↓", "move down", () => moveSlide(index, 1)],
+          ["×", "delete", () => deleteSlide(index)],
+        ]) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "tool";
+          b.textContent = label;
+          b.title = title;
+          b.setAttribute("aria-label", `${title}: ${data.title ?? data.id ?? "slide"}`);
+          b.addEventListener("click", (e) => {
+            e.stopPropagation();
+            fn();
+          });
+          tools.appendChild(b);
+        }
+        row.appendChild(tools);
         group.appendChild(row);
       });
+
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "add-slide";
+      add.textContent = "+ slide";
+      add.addEventListener("click", addSlide);
+      group.appendChild(add);
     }
     host.appendChild(group);
   }
@@ -216,10 +328,9 @@ function renderSlide() {
     layoutMap: state.library.layoutMap,
     competencies: state.library.competencies,
     onChange: (next) => {
-      if (!state.slideEdits.has(state.blockId)) {
-        state.slideEdits.set(state.blockId, new Map());
-      }
-      state.slideEdits.get(state.blockId).set(state.slideIndex, next);
+      const entry = working()[state.slideIndex];
+      entry.data = next;
+      entry.dirty = true;
       renderOutline();
       drawSchematic($("schematic"), {
         geometry: state.library.geometry,
@@ -254,10 +365,9 @@ function renderSlide() {
 /** The library as it would be committed: fetched files plus edits. */
 function pendingFiles() {
   const out = new Map(state.files);
-  for (const [blockId, edits] of state.slideEdits) {
-    if (!edits.size) continue;
+  for (const [blockId, list] of state.working) {
     const block = state.library.blocks.get(blockId);
-    out.set(block.slidesPath, writeSlides(block.parsed, edits));
+    out.set(block.slidesPath, renderSlidesFile(block.parsed, list));
   }
   for (const [path, text] of state.edits) out.set(path, text);
   return out;
@@ -285,52 +395,79 @@ function updateActions() {
 
 async function runValidate() {
   try {
-    // The template is binary and was not fetched as text; validation needs
-    // only the parser and the layout map, so it runs without it.
-    state.problems = await validate(pendingFiles(), status);
+    await busy("validate", "Checking", async (report) => {
+      state.problems = await validate(pendingFiles(), report);
+    });
     const strip = $("problems");
     strip.innerHTML = "";
     if (!state.problems.length) {
       strip.innerHTML = '<p class="ok">No problems.</p>';
+      status("Checked: no problems.", "ok");
     } else {
       for (const problem of state.problems) {
         const row = document.createElement("p");
         row.className = "problem";
-        row.innerHTML = `<strong>${problem.where}</strong> ${problem.message}`;
+        row.innerHTML = `<strong>${escapeHtml(problem.where)}</strong> ${escapeHtml(problem.message)}`;
         strip.appendChild(row);
       }
+      status(`${state.problems.length} problem(s) — see below.`, "error");
     }
     updateActions();
   } catch (err) {
-    status(`Validation could not run: ${err.message}`, "error");
+    status(`Could not check: ${err.message}`, "error");
   }
+}
+
+/**
+ * Binary files (the template, images) are fetched only when a real render
+ * is asked for, so opening a library stays fast. They are cached on the
+ * state so a second preview does not re-download the template.
+ */
+async function withBinaries(report) {
+  const { owner, repo, defaultBranch } = state.repo;
+  const files = pendingFiles();
+  const paths = await state.gh.tree(owner, repo, defaultBranch);
+  const binaries = libraryPaths(paths).filter((p) => !files.has(p));
+
+  let done = 0;
+  for (const path of binaries) {
+    if (state.binaries?.has(path)) {
+      files.set(path, state.binaries.get(path));
+    } else {
+      report(`Fetching ${path.split("/").pop()} (${++done}/${binaries.length})`);
+      const res = await fetch(
+        `https://raw.githubusercontent.com/${owner}/${repo}/${defaultBranch}/${path}`
+      );
+      if (!res.ok) throw new Error(`cannot fetch ${path} (${res.status})`);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      state.binaries = state.binaries ?? new Map();
+      state.binaries.set(path, bytes);
+      files.set(path, bytes);
+    }
+  }
+  return files;
 }
 
 async function previewDeck() {
   try {
-    const { owner, repo, defaultBranch } = state.repo;
-    const files = pendingFiles();
-    // The template and any media are binary: fetch them now, only when a
-    // real render is asked for, so opening a library stays fast.
-    status("Fetching the template…");
-    const paths = await state.gh.tree(owner, repo, defaultBranch);
-    for (const path of libraryPaths(paths)) {
-      if (files.has(path)) continue;
-      const res = await fetch(
-        `https://raw.githubusercontent.com/${owner}/${repo}/${defaultBranch}/${path}`
-      );
-      files.set(path, new Uint8Array(await res.arrayBuffer()));
-    }
+    await busy("preview", "Rendering", async (report) => {
+      const files = await withBinaries(report);
+      const { blob, filename } = await renderDeck(files, state.blockId, report);
 
-    const { blob, filename } = await renderDeck(files, state.blockId, status);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+      // A detached anchor is enough in every browser Office and the desktop
+      // use, and avoids a popup blocker eating window.open.
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    });
     status("Deck rendered — check your downloads.", "ok");
   } catch (err) {
+    console.error(err);
     status(`Preview failed: ${err.message}`, "error");
   }
 }
@@ -355,7 +492,7 @@ async function save() {
     // The commit is now the truth: adopt it as the baseline so a second
     // save does not re-send unchanged files.
     for (const file of changed) state.files.set(file.path, file.content);
-    state.slideEdits = new Map();
+    state.working = new Map();
     state.edits = new Map();
     state.library = readLibrary(state.files);
 
