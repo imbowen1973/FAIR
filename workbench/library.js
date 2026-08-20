@@ -251,3 +251,58 @@ export function readLibrary(files) {
 
   return { course, layoutMap, geometry, competencies, blocks };
 }
+
+/** A list's items as plain lines, depth first. */
+function listLines(items) {
+  const out = [];
+  for (const item of items ?? []) {
+    if (typeof item === "string") {
+      out.push(item);
+      continue;
+    }
+    out.push(item.text ?? "");
+    out.push(...listLines(item.items));
+  }
+  return out;
+}
+
+/**
+ * A region's value re-cast as `kind`: "ul", "ol", or null for no list at
+ * all. Whether a region is a list is a property of the region, not of a
+ * selection inside it -- the grammar has no half-list -- so this converts
+ * the whole value.
+ *
+ * Turning a nested list into plain text loses the nesting, because plain
+ * text has nowhere to keep it. Everything else survives: the words, and
+ * any keys the region carries such as `color`.
+ *
+ * Returns the value unchanged when there is nothing to do, so a caller
+ * can use identity to decide whether to commit.
+ */
+export function asListType(value, kind) {
+  const object = typeof value === "object" && value !== null ? value : null;
+  const type = object?.type ?? null;
+  const wasList = type === "ul" || type === "ol";
+  if (type === kind || (!kind && !wasList)) return value;
+  // Images, video and diagrams are not text and cannot become lists.
+  if (type && !["ul", "ol", "p", "text"].includes(type)) return value;
+
+  const lines = wasList
+    ? listLines(object.items)
+    : String((object ? object.text : value) ?? "").split("\n");
+
+  const extras = { ...(object ?? {}) };
+  delete extras.type;
+  delete extras.items;
+  delete extras.text;
+
+  if (kind) return { type: kind, ...extras, items: lines };
+
+  const text = lines.join("\n");
+  // A bare string is the cleanest thing to put in the file, but it means
+  // exactly one line: the canvas draws it as a single paragraph, so several
+  // lines in one would run together on the slide. More than one line needs
+  // the `p` wrapper that can hold them.
+  const bare = lines.length === 1 && !Object.keys(extras).length;
+  return bare ? text : { type: "p", ...extras, text };
+}

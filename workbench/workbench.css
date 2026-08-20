@@ -356,3 +356,12 @@ button.with-icon {
   padding: 0;
   color: inherit;
 }
+
+/* The active list type. The same treatment as a chosen competency chip:
+   one look for "this is the current state" across the whole app. */
+button.mark.on {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+button.mark.list { min-width: 26px; }

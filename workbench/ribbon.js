@@ -43,8 +43,9 @@ function button(label, title, onDown, className = "mark") {
  *               its own DOM and commit.
  * onLayout(key) when the layout is changed.
  * onColour(slot) when a theme colour is chosen for the selection's region.
+ * onListType(kind) when the region becomes a "ul", an "ol", or null for none.
  */
-export function ribbon(host, { layouts, layout, onCommand, onLayout, onColour }) {
+export function ribbon(host, { layouts, layout, onCommand, onLayout, onColour, onListType }) {
   host.innerHTML = "";
 
   const marks = document.createElement("div");
@@ -72,6 +73,24 @@ export function ribbon(host, { layouts, layout, onCommand, onLayout, onColour })
     })
   );
   host.appendChild(marks);
+
+  // Whether a region is a list is a property of the region, not of a
+  // selection inside it: the grammar has no half-list. So these set the
+  // whole region, and "none" is a real choice rather than the absence of
+  // one -- plenty of slides want plain lines with no markers at all.
+  const lists = document.createElement("div");
+  lists.className = "ribbon-group";
+  const LISTS = [
+    ["ul", "•", "Bulleted list"],
+    ["ol", "1.", "Numbered list"],
+    [null, "¶", "No list: plain lines"],
+  ];
+  for (const [kind, label, title] of LISTS) {
+    const b = button(label, title, () => onListType?.(kind), "mark list");
+    b.dataset.list = kind ?? "none";
+    lists.appendChild(b);
+  }
+  host.appendChild(lists);
 
   const colours = document.createElement("div");
   colours.className = "ribbon-group";
@@ -113,5 +132,13 @@ export function paintSwatches(host, theme) {
   for (const swatch of host.querySelectorAll(".swatch[data-slot]")) {
     const colour = theme?.[swatch.dataset.slot];
     if (colour) swatch.style.background = colour;
+  }
+}
+
+/** Show which list type the region under the caret is. */
+export function paintListType(host, type) {
+  const want = type === "ul" || type === "ol" ? type : "none";
+  for (const b of host.querySelectorAll(".mark.list")) {
+    b.classList.toggle("on", b.dataset.list === want);
   }
 }

@@ -10,6 +10,7 @@ import { BROKER_URL, CLIENT_ID } from "./config.js";
 import { draftBranch, GitHub, parseRepo } from "./github.js";
 import { decorate } from "./icons.js";
 import {
+  asListType,
   blankSlide,
   isLibrary,
   layoutKeys,
@@ -21,7 +22,7 @@ import {
 } from "./library.js";
 import { drawSlide } from "./canvas.js";
 import { slideMeta } from "./meta.js";
-import { paintSwatches, ribbon } from "./ribbon.js";
+import { paintListType, paintSwatches, ribbon } from "./ribbon.js";
 import { renderDeck, validate } from "./preview.js";
 
 const $ = (id) => document.getElementById(id);
@@ -432,6 +433,7 @@ function renderCanvas({ redraw = true } = {}) {
       },
       onSelectRegion: (region) => {
         activeRegion = region;
+        paintListType($("ribbon"), regionType(region));
       },
     });
   }
@@ -443,6 +445,13 @@ function renderCanvas({ redraw = true } = {}) {
       // Metadata never changes the canvas, so leave the caret where it is.
     },
   });
+}
+
+/** The content type of a region on the current slide, or null. */
+function regionType(region) {
+  if (!region) return null;
+  const value = slideData(state.slideIndex)[region];
+  return typeof value === "object" && value !== null ? value.type : null;
 }
 
 function renderRibbon() {
@@ -485,8 +494,19 @@ function renderRibbon() {
       commitSlide({ ...current, [region]: next });
       renderCanvas();
     },
+    onListType: (kind) => {
+      const region = activeRegion;
+      if (!region) return;
+      const current = slideData(state.slideIndex);
+      const next = asListType(current[region], kind);
+      if (next === current[region]) return; // already that, or not text
+      commitSlide({ ...current, [region]: next });
+      renderCanvas();
+      paintListType($("ribbon"), kind);
+    },
   });
   paintSwatches($("ribbon"), state.library.geometry?.theme);
+  paintListType($("ribbon"), regionType(activeRegion));
 }
 
 function renderSlide() {

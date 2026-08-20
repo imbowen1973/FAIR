@@ -28,7 +28,7 @@ await page.goto(BASE, { waitUntil: "networkidle" });
 
 const result = await page.evaluate(async () => {
   const { drawSlide } = await import("./canvas.js");
-  const { parseSlides } = await import("./library.js");
+  const { asListType, parseSlides } = await import("./library.js");
   const raw = (p) =>
     fetch(
       `https://raw.githubusercontent.com/Agrifoodskills/Andragogy-Pedagogy/HEAD/${p}`
@@ -121,16 +121,15 @@ const result = await page.evaluate(async () => {
   }
 
   // Tab nests an item under the one above it; Shift+Tab lifts it back.
+  // Always on a list of our own: gating this on the deck's own content
+  // meant it quietly ran on nothing.
   let tabbed = null;
   let untabbed = null;
-  const listSlide = {
-    id: "t", layout: numbered?.data.layout ?? "Full",
-    ...(numbered ? {} : { full: { type: "ul", items: ["one", "two", "three"] } }),
-  };
-  if (!numbered) {
+  {
     let latest = null;
     drawSlide(host, {
-      geometry, layoutKey: listSlide.layout, slide: listSlide,
+      geometry, layoutKey: "Full",
+      slide: { id: "t", layout: "Full", full: { type: "ul", items: ["one", "two", "three"] } },
       editable: true, onChange: (r, v) => (latest = v),
     });
     const lis = [...host.querySelectorAll("li")];
@@ -151,8 +150,33 @@ const result = await page.evaluate(async () => {
     }
   }
 
+  // All three list types draw as separate lines. "None" is the one that
+  // can silently fail: a bare string is drawn as a single paragraph, so
+  // several lines inside one would run together on the slide.
+  const listTypes = {};
+  for (const kind of ["ul", "ol", null]) {
+    const value = asListType({ type: "ul", items: ["alpha", "beta", "gamma"] }, kind);
+    drawSlide(host, {
+      geometry, layoutKey: "Full",
+      slide: { id: "t", layout: "Full", full: value },
+      editable: true, onChange: () => {},
+    });
+    const box = host.querySelector(".region:not(.vacant)");
+    const li = box.querySelector("li");
+    const tops = [...box.querySelectorAll("p, li")].map((e) =>
+      Math.round(e.getBoundingClientRect().top)
+    );
+    listTypes[kind ?? "none"] = {
+      tag: box.querySelector("ol") ? "ol" : box.querySelector("ul") ? "ul" : "p",
+      lines: new Set(tops).size,
+      markerRoom: li
+        ? Math.round(li.getBoundingClientRect().left - box.getBoundingClientRect().left)
+        : null,
+    };
+  }
+
   const vacant = host.querySelectorAll(".region.vacant").length;
-  return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed };
+  return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -180,6 +204,12 @@ if (result.tabbed) {
   console.log(`  Tab nests:      ${JSON.stringify(result.tabbed.items)}`);
   console.log(`  Shift+Tab lifts:${JSON.stringify(result.untabbed.items)}`);
 }
+for (const [kind, r] of Object.entries(result.listTypes)) {
+  console.log(
+    `  list "${kind}": <${r.tag}> ${r.lines} lines` +
+      (r.markerRoom === null ? "" : `, marker room ${r.markerRoom}px`)
+  );
+}
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
 console.log(`marks survived serialisation:`, JSON.stringify(result.markEdit));
 if (errors.length) console.log("console errors:", errors.slice(0, 5));
@@ -197,6 +227,9 @@ const failed =
   !markText(result.markEdit).includes("~2~") ||
   !markText(result.markEdit).includes("^o^") ||
   (result.markerRoom !== null && result.markerRoom < 12) ||
-  (result.tabbed && !Array.isArray(result.tabbed.items[0]?.items));
+  Object.values(result.listTypes).some((r) => r.lines !== 3) ||
+  Object.values(result.listTypes).some((r) => r.markerRoom !== null && r.markerRoom < 12) ||
+  !Array.isArray(result.tabbed?.items?.[0]?.items) ||
+  JSON.stringify(result.untabbed?.items) !== JSON.stringify(["one", "two", "three"]);
 console.log(failed ? "\nFAIL" : "\nPASS");
 process.exit(failed ? 1 : 0);

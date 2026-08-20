@@ -27,6 +27,7 @@ import {
   placedBlocks,
   slideRegions,
   writeSlides,
+  asListType,
 } from "../library.js";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -362,4 +363,65 @@ test("everything still parses after a mix of operations", () => {
   assert.equal(re.slides.filter((s) => s.error).length, 0);
   assert.deepEqual(re.slides.map((s) => s.data.id), ["s-01", "s-03", "s-02"]);
   assert.equal(re.slides[0].data.title, "Retitled");
+});
+
+test("switches between bulleted and numbered, keeping the words", () => {
+  assert.deepEqual(
+    asListType({ type: "ul", items: ["a", "b"] }, "ol"),
+    { type: "ol", items: ["a", "b"] }
+  );
+});
+
+test("keeps region keys such as colour across a change", () => {
+  assert.deepEqual(
+    asListType({ type: "ul", color: "accent2", items: ["a"] }, "ol"),
+    { type: "ol", color: "accent2", items: ["a"] }
+  );
+});
+
+test("flattens nesting when a list becomes plain lines", () => {
+  // Plain text has nowhere to keep hierarchy, so losing it is honest;
+  // silently dropping the nested words would not be.
+  assert.deepEqual(
+    asListType({ type: "ul", items: [{ text: "a", items: ["b"] }, "c"] }, null),
+    { type: "p", text: ["a", "b", "c"].join("\n") }
+  );
+});
+
+test("writes a bare string when there is nothing else to carry", () => {
+  assert.equal(asListType({ type: "ul", items: ["a"] }, null), "a");
+});
+
+test("keeps the p wrapper for several lines, which a bare string cannot hold", () => {
+  // The canvas draws a bare string as one paragraph, so two lines inside
+  // one would run together on the slide.
+  assert.deepEqual(asListType({ type: "ul", items: ["a", "b"] }, null), {
+    type: "p",
+    text: ["a", "b"].join("\n"),
+  });
+});
+
+test("keeps a wrapper only when the region has other keys", () => {
+  assert.deepEqual(
+    asListType({ type: "ul", color: "accent2", items: ["a", "b"] }, null),
+    { type: "p", color: "accent2", text: ["a", "b"].join("\n") }
+  );
+});
+
+test("makes a list out of plain text, a line per item", () => {
+  assert.deepEqual(asListType(["one", "two"].join("\n"), "ul"), {
+    type: "ul",
+    items: ["one", "two"],
+  });
+});
+
+test("leaves media alone: an image is not a list", () => {
+  const image = { type: "image", src: "x.png" };
+  assert.equal(asListType(image, "ul"), image);
+});
+
+test("returns the same value when nothing changes, so callers can skip a commit", () => {
+  const list = { type: "ol", items: ["a"] };
+  assert.equal(asListType(list, "ol"), list);
+  assert.equal(asListType("plain", null), "plain");
 });
