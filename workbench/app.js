@@ -120,7 +120,11 @@ async function openRepo(fullName) {
   status(`Reading ${fullName}…`);
   try {
     const { owner, repo } = parsed;
-    const defaultBranch = await state.gh.defaultBranch(owner, repo);
+    const info = await state.gh.repo(owner, repo);
+    const defaultBranch = info.default_branch;
+    // Reading a public repo needs no permission, so a token with no write
+    // access opens a library happily and then fails at Save. Say so now.
+    state.canWrite = Boolean(info.permissions?.push);
     const paths = await state.gh.tree(owner, repo, defaultBranch);
 
     if (!isLibrary(paths)) {
@@ -151,7 +155,17 @@ async function openRepo(fullName) {
     $("course-title").textContent = state.library.course.title || fullName;
     renderOutline();
     renderSlide();
-    status("");
+    if (state.canWrite) {
+      status("");
+    } else {
+      status(
+        `Read-only: this token cannot push to ${owner}. You can edit and ` +
+          "preview, but Save and Submit will fail. Give the token Contents " +
+          "and Pull requests write access on this repository — and if " +
+          `${owner} is an organisation, have it approve the token.`,
+        "error"
+      );
+    }
   } catch (err) {
     status(err.message, "error");
   }
@@ -387,8 +401,13 @@ function updateActions() {
   $("dirty").textContent = changed.length
     ? `${changed.length} file${changed.length === 1 ? "" : "s"} changed`
     : "no changes";
-  $("save").disabled = changed.length === 0;
-  $("submit").disabled = changed.length === 0 || state.problems.length > 0;
+  const writable = state.canWrite !== false;
+  $("save").disabled = changed.length === 0 || !writable;
+  $("submit").disabled =
+    changed.length === 0 || state.problems.length > 0 || !writable;
+  const why = !writable ? "This token cannot push to this repository." : "";
+  $("save").title = why;
+  $("submit").title = why;
 }
 
 // ---- validate and preview ---------------------------------------------
@@ -502,8 +521,10 @@ async function save() {
       `Saved to ${branch} (${sha.slice(0, 7)})${created ? " — branch created" : ""}.`,
       "ok"
     );
+    return true;
   } catch (err) {
     status(`Save failed: ${err.message}`, "error");
+    return false;
   } finally {
     updateActions();
   }
@@ -513,7 +534,8 @@ async function submit() {
   const { owner, repo, defaultBranch } = state.repo;
   const branch = draftBranch(state.login, state.blockId);
   try {
-    if (changedFiles().length) await save();
+    // No point asking for a pull request against a branch that never landed.
+    if (changedFiles().length && !(await save())) return;
     const existing = await state.gh.pullForBranch(owner, repo, branch);
     if (existing) {
       status(`Already open for review: ${existing.html_url}`, "ok");

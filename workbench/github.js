@@ -58,6 +58,25 @@ export class GitHub {
       } catch {
         /* not json */
       }
+
+      // A fine-grained token that can read a public repo but not write to it
+      // gives this, and GitHub's wording sends people looking in the wrong
+      // place. Reading a public repo needs no permission at all, so the
+      // token may simply have no access to the owner's repositories.
+      if (res.status === 403 && /not accessible by personal access token/i.test(detail)) {
+        const owner = url.match(/\/repos\/([^/]+)\//)?.[1] ?? "the owner";
+        throw new GitHubError(
+          `Your token cannot write to ${owner}. Reading worked because the ` +
+            "repository is public. Check three things on the token: its " +
+            `resource owner is ${owner} (not your personal account), this ` +
+            "repository is selected, and it grants Contents: read and write " +
+            "plus Pull requests: read and write. If " +
+            `${owner} is an organisation, it may also need to approve the ` +
+            "token under Settings → Personal access tokens.",
+          res.status,
+          url
+        );
+      }
       throw new GitHubError(
         `${method} ${url.replace(API, "")} failed (${res.status})${detail ? `: ${detail}` : ""}`,
         res.status,
@@ -83,6 +102,12 @@ export class GitHub {
 
   repo(owner, name) {
     return this.request(`/repos/${owner}/${name}`);
+  }
+
+  /** Can this token push here? Checked on open, not at submit time. */
+  async canWrite(owner, name) {
+    const repo = await this.repo(owner, name);
+    return Boolean(repo.permissions?.push);
   }
 
   /** Every blob path at a ref, in one call. */
