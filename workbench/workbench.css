@@ -111,10 +111,10 @@ button.link.danger { color: var(--danger); }
 .muted { color: var(--muted); font-size: 12px; }
 
 /* Three panes: outline, form, schematic. */
-.panes { display: grid; grid-template-columns: 210px minmax(0, 1fr) minmax(0, 38%); }
-.pane { padding: 14px; overflow-y: auto; height: calc(100vh - 165px); }
+.panes { display: grid; grid-template-columns: 210px minmax(0, 1fr); }
+.pane { padding: 14px; overflow-y: auto; height: calc(100vh - 210px); }
 .outline { border-right: 1px solid var(--border); background: var(--bg-sunken); }
-.preview { border-left: 1px solid var(--border); }
+
 @media (max-width: 1100px) {
   .panes { grid-template-columns: 1fr; }
   .pane { height: auto; }
@@ -260,3 +260,47 @@ details summary { cursor: pointer; font-size: 13px; margin: 8px 0; }
 
 /* Shrunk a long way: PowerPoint will do the same, so say so. */
 .region.overfull { box-shadow: inset 0 -2px 0 0 var(--danger); }
+
+/* ---- the ribbon ---------------------------------------------------- */
+.ribbon {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 6px 18px; border-bottom: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+.ribbon-group { display: flex; align-items: center; gap: 3px; }
+.ribbon-group.right { margin-left: auto; }
+.ribbon-label { color: var(--muted); font-size: 11px; margin-right: 4px; }
+button.swatch {
+  width: 20px; height: 20px; padding: 0; border-radius: 3px;
+  border: 1px solid var(--border-strong);
+}
+button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
+
+/* ---- the editing surface ------------------------------------------- */
+.editor { display: flex; flex-direction: column; gap: 10px; }
+.canvas { max-width: 900px; width: 100%; }
+.canvas-hint { max-width: 900px; margin: 0; }
+
+.stage.editable .region[data-editable] { cursor: text; }
+.stage.editable .region[data-editable]:hover {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.stage.editable .region:focus-within {
+  box-shadow: inset 0 0 0 2px var(--focus);
+  outline: none;
+}
+.stage.editable .region.vacant { cursor: pointer; }
+.stage.editable .region.vacant:hover {
+  border-color: var(--accent); color: var(--accent); opacity: 0.9;
+}
+
+/* ---- metadata and notes, under the slide --------------------------- */
+.meta { max-width: 900px; border-top: 1px solid var(--border); padding-top: 10px; }
+.meta-row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.meta-field { display: flex; flex-direction: column; gap: 3px; }
+.meta-field.grow { flex: 1; min-width: 220px; }
+.meta-field label { font-size: 11px; font-weight: 600; color: var(--muted); }
+.notes { margin-top: 12px; }
+.notes-head { display: flex; align-items: baseline; gap: 10px; }
+.notes-head h3 { font-size: 13px; margin: 0 0 4px; }
+.notes-field .rt { min-height: 6em; }

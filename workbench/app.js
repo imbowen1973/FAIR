@@ -18,8 +18,9 @@ import {
   renderSlidesFile,
   workingSlides,
 } from "./library.js";
-import { slideForm } from "./form.js";
-import { drawSchematic } from "./schematic.js";
+import { drawSlide } from "./canvas.js";
+import { slideMeta } from "./meta.js";
+import { paintSwatches, ribbon } from "./ribbon.js";
 import { renderDeck, validate } from "./preview.js";
 
 const $ = (id) => document.getElementById(id);
@@ -297,7 +298,7 @@ function renderOutline() {
         // can never disagree about a slide.
         const thumb = document.createElement("span");
         thumb.className = "thumb";
-        drawSchematic(thumb, {
+        drawSlide(thumb, {
           geometry: state.library.geometry,
           layoutKey: data.layout,
           slide: data,
@@ -362,46 +363,94 @@ function renderOutline() {
 
 let activeRegion = null;
 
-function renderSlide() {
-  const block = currentBlock();
-  if (!block) return;
-  const data = slideData(state.slideIndex);
+/** Record an edit to the slide in focus and redraw what depends on it. */
+function commitSlide(next) {
+  const entry = working()[state.slideIndex];
+  entry.data = next;
+  entry.dirty = true;
+  renderOutline();
+  updateActions();
+}
 
-  slideForm($("form"), {
+/**
+ * Redraw the canvas without losing the caret.
+ *
+ * Typing in a region rewrites the slide data, and redrawing from that
+ * data would rebuild the very node being typed into. So an edit that came
+ * from the canvas commits and leaves the DOM alone; only a structural
+ * change — a new layout, a region added or cleared — redraws.
+ */
+function renderCanvas({ redraw = true } = {}) {
+  const data = slideData(state.slideIndex);
+  if (redraw) {
+    drawSlide($("canvas"), {
+      geometry: state.library.geometry,
+      layoutKey: data.layout,
+      slide: data,
+      activeRegion,
+      editable: true,
+      onChange: (region, value) => {
+        const current = slideData(state.slideIndex);
+        const next = { ...current };
+        if (value === "" && !(region in current)) next[region] = "";
+        else next[region] = value;
+        const structural = !(region in current);
+        commitSlide(next);
+        if (structural) renderCanvas();
+      },
+      onSelectRegion: (region) => {
+        activeRegion = region;
+      },
+    });
+  }
+  slideMeta($("meta"), {
     slide: data,
-    layoutMap: state.library.layoutMap,
     competencies: state.library.competencies,
     onChange: (next) => {
-      const entry = working()[state.slideIndex];
-      entry.data = next;
-      entry.dirty = true;
-      renderOutline();
-      drawSchematic($("schematic"), {
-        geometry: state.library.geometry,
-        layoutKey: next.layout,
-        slide: next,
-        activeRegion,
-      });
-      updateActions();
-    },
-    onFocusRegion: (region) => {
-      activeRegion = region;
-      drawSchematic($("schematic"), {
-        geometry: state.library.geometry,
-        layoutKey: slideData(state.slideIndex).layout,
-        slide: slideData(state.slideIndex),
-        activeRegion,
-      });
+      commitSlide(next);
+      // Metadata never changes the canvas, so leave the caret where it is.
     },
   });
+}
 
-  drawSchematic($("schematic"), {
-    geometry: state.library.geometry,
-    layoutKey: data.layout,
-    slide: data,
-    activeRegion,
+function renderRibbon() {
+  const data = slideData(state.slideIndex);
+  ribbon($("ribbon"), {
+    layouts: layoutKeys(state.library.layoutMap),
+    layout: data.layout,
+    onCommand: () => {
+      // The canvas listens for input, but execCommand does not always
+      // raise one; read the surface back and commit.
+      const box = $("canvas").querySelector(".region[data-editable]:focus-within");
+      if (box) box.dispatchEvent(new Event("input", { bubbles: true }));
+    },
+    onLayout: (key) => {
+      commitSlide({ ...slideData(state.slideIndex), layout: key });
+      renderCanvas();
+      renderRibbon();
+    },
+    onColour: (slot) => {
+      const region = activeRegion;
+      if (!region) return;
+      const current = slideData(state.slideIndex);
+      const value = current[region];
+      // Colour belongs to the region, not to a run: the grammar has no
+      // inline colour, precisely so a rebrand can recolour every deck.
+      if (typeof value !== "object" || value === null) return;
+      const next = { ...value };
+      if (slot) next.color = slot;
+      else delete next.color;
+      commitSlide({ ...current, [region]: next });
+      renderCanvas();
+    },
   });
-  updateActions();
+  paintSwatches($("ribbon"), state.library.geometry?.theme);
+}
+
+function renderSlide() {
+  if (!currentBlock()) return;
+  renderRibbon();
+  renderCanvas();
 }
 
 // ---- pending files -----------------------------------------------------

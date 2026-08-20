@@ -70,18 +70,18 @@
       </div>
     </div>
 
+    <div id="ribbon" class="ribbon"></div>
+
     <div class="panes">
-      <aside id="outline" class="pane outline" aria-label="Course outline"></aside>
-      <section id="form" class="pane form" aria-label="Slide"></section>
-      <aside class="pane preview" aria-label="Schematic">
-        <div id="schematic"></div>
-        <p class="hint">
-          Drawn at the template's own geometry, type sizes and theme
-          colours — close enough to judge by. It cannot know PowerPoint's
-          line breaking or autofit, so
-          <strong>Preview deck</strong> remains the real file.
+      <aside id="outline" class="pane outline" aria-label="Slides"></aside>
+      <section class="pane editor" aria-label="Slide">
+        <div id="canvas" class="canvas"></div>
+        <p class="hint canvas-hint">
+          Click a region to edit it. Layout, geometry and colours come from
+          the template — <strong>Preview deck</strong> renders the real file.
         </p>
-      </aside>
+        <div id="meta" class="meta"></div>
+      </section>
     </div>
 
     <div id="problems" class="problems"></div>
