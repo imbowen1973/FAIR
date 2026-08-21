@@ -39,7 +39,9 @@ COURSE_FILE = "course.yaml"
 BLOCKS_DIR = "blocks"
 BLOCK_FILE = "block.yaml"
 SLIDES_FILE = "slides.md"
+LESSON_PLAN_FILE = "lessonplan.md"
 MEDIA_DIR = "media"
+FILES_DIR = "files"
 
 # Containers may nest to any depth under whatever names a course uses —
 # modules, days, weeks, units. Only the leaf is fixed: it names a block.
@@ -147,6 +149,65 @@ def load_block(block_dir: Path) -> Block:
         competencies={str(k): str(v) for k, v in competencies.items()},
         resources=_load_resources(block_dir, meta.get("resources")),
     )
+
+
+def check_blocks(root: Path) -> list[dict]:
+    """Problems with a library's blocks that are not grammar errors.
+
+    Reported rather than raised: an author opening a library wants every
+    problem at once, not the first one. `[{"where", "message"}]`, empty
+    when clean.
+
+    This lives here, not in a client, so `fair-corpus`, the pane and the
+    workbench all apply the same rule. A rule enforced in one client is
+    not a rule.
+    """
+    problems: list[dict] = []
+    blocks_dir = root / BLOCKS_DIR
+    if not blocks_dir.is_dir():
+        return problems
+
+    for block_dir in sorted(p for p in blocks_dir.iterdir() if p.is_dir()):
+        # Every session is taught by someone, and the lesson plan is how.
+        # A deck without one is a slideshow, not a session.
+        if not (block_dir / LESSON_PLAN_FILE).is_file():
+            problems.append({
+                "where": block_dir.name,
+                "message": f"no {LESSON_PLAN_FILE}: every block needs a lesson plan",
+            })
+
+        meta_path = block_dir / BLOCK_FILE
+        try:
+            meta = _load_yaml(meta_path) if meta_path.is_file() else {}
+        except LibraryError as exc:
+            problems.append({"where": block_dir.name, "message": str(exc)})
+            continue
+
+        # Every missing resource, not just the first: load_block stops at
+        # the first because a build must fail hard, but an author wants
+        # the whole list in one pass.
+        declared = meta.get("resources") or []
+        missing = []
+        if isinstance(declared, list):
+            for entry in declared:
+                if isinstance(entry, dict) and "path" in entry:
+                    rel = str(entry["path"])
+                    if not (block_dir / rel).is_file():
+                        missing.append(rel)
+                        problems.append({
+                            "where": block_dir.name,
+                            "message": f"{BLOCK_FILE} declares {rel}, which is not there",
+                        })
+
+        # Whatever else load_block would reject: shape of competencies,
+        # duration, a resources list that is not a list.
+        try:
+            load_block(block_dir)
+        except LibraryError as exc:
+            message = str(exc)
+            if not any(f"no such resource: {rel}" in message for rel in missing):
+                problems.append({"where": block_dir.name, "message": message})
+    return problems
 
 
 def _walk_structure(nodes, path: Path, seen: set[str]) -> list[dict]:

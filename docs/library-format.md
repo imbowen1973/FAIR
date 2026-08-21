@@ -15,11 +15,13 @@ branding/                       emblems the attribution uses
 blocks/
   01-foundations/
     block.yaml                  title, duration, competencies, resources
-    slides.md                   the deck — one per block
-    lessonplan.md               \
-    workbook.md                  >  resources: carried and indexed, never parsed
-    questions.xml               /
-    media/                      images the deck and resources share
+    lessonplan.md               required: how the session is taught
+    slides.md                   the deck — optional, one per block
+    workbook.md                 \
+    instructorguide.md           >  resources: carried and indexed,
+    assessment.xml              /   never parsed
+    media/                      images, through the asset policy
+    files/                      spreadsheets, PDFs — carried untouched
 ```
 
 Two properties follow from that shape, and they are the reason for it:
@@ -28,6 +30,12 @@ Two properties follow from that shape, and they are the reason for it:
   touches `course.yaml`. Adding a block does.
 - **A block versions as a unit.** The deck, its lesson plan, its media
   branch and merge together, because they are one folder.
+
+**A block is a session, not a deck.** `lessonplan.md` is required and
+`slides.md` is not: plenty of sessions are taught from a plan and a
+workbook with no slides at all. `fair-corpus`, the pane and the workbench
+all apply that rule, because it comes from `library.check_blocks()`
+rather than from any one client.
 
 ## `course.yaml` — the recipe
 
@@ -84,9 +92,13 @@ resources:
     path: questions.xml
 ```
 
-Every field is optional except that a block wanting a deck needs
-`slides.md`. `competencies:` may be a bare list (`[CE1, CE2]`) when the
-labels come from the framework file.
+Every field is optional. A block wanting a deck needs `slides.md`; every
+block needs `lessonplan.md`. `competencies:` may be a bare list
+(`[CE1, CE2]`) when the labels come from the framework file.
+
+The deck is **not** listed in `resources:`. `slides.md` is fixed by
+convention and the renderer keys off that name, so declaring it as well
+would index it twice in `catalog.json`.
 
 ## Resources
 
@@ -117,6 +129,41 @@ checkboxes, because PowerPoint cannot insert a workbook.
 A resource declared but missing on disk fails the build — a course that
 promises a workbook and does not ship one is worse than one that never
 promised it.
+
+
+### Where a file goes
+
+| Folder | Holds | Treatment |
+|---|---|---|
+| `media/` | images | resized to 2000 px, re-encoded, **all metadata stripped** |
+| `files/` | spreadsheets, PDFs, anything else | carried byte for byte |
+
+The split is not tidiness. Clinical photographs must not carry GPS
+coordinates or device identifiers into a public repo, so images go
+through the asset policy without exception — and running that policy
+over a spreadsheet would corrupt it. One folder holding both would make
+it ambiguous which rule applies.
+
+### Assessments
+
+Assessments are **Moodle XML**, authored directly, because that is what
+Moodle imports. There is no build step between what an author edits and
+what a learner sits.
+
+Competency and depth of knowledge ride in the question's own tags, which
+Moodle carries through on import rather than discarding at the border:
+
+```xml
+<tags>
+  <tag><text>AP1</text></tag>
+  <tag><text>dok:2</text></tag>
+</tags>
+```
+
+The workbench edits questions as a form and writes only the questions
+that changed, leaving every other byte identical — including questions
+of a type it does not understand, which it shows read-only rather than
+risk losing.
 
 ## Media
 

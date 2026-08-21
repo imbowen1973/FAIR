@@ -24,6 +24,29 @@ import { drawSlide } from "./canvas.js";
 import { slideMeta } from "./meta.js";
 import { paintListType, paintSwatches, ribbon } from "./ribbon.js";
 import { renderDeck, validate } from "./preview.js";
+import {
+  blockDocuments,
+  freePath,
+  KINDS,
+  withResource,
+  withoutResource,
+  FILES_DIR,
+  MEDIA_DIR,
+} from "./documents.js";
+import { tabs } from "./tabs.js";
+import { markdownEditor } from "./mdeditor.js";
+import { parse as parseYaml, stringify as stringifyYaml } from "./yaml.js";
+import { linkFor, prepareUpload, toBase64 } from "./attach.js";
+import {
+  blankQuestion,
+  EDITABLE,
+  readQuestion,
+  renderQuizFile,
+  splitQuestions,
+  TYPE_LABEL,
+  workingQuestions,
+} from "./assessment.js";
+import { questionForm } from "./assessmentui.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -36,7 +59,16 @@ const state = {
   blockId: null,
   slideIndex: 0,
   edits: new Map(), // path -> new text
+  // Files the author has attached but not yet committed. Kept apart
+  // from state.binaries, which caches binaries *fetched* from the repo
+  // for rendering -- mixing them would try to re-commit template.pptx.
+  uploads: new Map(), // path -> Uint8Array
   working: new Map(), // blockId -> [{sourceIndex, data, dirty}]
+  // Which document each block was last left on, so switching away and
+  // back returns you to the workbook rather than to the deck.
+  docByBlock: new Map(), // blockId -> document id
+  quizzes: new Map(), // assessment path -> {parsed, working}
+  quizIndex: 0,
   problems: [],
 };
 
@@ -151,7 +183,7 @@ async function openRepo(fullName) {
 
     if (!isLibrary(paths)) {
       status(
-        `${fullName} is not a library: it needs course.yaml and blocks/<id>/slides.md.`,
+        `${fullName} is not a library: it needs course.yaml and blocks/<id>/block.yaml.`,
         "error"
       );
       return;
@@ -299,7 +331,9 @@ function renderOutline() {
     });
     group.appendChild(head);
 
-    if (id === state.blockId) {
+    // The slide strip belongs to the deck. On a workbook tab it would be
+    // a list of things the pane on the right is not showing.
+    if (id === state.blockId && activeDoc()?.editor === "slides") {
       working(id).forEach((entry, index) => {
         const data = entry.data;
         const row = document.createElement("div");
@@ -379,6 +413,12 @@ function renderOutline() {
       add.textContent = "+ slide";
       add.addEventListener("click", addSlide);
       group.appendChild(add);
+    }
+
+    // An assessment gets the same treatment as a deck: its questions in
+    // the rail, the one you picked in the pane.
+    if (id === state.blockId && activeDoc()?.editor === "assessment") {
+      group.appendChild(questionRows(activeDoc()));
     }
     host.appendChild(group);
   }
@@ -509,10 +549,506 @@ function renderRibbon() {
   paintListType($("ribbon"), regionType(activeRegion));
 }
 
-function renderSlide() {
+// ---- documents ---------------------------------------------------------
+//
+// A block is a session, not a deck. The tab strip is its contents, and
+// the deck is the first tab rather than the only one.
+
+/** The documents in the current block, over the pending file map. */
+function documents() {
+  return blockDocuments(currentBlock(), pendingFiles());
+}
+
+/** The document on screen, defaulting to the deck. */
+function activeDoc() {
+  const list = documents();
+  const wanted = state.docByBlock.get(state.blockId);
+  return list.find((d) => d.id === wanted) ?? list[0] ?? null;
+}
+
+/** A document's current text: the edited version if there is one. */
+function docText(doc) {
+  return state.edits.get(doc.path) ?? state.files.get(doc.path) ?? "";
+}
+
+function openDoc(id) {
+  state.docByBlock.set(state.blockId, id);
+  renderOutline();
+  renderBlock();
+}
+
+/** block.yaml for the current block, as data. */
+function blockMeta() {
+  const block = currentBlock();
+  const path = `blocks/${block.id}/block.yaml`;
+  const text = state.edits.get(path) ?? state.files.get(path) ?? "";
+  return { path, data: parseYaml(text) || {} };
+}
+
+/** Write block.yaml back after changing its resources. */
+function setBlockResources(resources) {
+  const { path, data } = blockMeta();
+  const next = { ...data, resources };
+  state.edits.set(path, stringifyYaml(next));
+  // The library's own copy of the meta, so tabs redraw from it at once.
+  currentBlock().meta = next;
+}
+
+/** Add a document of `kind` to this block, file and manifest together. */
+function addDocument(kind) {
+  const block = currentBlock();
+  const taken = new Set(documents().map((d) => d.id));
+  const file = freePath(kind, taken);
+  const title = KINDS[kind]?.label ?? kind;
+  const path = `blocks/${block.id}/${file}`;
+
+  // The file and its manifest entry in one step: a document that exists
+  // but is undeclared would not survive a reload, and a declaration with
+  // no file is a broken link in the catalog.
+  state.edits.set(path, starterFor(kind, title, block));
+  setBlockResources(withResource(blockMeta().data.resources, { type: kind, title, path: file }));
+
+  state.docByBlock.set(block.id, file);
+  renderOutline();
+  renderBlock();
+  updateActions();
+  status(`Added ${title.toLowerCase()}`, "ok");
+}
+
+/** Opening text for a new document, so the file is never blank. */
+function starterFor(kind, title, block) {
+  if (kind === "assessment") {
+    return [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      "<quiz>",
+      "</quiz>",
+      "",
+    ].join("\n");
+  }
+  const heading = `# ${title}: ${block.meta.title || block.id}`;
+  if (kind === "lessonplan") {
+    return [
+      heading,
+      "",
+      "## Learning outcomes",
+      "",
+      "By the end of this session learners will be able to:",
+      "",
+      "- ",
+      "",
+      "## Before the session",
+      "",
+      "## Running the session",
+      "",
+      "| Time | Activity | Notes |",
+      "|---|---|---|",
+      "|  |  |  |",
+      "",
+      "## After the session",
+      "",
+    ].join("\n");
+  }
+  return [heading, "", ""].join("\n");
+}
+
+function removeDocument(id) {
+  const doc = documents().find((d) => d.id === id);
+  if (!doc) return;
+  // The manifest entry goes; the file is left in the repo. Dropping a
+  // tab should not delete an author's work, and an undeclared file is
+  // simply not carried into the catalog.
+  setBlockResources(withoutResource(blockMeta().data.resources, id));
+  if (state.docByBlock.get(state.blockId) === id) {
+    state.docByBlock.delete(state.blockId);
+  }
+  renderOutline();
+  renderBlock();
+  updateActions();
+  status(`${doc.title} removed from block.yaml; the file is still in the repo`, "ok");
+}
+
+function renderTabs() {
+  const doc = activeDoc();
+  tabs($("tabs"), {
+    documents: documents(),
+    active: doc?.id,
+    onOpen: openDoc,
+    onAdd: (kind) => (kind === "attachment" ? attachFile() : addDocument(kind)),
+    onRemove: removeDocument,
+  });
+}
+
+/** Draw whichever editor the active document needs. */
+function renderBlock() {
   if (!currentBlock()) return;
-  renderRibbon();
-  renderCanvas();
+  renderTabs();
+  const doc = activeDoc();
+  const slides = doc?.editor === "slides";
+
+  $("slidesview").hidden = !slides;
+  $("document").hidden = slides;
+  $("ribbon").hidden = !slides;
+
+  if (slides) {
+    renderRibbon();
+    renderCanvas();
+    return;
+  }
+  renderDocument(doc);
+}
+
+function renderDocument(doc) {
+  const host = $("document");
+  host.innerHTML = "";
+
+  if (doc.missing) {
+    const warn = document.createElement("p");
+    warn.className = "warn";
+    warn.textContent =
+      `block.yaml declares ${doc.path.split("/").pop()}, but it is not in the repo. ` +
+      "Type below to create it, or remove the tab to drop the declaration.";
+    host.appendChild(warn);
+  }
+
+  if (doc.editor === "attachment") {
+    renderAttachment(host, doc);
+    return;
+  }
+
+  if (doc.editor === "assessment") {
+    renderQuestion(host, doc);
+    return;
+  }
+
+  // A required document that is not there yet opens on its template
+  // rather than on an empty box — the rule is then something an author
+  // can act on, not just something the validator complains about.
+  const existing = docText(doc);
+  const seeded = existing || starterFor(doc.type, doc.title, currentBlock());
+  if (!existing) {
+    const note = document.createElement("p");
+    note.className = "hint";
+    note.textContent =
+      `${doc.path.split("/").pop()} does not exist yet. This is a starting ` +
+      "point — it is written to the repo once you edit it.";
+    host.appendChild(note);
+  }
+
+  const editorHost = document.createElement("div");
+  host.appendChild(editorHost);
+  markdownEditor(editorHost, {
+    text: seeded,
+    onChange: (text) => {
+      state.edits.set(doc.path, text);
+      updateActions();
+    },
+    onAttach: attachFile,
+  });
+}
+
+// ---- assessments -------------------------------------------------------
+
+/** The question list for the rail: one row each, in file order. */
+function questionRows(doc) {
+  const wrap = document.createElement("div");
+  const { working } = quiz(doc);
+
+  working.forEach((entry, index) => {
+    const row = document.createElement("div");
+    row.className = "slide-row question-row";
+    if (index === state.quizIndex) row.classList.add("on");
+
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "slide-pick";
+    const number = document.createElement("span");
+    number.className = "slide-no";
+    number.textContent = String(index + 1);
+
+    const label = document.createElement("span");
+    label.className = "q-row-label";
+    // Reading every question just to label the list would parse the whole
+    // file on open. The name is cheap to pull out of the source instead.
+    const name =
+      entry.data?.name ??
+      (parsedName(quiz(doc).parsed.questions[entry.sourceIndex]?.source) || `Question ${index + 1}`);
+    const kind = document.createElement("span");
+    kind.className = "q-row-type";
+    kind.textContent = TYPE_LABEL[entry.type] ?? entry.type;
+    if (!EDITABLE.includes(entry.type)) kind.classList.add("readonly");
+    label.append(document.createTextNode(name), kind);
+
+    pick.append(number, label);
+    pick.setAttribute("aria-label", `Question ${index + 1}: ${name}`);
+    pick.addEventListener("click", () => {
+      state.quizIndex = index;
+      renderOutline();
+      renderBlock();
+    });
+    row.appendChild(pick);
+
+    if (entry.dirty) {
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.title = "unsaved";
+      dot.textContent = "•";
+      row.appendChild(dot);
+    }
+
+    const tools = document.createElement("span");
+    tools.className = "slide-tools";
+    for (const [text, title, fn] of [
+      ["↑", "move up", () => moveQuestion(doc, index, -1)],
+      ["↓", "move down", () => moveQuestion(doc, index, 1)],
+      ["×", "delete", () => deleteQuestion(doc, index)],
+    ]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tool";
+      b.textContent = text;
+      b.title = title;
+      b.setAttribute("aria-label", `${title}: question ${index + 1}`);
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        fn();
+      });
+      tools.appendChild(b);
+    }
+    row.appendChild(tools);
+    wrap.appendChild(row);
+  });
+
+  const add = document.createElement("div");
+  add.className = "add-question";
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", "Question type to add");
+  for (const type of EDITABLE) {
+    const option = document.createElement("option");
+    option.value = type;
+    option.textContent = TYPE_LABEL[type];
+    select.appendChild(option);
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "add-slide";
+  button.textContent = "+ question";
+  button.addEventListener("click", () => addQuestion(doc, select.value));
+  add.append(select, button);
+  wrap.appendChild(add);
+  return wrap;
+}
+
+/** A question's name straight out of its source, without a full parse. */
+function parsedName(source) {
+  if (!source) return "";
+  const match = source.match(/<name>\s*<text>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/text>/i);
+  return match ? match[1].trim() : "";
+}
+
+/**
+ * The working state for an assessment file, split on first use.
+ *
+ * Questions are read lazily: an untouched question is never parsed, so
+ * it can only ever be written back byte-identical.
+ */
+function quiz(doc) {
+  if (!state.quizzes.has(doc.path)) {
+    const parsed = splitQuestions(docText(doc));
+    state.quizzes.set(doc.path, { parsed, working: workingQuestions(parsed) });
+  }
+  return state.quizzes.get(doc.path);
+}
+
+/** Commit the working list back to the file. */
+function commitQuiz(doc) {
+  const { parsed, working } = quiz(doc);
+  state.edits.set(doc.path, renderQuizFile(parsed, working));
+  updateActions();
+}
+
+/** A question's data, parsed the first time it is opened. */
+function questionData(doc, index) {
+  const { parsed, working } = quiz(doc);
+  const entry = working[index];
+  if (!entry) return null;
+  if (!entry.data) {
+    entry.data = readQuestion(parsed.questions[entry.sourceIndex].source) ?? {
+      type: entry.type,
+      name: "",
+      answers: [],
+      tags: [],
+    };
+  }
+  return entry.data;
+}
+
+function addQuestion(doc, type) {
+  const { working } = quiz(doc);
+  const used = new Set(working.map((w) => w.data?.name).filter(Boolean));
+  let name = `Q${working.length + 1}`;
+  for (let n = working.length + 1; used.has(name); n += 1) name = `Q${n}`;
+  working.push({ sourceIndex: null, type, data: blankQuestion(type, name), dirty: true });
+  state.quizIndex = working.length - 1;
+  commitQuiz(doc);
+  renderOutline();
+  renderBlock();
+}
+
+function deleteQuestion(doc, index) {
+  const { working } = quiz(doc);
+  const data = questionData(doc, index);
+  if (!window.confirm(`Delete "${data?.name || `question ${index + 1}`}"?`)) return;
+  working.splice(index, 1);
+  state.quizIndex = Math.max(0, Math.min(state.quizIndex, working.length - 1));
+  commitQuiz(doc);
+  renderOutline();
+  renderBlock();
+}
+
+function moveQuestion(doc, index, delta) {
+  const { working } = quiz(doc);
+  const to = index + delta;
+  if (to < 0 || to >= working.length) return;
+  const [entry] = working.splice(index, 1);
+  working.splice(to, 0, entry);
+  state.quizIndex = to;
+  commitQuiz(doc);
+  renderOutline();
+  renderBlock();
+}
+
+function renderQuestion(host, doc) {
+  const { working } = quiz(doc);
+  if (!working.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent =
+      "No questions yet. Add one from the list on the left — it is written as " +
+      "Moodle XML, which Moodle imports directly.";
+    host.appendChild(empty);
+    return;
+  }
+  const index = Math.min(state.quizIndex, working.length - 1);
+  const data = questionData(doc, index);
+  const form = document.createElement("div");
+  form.className = "question";
+  host.appendChild(form);
+
+  let view;
+  const onChange = (next) => {
+    const entry = working[index];
+    const structural =
+      (next.answers?.length ?? 0) !== (entry.data?.answers?.length ?? 0) ||
+      JSON.stringify(next.tags) !== JSON.stringify(entry.data?.tags);
+    entry.data = next;
+    entry.dirty = true;
+    commitQuiz(doc);
+    view.updateSource(next);
+    // Adding an answer or a tag changes the form's own shape, so it is
+    // rebuilt. Typing does not, and rebuilding then would cost the caret.
+    if (structural) {
+      view = questionForm(form, {
+        data: next,
+        competencies: state.library.competencies,
+        onChange,
+      });
+    }
+    renderQuestionList();
+  };
+
+  view = questionForm(form, {
+    data,
+    competencies: state.library.competencies,
+    onChange,
+  });
+}
+
+/** Refresh just the question list, so a renamed question re-labels. */
+function renderQuestionList() {
+  const doc = activeDoc();
+  if (doc?.editor === "assessment") renderOutline();
+}
+
+/** A file we carry but do not edit: say what it is and where it lives. */
+function renderAttachment(host, doc) {
+  const { owner, repo, defaultBranch } = state.repo;
+  const card = document.createElement("div");
+  card.className = "attachment";
+  const name = doc.path.split("/").pop();
+  const title = document.createElement("h3");
+  title.textContent = doc.title;
+  const where = document.createElement("p");
+  where.className = "muted";
+  where.textContent =
+    `${doc.path} — carried with the block and linked from its documents. ` +
+    "Binary files are not edited here.";
+  const link = document.createElement("a");
+  link.href = `https://github.com/${owner}/${repo}/blob/${defaultBranch}/${doc.path}`;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = `Open ${name} on GitHub`;
+  card.append(title, where, link);
+  host.appendChild(card);
+}
+
+/**
+ * Attach files to this block: prepared, committed alongside, and linked
+ * from the document on screen if it takes markdown.
+ */
+function attachFile() {
+  const picker = document.createElement("input");
+  picker.type = "file";
+  picker.multiple = true;
+  picker.accept = "image/*,.pdf,.xlsx,.xls,.csv,.docx,.pptx,.zip";
+  picker.addEventListener("change", async () => {
+    const block = currentBlock();
+    const doc = activeDoc();
+    const added = [];
+    try {
+      for (const file of picker.files) {
+        const upload = await prepareUpload(file);
+        const rel = `${upload.dir}/${upload.name}`;
+        const path = `blocks/${block.id}/${rel}`;
+        state.uploads.set(path, upload.bytes);
+        // Declared as well as committed, or the catalog will not carry it.
+        setBlockResources(
+          withResource(blockMeta().data.resources, {
+            type: upload.isImage ? "image" : "file",
+            title: file.name,
+            path: rel,
+          })
+        );
+        added.push({ upload, file });
+      }
+    } catch (err) {
+      status(err.message, "error");
+      return;
+    }
+    if (!added.length) return;
+
+    // Link them where the author was typing. A markdown document gets
+    // the links inline; anywhere else they are reachable by their tab.
+    if (doc && doc.editor === "markdown") {
+      const links = added.map(({ upload, file }) => linkFor(upload, file.name)).join("\n");
+      const text = docText(doc);
+      state.edits.set(doc.path, text.endsWith("\n") ? `${text}${links}\n` : `${text}\n${links}\n`);
+    }
+    renderOutline();
+    renderBlock();
+    updateActions();
+    const names = added.map(({ upload }) => upload.name).join(", ");
+    const shrunk = added.some(({ upload }) => upload.isImage);
+    status(
+      `Attached ${names}${shrunk ? " — images resized and metadata stripped" : ""}`,
+      "ok"
+    );
+  });
+  picker.click();
+}
+
+/** Kept for callers that only mean the deck. */
+function renderSlide() {
+  renderBlock();
 }
 
 // ---- pending files -----------------------------------------------------
@@ -522,7 +1058,11 @@ function pendingFiles() {
   const out = new Map(state.files);
   for (const [blockId, list] of state.working) {
     const block = state.library.blocks.get(blockId);
-    out.set(block.slidesPath, renderSlidesFile(block.parsed, list));
+    // A block with no deck only gains a slides.md once it has a slide;
+    // writing an empty one would commit a file nobody asked for.
+    if (!block.slidesPath && !list.length) continue;
+    const path = block.slidesPath ?? `blocks/${blockId}/slides.md`;
+    out.set(path, renderSlidesFile(block.parsed, list));
   }
   for (const [path, text] of state.edits) out.set(path, text);
   return out;
@@ -533,6 +1073,12 @@ function changedFiles() {
   const changed = [];
   for (const [path, text] of pending) {
     if (state.files.get(path) !== text) changed.push({ path, content: text });
+  }
+  // Attachments travel in the same commit as the document that links
+  // them: a workbook referencing an image that landed in a later commit
+  // is broken for everyone who reads the branch in between.
+  for (const [path, bytes] of state.uploads) {
+    changed.push({ path, base64: toBase64(bytes) });
   }
   return changed;
 }
@@ -704,8 +1250,9 @@ async function showHistory() {
   const { owner, repo } = state.repo;
   const block = state.library.blocks.get(state.blockId);
   try {
+    // The document on screen, or the whole block when it has no deck.
     const commits = await state.gh.commits(owner, repo, {
-      path: block.slidesPath,
+      path: block.slidesPath ?? `blocks/${block.id}`,
       limit: 20,
     });
     const host = $("problems");

@@ -20,6 +20,21 @@ import {
 } from "../marks.js";
 import { draftBranch, parseRepo } from "../github.js";
 import {
+  blockDocuments,
+  freePath,
+  withResource,
+  withoutResource,
+} from "../documents.js";
+import { markdownToHtml } from "../markdown.js";
+import {
+  competencyTags,
+  renderQuizFile,
+  splitQuestions,
+  toTags,
+  writeQuestion,
+} from "../assessment.js";
+
+import {
   isLibrary,
   layoutRegions,
   libraryPaths,
@@ -424,4 +439,177 @@ test("returns the same value when nothing changes, so callers can skip a commit"
   const list = { type: "ol", items: ["a"] };
   assert.equal(asListType(list, "ol"), list);
   assert.equal(asListType("plain", null), "plain");
+});
+
+// ---- documents ---------------------------------------------------------
+
+test("a block's tabs are the deck, the lesson plan, then the manifest", () => {
+  const block = {
+    id: "01-x",
+    meta: {
+      resources: [
+        { type: "workbook", title: "Learner workbook", path: "workbook.md" },
+        { type: "file", title: "Data", path: "files/data.xlsx" },
+      ],
+    },
+  };
+  const files = new Map([
+    ["blocks/01-x/slides.md", ""],
+    ["blocks/01-x/workbook.md", ""],
+    ["blocks/01-x/files/data.xlsx", ""],
+  ]);
+  const docs = blockDocuments(block, files);
+  assert.deepEqual(
+    docs.map((d) => d.id),
+    ["slides", "lessonplan.md", "workbook.md", "files/data.xlsx"]
+  );
+  // The lesson plan gets a tab whether or not the manifest lists it,
+  // because every block has one.
+  assert.equal(docs[1].title, "Lesson plan");
+  assert.equal(docs[2].editor, "markdown");
+  assert.equal(docs[3].editor, "attachment");
+});
+
+test("a document the manifest declares but the repo lacks is marked, not hidden", () => {
+  const block = { id: "b", meta: { resources: [{ path: "gone.md" }] } };
+  const docs = blockDocuments(block, new Map());
+  assert.equal(docs.find((d) => d.id === "gone.md").missing, true);
+});
+
+test("adding a second document of a kind does not overwrite the first", () => {
+  assert.equal(freePath("workbook", new Set()), "workbook.md");
+  assert.equal(freePath("workbook", new Set(["workbook.md"])), "workbook-2.md");
+  assert.equal(
+    freePath("workbook", new Set(["workbook.md", "workbook-2.md"])),
+    "workbook-3.md"
+  );
+});
+
+test("a resource is replaced rather than duplicated", () => {
+  const first = withResource([], { type: "workbook", path: "workbook.md" });
+  const again = withResource(first, { type: "workbook", title: "Renamed", path: "workbook.md" });
+  assert.equal(again.length, 1);
+  assert.equal(again[0].title, "Renamed");
+  assert.deepEqual(withoutResource(again, "workbook.md"), []);
+});
+
+// ---- markdown ----------------------------------------------------------
+
+test("markdown renders the blocks a lesson plan uses", () => {
+  assert.equal(markdownToHtml("# Title"), "<h1>Title</h1>");
+  assert.equal(markdownToHtml("- a\n- b"), "<ul><li>a</li><li>b</li></ul>");
+  assert.equal(
+    markdownToHtml("| a | b |\n|---|---|\n| 1 | 2 |"),
+    "<table><thead><tr><th>a</th><th>b</th></tr></thead>" +
+      "<tbody><tr><td>1</td><td>2</td></tr></tbody></table>"
+  );
+});
+
+test("a nested list nests inside its item, not beside it", () => {
+  // <ul> as a direct child of <ul> renders, but it is not valid HTML and
+  // a screen reader announces it as a stray list.
+  assert.equal(
+    markdownToHtml("- a\n  - b"),
+    "<ul><li>a<ul><li>b</li></ul></li></ul>"
+  );
+});
+
+test("markdown inline marks come from marks.js, not a second parser", () => {
+  assert.equal(markdownToHtml("CO~2~ and **bold**"), "<p>CO<sub>2</sub> and <strong>bold</strong></p>");
+});
+
+test("markdown escapes text and refuses a script URL", () => {
+  assert.equal(markdownToHtml("a < b & c"), "<p>a &lt; b &amp; c</p>");
+  // The link is shown as the author typed it rather than dropped, so
+  // nothing disappears silently, but it is not made clickable.
+  assert.equal(markdownToHtml("[x](javascript:alert(1))"), "<p>[x](javascript:alert(1))</p>");
+});
+
+// ---- assessments -------------------------------------------------------
+
+const QUIZ = [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  "<quiz>",
+  '  <question type="category">',
+  "    <category><text>top</text></category>",
+  "  </question>",
+  "",
+  '  <question type="multichoice">',
+  "    <name><text>q1</text></name>",
+  '    <answer fraction="100"><text>Yes</text></answer>',
+  "  </question>",
+  "",
+  '  <question type="matching">',
+  "    <subquestion><text>a</text><answer><text>b</text></answer></subquestion>",
+  "  </question>",
+  "</quiz>",
+  "",
+].join("\n");
+
+test("an assessment splits into its questions", () => {
+  const parsed = splitQuestions(QUIZ);
+  assert.deepEqual(
+    parsed.questions.map((q) => q.type),
+    ["category", "multichoice", "matching"]
+  );
+});
+
+test("an untouched assessment is written back byte-identical", () => {
+  // The file is what Moodle imports, so a reformatting write would turn
+  // every edit into an unreviewable diff.
+  for (const source of [QUIZ, QUIZ.replace(/\n\n/g, "\n"), QUIZ.replace(/\n/g, "\r\n")]) {
+    const parsed = splitQuestions(source);
+    const untouched = parsed.questions.map((q, i) => ({
+      sourceIndex: i,
+      data: null,
+      dirty: false,
+    }));
+    assert.equal(renderQuizFile(parsed, untouched), source);
+  }
+});
+
+test("editing one question leaves every other byte-identical", () => {
+  const parsed = splitQuestions(QUIZ);
+  const working = parsed.questions.map((q, i) => ({
+    sourceIndex: i,
+    data: null,
+    dirty: false,
+  }));
+  working[1] = {
+    sourceIndex: 1,
+    dirty: true,
+    data: { type: "multichoice", name: "q1", questiontext: "<p>Which?</p>", answers: [] },
+  };
+  const out = renderQuizFile(parsed, working);
+  assert.ok(out.startsWith(QUIZ.slice(0, QUIZ.indexOf('<question type="multichoice"') - 2)));
+  assert.ok(out.includes("<subquestion><text>a</text><answer><text>b</text></answer></subquestion>"));
+  assert.ok(out.trimEnd().endsWith("</quiz>"));
+});
+
+test("a question type the editor cannot edit survives unchanged", () => {
+  const parsed = splitQuestions(QUIZ);
+  const matching = parsed.questions[2];
+  const out = renderQuizFile(parsed, [{ sourceIndex: 2, data: null, dirty: false }]);
+  assert.ok(out.includes(matching.source));
+});
+
+test("competency and depth of knowledge are written as Moodle tags", () => {
+  const xml = writeQuestion({ type: "essay", name: "e", tags: toTags(["AP1", "AP3"], 3) });
+  assert.ok(xml.includes("<tag><text>AP1</text></tag>"));
+  assert.ok(xml.includes("<tag><text>dok:3</text></tag>"));
+  assert.deepEqual(competencyTags(["AP1", "dok:3"]), { develops: ["AP1"], dok: 3 });
+});
+
+test("CDATA wraps what needs it and nothing else", () => {
+  // Matching Moodle's own export keeps an edited question a few lines
+  // different from its neighbours rather than wholly reformatted.
+  const xml = writeQuestion({ type: "essay", name: "Plain name", questiontext: "<p>HTML</p>" });
+  assert.ok(xml.includes("<text>Plain name</text>"));
+  assert.ok(xml.includes("<text><![CDATA[<p>HTML</p>]]></text>"));
+});
+
+test("a question whose text contains ]]> does not break out of its CDATA", () => {
+  const xml = writeQuestion({ type: "essay", name: "x", questiontext: "a ]]> b" });
+  assert.ok(!/\]\]>\s*b/.test(xml.split("questiontext")[1].split("</text>")[0].replace("<![CDATA[", "")));
+  assert.ok(xml.includes("]]]]><![CDATA[>"));
 });

@@ -75,9 +75,13 @@ if "/py" not in sys.path:
     sys.path.insert(0, "/py")
 from fair_renderer.parser import parse_session, SessionParseError
 from fair_renderer.layoutmap import load_layout_map, LayoutMapError
+from fair_renderer.library import check_blocks
 
 problems = []
 root = Path("${LIB_DIR}")
+# Block-level rules live in library.py so fair-corpus and the pane apply
+# the same ones; only the grammar checks below are done here.
+problems.extend(check_blocks(root))
 try:
     bindings = load_layout_map(root / "layout-map.yaml")
 except LayoutMapError as e:

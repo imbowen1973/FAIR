@@ -29,6 +29,11 @@ await page.goto(BASE, { waitUntil: "networkidle" });
 const result = await page.evaluate(async () => {
   const { drawSlide } = await import("./canvas.js");
   const { asListType, parseSlides } = await import("./library.js");
+  const { blockDocuments } = await import("./documents.js");
+  const { tabs } = await import("./tabs.js");
+  const { markdownEditor } = await import("./mdeditor.js");
+  const { splitQuestions, readQuestion } = await import("./assessment.js");
+  const { questionForm } = await import("./assessmentui.js");
   const raw = (p) =>
     fetch(
       `https://raw.githubusercontent.com/Agrifoodskills/Andragogy-Pedagogy/HEAD/${p}`
@@ -175,8 +180,98 @@ const result = await page.evaluate(async () => {
     };
   }
 
+  // A block is a session: its documents are tabs, and each opens its own
+  // editor. Layout only tells you whether they actually draw.
+  const block = {
+    id: "01-x",
+    meta: {
+      resources: [
+        { type: "workbook", title: "Learner workbook", path: "workbook.md" },
+        { type: "file", title: "Data", path: "files/data.xlsx" },
+      ],
+    },
+  };
+  const blockFiles = new Map([
+    ["blocks/01-x/slides.md", ""],
+    ["blocks/01-x/lessonplan.md", "# Plan"],
+    ["blocks/01-x/workbook.md", "# Workbook"],
+    ["blocks/01-x/files/data.xlsx", ""],
+  ]);
+  const tabHost = document.createElement("div");
+  document.body.appendChild(tabHost);
+  let openedTab = null;
+  tabs(tabHost, {
+    documents: blockDocuments(block, blockFiles),
+    active: "slides",
+    onOpen: (id) => (openedTab = id),
+    onAdd: () => {},
+    onRemove: () => {},
+  });
+  tabHost.querySelectorAll(".tab")[2].click();
+  const tabbar = {
+    labels: [...tabHost.querySelectorAll(".tab-label")].map((t) => t.textContent),
+    opened: openedTab,
+    // The deck and the lesson plan are required, so neither can be closed.
+    closable: [...tabHost.querySelectorAll(".tab")]
+      .filter((t) => t.querySelector(".tab-close"))
+      .map((t) => t.dataset.doc),
+  };
+
+  const mdHost = document.createElement("div");
+  document.body.appendChild(mdHost);
+  let mdText = null;
+  const NL = String.fromCharCode(10);
+  markdownEditor(mdHost, {
+    text: ["# Plan", "", "- one"].join(NL),
+    onChange: (v) => (mdText = v),
+  });
+  const area = mdHost.querySelector("textarea");
+  area.focus();
+  area.setSelectionRange(2, 6);
+  mdHost.querySelectorAll(".mdbar button")[3].dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+  );
+  const mdeditor = {
+    preview: mdHost.querySelector(".mdpreview").innerHTML,
+    bolded: mdText,
+  };
+
+  // The question form: several edits in a row must all survive, which is
+  // where a form that patches its original data quietly loses one.
+  const qHost = document.createElement("div");
+  document.body.appendChild(qHost);
+  const quiz = splitQuestions(
+    [
+      "<quiz>",
+      '  <question type="multichoice">',
+      "    <name><text>q1</text></name>",
+      '    <questiontext format="html"><text><![CDATA[<p>Which?</p>]]></text></questiontext>',
+      '    <answer fraction="100"><text>Yes</text></answer>',
+      "    <tags><tag><text>AP1</text></tag></tags>",
+      "  </question>",
+      "</quiz>",
+      "",
+    ].join(NL)
+  );
+  let qLatest = null;
+  questionForm(qHost, {
+    data: readQuestion(quiz.questions[0].source),
+    competencies: { AP1: "a", AP2: "b" },
+    onChange: (v) => (qLatest = v),
+  });
+  const stem = qHost.querySelector("textarea.q-text");
+  stem.value = "<p>Rewritten</p>";
+  stem.dispatchEvent(new Event("input", { bubbles: true }));
+  qHost.querySelectorAll(".chip")[1].click();
+  const question = {
+    stem: qLatest?.questiontext,
+    tags: qLatest?.tags,
+    showsSource: Boolean(qHost.querySelector(".q-source code")?.textContent),
+  };
+
   const vacant = host.querySelectorAll(".region.vacant").length;
-  return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes };
+  return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes,
+    tabbar, mdeditor, question };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -210,6 +305,10 @@ for (const [kind, r] of Object.entries(result.listTypes)) {
       (r.markerRoom === null ? "" : `, marker room ${r.markerRoom}px`)
   );
 }
+console.log(`  tabs: ${result.tabbar.labels.join(" | ")}`);
+console.log(`  opening a tab: ${result.tabbar.opened}`);
+console.log(`  markdown bold: ${JSON.stringify(result.mdeditor.bolded)}`);
+console.log(`  question edits kept: ${JSON.stringify(result.question)}`);
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
 console.log(`marks survived serialisation:`, JSON.stringify(result.markEdit));
 if (errors.length) console.log("console errors:", errors.slice(0, 5));
@@ -229,6 +328,15 @@ const failed =
   (result.markerRoom !== null && result.markerRoom < 12) ||
   Object.values(result.listTypes).some((r) => r.lines !== 3) ||
   Object.values(result.listTypes).some((r) => r.markerRoom !== null && r.markerRoom < 12) ||
+  result.tabbar.opened !== "workbook.md" ||
+  result.tabbar.closable.includes("slides") ||
+  result.tabbar.closable.includes("lessonplan.md") ||
+  !result.mdeditor.preview.includes("<h1>") ||
+  !String(result.mdeditor.bolded).includes("**Plan**") ||
+  result.question.stem !== "<p>Rewritten</p>" ||
+  !result.question.tags?.includes("AP2") ||
+  !result.question.tags?.includes("AP1") ||
+  !result.question.showsSource ||
   !Array.isArray(result.tabbed?.items?.[0]?.items) ||
   JSON.stringify(result.untabbed?.items) !== JSON.stringify(["one", "two", "three"]);
 console.log(failed ? "\nFAIL" : "\nPASS");

@@ -42,7 +42,11 @@ export function libraryPaths(paths) {
 export function isLibrary(paths) {
   return (
     paths.includes("course.yaml") &&
-    paths.some((p) => /^blocks\/[^/]+\/slides\.md$/.test(p))
+    // A block is a folder, identified by either of the two files that
+    // can stand alone in one: the manifest or the deck. A session may be
+    // a lesson plan and a workbook with no slides, and an older block
+    // may be a deck with no manifest; both are libraries.
+    paths.some((p) => /^blocks\/[^/]+\/(block\.yaml|slides\.md)$/.test(p))
   );
 }
 
@@ -94,6 +98,8 @@ export function parseSlides(text) {
  * points back at a slide in the original file or is new.
  */
 export function workingSlides(parsed) {
+  // A block with no deck yet: an empty list, ready for a first slide.
+  if (!parsed) return [];
   return parsed.slides.map((slide, index) => ({
     sourceIndex: index,
     data: slide.data,
@@ -120,6 +126,9 @@ function newlineOf(text) {
 }
 
 export function renderSlidesFile(parsed, working) {
+  // A block that had no deck: there is no original text to splice into,
+  // so every slide is emitted fresh. Everything below still holds.
+  if (!parsed) parsed = { text: "", slides: [] };
   const nl = newlineOf(parsed.text);
   const hasSlides = parsed.slides.length > 0;
   const header = hasSlides
@@ -230,17 +239,23 @@ export function readLibrary(files) {
     ? JSON.parse(files.get("layout-geometry.json"))
     : null;
 
+  // Discovery is by `block.yaml`, not by the deck. A block is a session,
+  // and a session may well be a lesson plan and a workbook with no slides
+  // at all -- keying off slides.md made those blocks invisible.
   const blocks = new Map();
-  for (const [path, text] of files) {
-    const m = path.match(/^blocks\/([^/]+)\/slides\.md$/);
+  for (const path of files.keys()) {
+    const m = path.match(/^blocks\/([^/]+)\/(?:block\.yaml|slides\.md)$/);
     if (!m) continue;
     const id = m[1];
-    const metaText = files.get(`blocks/${id}/block.yaml`);
+    if (blocks.has(id)) continue;
+    const slidesPath = `blocks/${id}/slides.md`;
+    const slides = files.get(slidesPath);
+    const meta = files.get(`blocks/${id}/block.yaml`);
     blocks.set(id, {
       id,
-      meta: metaText ? parseYaml(metaText) || {} : {},
-      slidesPath: path,
-      parsed: parseSlides(text),
+      meta: meta === undefined ? {} : parseYaml(meta) || {},
+      slidesPath: slides === undefined ? null : slidesPath,
+      parsed: slides === undefined ? null : parseSlides(slides),
     });
   }
 

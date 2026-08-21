@@ -74,17 +74,21 @@
       </div>
     </div>
 
+    <div id="tabs" class="tabs"></div>
     <div id="ribbon" class="ribbon"></div>
 
     <div class="panes">
-      <aside id="outline" class="pane outline" aria-label="Slides"></aside>
-      <section class="pane editor" aria-label="Slide">
-        <div id="canvas" class="canvas"></div>
-        <p class="hint canvas-hint">
-          Click a region to edit it. Layout, geometry and colours come from
-          the template — <strong>Preview deck</strong> renders the real file.
-        </p>
-        <div id="meta" class="meta"></div>
+      <aside id="outline" class="pane outline" aria-label="Block contents"></aside>
+      <section class="pane editor" aria-label="Document">
+        <div id="slidesview">
+          <div id="canvas" class="canvas"></div>
+          <p class="hint canvas-hint">
+            Click a region to edit it. Layout, geometry and colours come from
+            the template — <strong>Preview deck</strong> renders the real file.
+          </p>
+          <div id="meta" class="meta"></div>
+        </div>
+        <div id="document" class="document" hidden></div>
       </section>
     </div>
 

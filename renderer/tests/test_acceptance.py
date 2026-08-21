@@ -1636,3 +1636,48 @@ def test_tracking_syncs_a_really_rendered_catalog(tmp_path):
     # No credentials in this fixture, so progress is simply empty.
     assert credential_progress(conn, "ada") == []
     conn.close()
+
+
+def test_check_blocks_is_quiet_on_a_good_library(tmp_path):
+    from fair_renderer.library import check_blocks
+
+    assert check_blocks(_make_library(tmp_path / "lib")) == []
+
+
+def test_check_blocks_wants_a_lesson_plan(tmp_path):
+    """A deck with no lesson plan is a slideshow, not a session."""
+    from fair_renderer.library import check_blocks
+
+    root = _make_library(tmp_path / "lib", resources=False)
+    problems = check_blocks(root)
+    assert [p["where"] for p in problems] == ["01-foundations"]
+    assert "lessonplan.md" in problems[0]["message"]
+
+
+def test_check_blocks_reports_rather_than_raises(tmp_path):
+    """An author wants every problem at once, not just the first."""
+    from fair_renderer.library import check_blocks
+
+    root = _make_library(tmp_path / "lib")
+    (root / "blocks" / "01-foundations" / "lessonplan.md").unlink()
+    meta_path = root / "blocks" / "01-foundations" / "block.yaml"
+    meta = yaml.safe_load(meta_path.read_text(encoding="utf-8"))
+    meta["resources"].append({"type": "workbook", "path": "nowhere.md"})
+    meta_path.write_text(yaml.safe_dump(meta), encoding="utf-8")
+
+    messages = [p["message"] for p in check_blocks(root)]
+    assert any("lessonplan.md" in m for m in messages)
+    assert any("nowhere.md" in m for m in messages)
+
+
+def test_a_block_may_have_a_lesson_plan_and_no_deck(tmp_path):
+    """Not every session is taught from slides."""
+    from fair_renderer.library import check_blocks, load_library
+
+    root = _make_library(tmp_path / "lib")
+    (root / "blocks" / "01-foundations" / "slides.md").unlink()
+
+    block = load_library(root).blocks["01-foundations"]
+    assert not block.has_slides
+    assert [r.type for r in block.resources] == ["lessonplan", "questions"]
+    assert check_blocks(root) == []
