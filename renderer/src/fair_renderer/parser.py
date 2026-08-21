@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "dok"}
+RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "outcomes", "dok"}
 CONTENT_TYPES = {"ul", "ol", "p", "image", "mermaid", "video"}
 MAX_LIST_DEPTH = 5
 
@@ -60,7 +60,11 @@ class Slide:
     layout: str
     regions: list[Region]
     notes: str | None = None
+    # What the slide claims directly. The competencies it actually
+    # develops are derived from this plus its outcomes — see
+    # outcomes.derive_develops.
     develops: list[str] = field(default_factory=list)
+    outcomes: list[str] = field(default_factory=list)
     dok: int | None = None
 
 
@@ -212,6 +216,16 @@ def _parse_slide(lineno: int, raw_yaml: str, path: Path, seen_ids: set[str]) -> 
     if not isinstance(develops, list):
         raise SessionParseError(f"{where}: 'develops' must be a list")
 
+    outcomes = data.get("outcomes", [])
+    if not isinstance(outcomes, list):
+        # 'outcomes' used to be a legal region name, since a region is any
+        # key that is not reserved. Say so, rather than silently treating
+        # an author's region as metadata.
+        raise SessionParseError(
+            f"{where}: 'outcomes' must be a list of outcome ids from "
+            "outcomes.yaml. It is metadata, not a region."
+        )
+
     dok = data.get("dok")
     if dok is not None and not isinstance(dok, int):
         raise SessionParseError(f"{where}: 'dok' must be an integer")
@@ -228,6 +242,7 @@ def _parse_slide(lineno: int, raw_yaml: str, path: Path, seen_ids: set[str]) -> 
         regions=regions,
         notes=data.get("notes"),
         develops=[str(c) for c in develops],
+        outcomes=[str(o) for o in outcomes],
         dok=dok,
     )
 

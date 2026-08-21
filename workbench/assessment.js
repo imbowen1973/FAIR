@@ -239,20 +239,30 @@ export function blankQuestion(type, name) {
   return base;
 }
 
-/** Competency ids and DOK, read back out of a question's tags. */
+/**
+ * What a question's tags mean.
+ *
+ * Three kinds share one flat list, because that is all Moodle gives us,
+ * so outcomes are namespaced. Anything unrecognised is a competency,
+ * which keeps a tag an author added by hand from being thrown away.
+ */
 export function competencyTags(tags) {
-  const out = { develops: [], dok: null };
+  const out = { develops: [], outcomes: [], dok: null };
   for (const tag of tags ?? []) {
-    const dok = String(tag).match(/^dok:(\d)$/i);
+    const text = String(tag);
+    const dok = text.match(/^dok:(\d)$/i);
+    const outcome = text.match(/^outcome:(.+)$/i);
     if (dok) out.dok = Number(dok[1]);
-    else out.develops.push(String(tag));
+    else if (outcome) out.outcomes.push(outcome[1]);
+    else out.develops.push(text);
   }
   return out;
 }
 
-/** The tag list for a set of competencies and a DOK. */
-export function toTags(develops, dok) {
-  const out = [...(develops ?? [])];
+/** The tag list for a set of outcomes, competencies and a DOK. */
+export function toTags(develops, dok, outcomes) {
+  const out = (outcomes ?? []).map((o) => `outcome:${o}`);
+  out.push(...(develops ?? []));
   if (dok) out.push(`dok:${dok}`);
   return out;
 }

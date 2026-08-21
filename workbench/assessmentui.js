@@ -36,7 +36,7 @@ const FRACTIONS = ["100", "50", "33.33333", "25", "20", "0", "-25", "-50", "-100
  * competencies  {id: label} from the framework, for the tag chips
  * onChange(next) every edit
  */
-export function questionForm(host, { data, competencies, onChange }) {
+export function questionForm(host, { data, competencies, outcomes, onChange }) {
   host.innerHTML = "";
   const editable = EDITABLE.includes(data.type);
 
@@ -108,7 +108,7 @@ export function questionForm(host, { data, competencies, onChange }) {
       host.append(single);
     }
 
-    host.append(tagsBlock(data, latest, competencies, change));
+    host.append(tagsBlock(data, latest, competencies, outcomes, change));
   }
 
   // The source, always: what will be written, not a rendering of it.
@@ -213,9 +213,32 @@ function answersBlock(data, latest, change) {
  * mapping survives the trip into the LMS instead of being lost at the
  * border.
  */
-function tagsBlock(data, latest, competencies, change) {
+function tagsBlock(data, latest, competencies, outcomes, change) {
   const wrap = el("div", "q-tags");
-  const { develops, dok } = competencyTags(data.tags);
+  const { develops, dok, outcomes: serves } = competencyTags(data.tags);
+
+  // What the question assesses. Same chain as a slide: the question
+  // serves an outcome, the outcome develops competencies.
+  const outEntries = Object.entries(outcomes || {});
+  if (outEntries.length) {
+    wrap.append(el("h4", null, "Assesses outcomes"));
+    const outChips = el("div", "chips");
+    for (const [oid, outcome] of outEntries) {
+      const chip = el("button", "chip", oid);
+      chip.type = "button";
+      chip.title = outcome.statement || oid;
+      if (serves.includes(oid)) chip.classList.add("on");
+      chip.addEventListener("click", () => {
+        const now = competencyTags(latest().tags);
+        const next = now.outcomes.includes(oid)
+          ? now.outcomes.filter((o) => o !== oid)
+          : [...now.outcomes, oid];
+        change({ tags: toTags(now.develops, now.dok, next) });
+      });
+      outChips.append(chip);
+    }
+    wrap.append(outChips);
+  }
 
   wrap.append(el("h4", null, "Develops"));
   const chips = el("div", "chips");
@@ -233,7 +256,7 @@ function tagsBlock(data, latest, competencies, change) {
       const next = now.develops.includes(id)
         ? now.develops.filter((c) => c !== id)
         : [...now.develops, id];
-      change({ tags: toTags(next, now.dok) });
+      change({ tags: toTags(next, now.dok, now.outcomes) });
     });
     chips.append(chip);
   }
@@ -250,7 +273,8 @@ function tagsBlock(data, latest, competencies, change) {
     change({
       tags: toTags(
         competencyTags(latest().tags).develops,
-        select.value ? Number(select.value) : null
+        select.value ? Number(select.value) : null,
+        competencyTags(latest().tags).outcomes
       ),
     })
   );

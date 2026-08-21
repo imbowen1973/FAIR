@@ -34,6 +34,8 @@ const result = await page.evaluate(async () => {
   const { markdownEditor } = await import("./mdeditor.js");
   const { splitQuestions, readQuestion } = await import("./assessment.js");
   const { questionForm } = await import("./assessmentui.js");
+  const { outcomesEditor, outcomeList } = await import("./outcomes.js");
+  const { slideMeta } = await import("./meta.js");
   const raw = (p) =>
     fetch(
       `https://raw.githubusercontent.com/Agrifoodskills/Andragogy-Pedagogy/HEAD/${p}`
@@ -269,9 +271,45 @@ const result = await page.evaluate(async () => {
     showsSource: Boolean(qHost.querySelector(".q-source code")?.textContent),
   };
 
+  // The alignment map: an outcome nothing serves is a claim with no
+  // content behind it, and the coverage column is how an author sees it.
+  const catalogue = {
+    outcomes: {
+      O1: { statement: "Distinguish andragogy", develops: ["AP1"], dok: 2 },
+      O2: { statement: "Nobody teaches this", develops: ["AP2"] },
+    },
+  };
+  const outHost = document.createElement("div");
+  document.body.appendChild(outHost);
+  outcomesEditor(outHost, {
+    outcomes: outcomeList(catalogue),
+    competencies: { AP1: "a", AP2: "b" },
+    coverage: { O1: { blocks: 1, slides: 3, questions: 1 } },
+    onChange: () => {},
+  });
+  const alignment = {
+    coverage: [...outHost.querySelectorAll(".coverage")].map((c) => c.textContent),
+    flagged: outHost.querySelectorAll(".coverage.none").length,
+  };
+
+  // A slide's competencies are derived from its outcomes, and shown as
+  // such -- an author should not have to work out what the slide claims.
+  const metaHost = document.createElement("div");
+  document.body.appendChild(metaHost);
+  slideMeta(metaHost, {
+    slide: { id: "s1", outcomes: ["O1"], develops: ["AP9"] },
+    competencies: { AP1: "a", AP2: "b", AP9: "z" },
+    outcomes: catalogue.outcomes,
+    onChange: () => {},
+  });
+  const derived = {
+    fromOutcome: [...metaHost.querySelectorAll(".chip.derived")].map((c) => c.textContent),
+    lit: [...metaHost.querySelectorAll(".chip.on")].map((c) => c.textContent),
+  };
+
   const vacant = host.querySelectorAll(".region.vacant").length;
   return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes,
-    tabbar, mdeditor, question };
+    tabbar, mdeditor, question, alignment, derived };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -309,6 +347,8 @@ console.log(`  tabs: ${result.tabbar.labels.join(" | ")}`);
 console.log(`  opening a tab: ${result.tabbar.opened}`);
 console.log(`  markdown bold: ${JSON.stringify(result.mdeditor.bolded)}`);
 console.log(`  question edits kept: ${JSON.stringify(result.question)}`);
+console.log(`  outcome coverage: ${result.alignment.coverage.join(" / ")}`);
+console.log(`  derived from outcome: ${JSON.stringify(result.derived.fromOutcome)}`);
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
 console.log(`marks survived serialisation:`, JSON.stringify(result.markEdit));
 if (errors.length) console.log("console errors:", errors.slice(0, 5));
@@ -337,6 +377,11 @@ const failed =
   !result.question.tags?.includes("AP2") ||
   !result.question.tags?.includes("AP1") ||
   !result.question.showsSource ||
+  result.alignment.flagged !== 1 ||
+  !result.alignment.coverage[0].includes("3 slides") ||
+  JSON.stringify(result.derived.fromOutcome) !== JSON.stringify(["AP1"]) ||
+  !result.derived.lit.includes("O1") ||
+  !result.derived.lit.includes("AP9") ||
   !Array.isArray(result.tabbed?.items?.[0]?.items) ||
   JSON.stringify(result.untabbed?.items) !== JSON.stringify(["one", "two", "three"]);
 console.log(failed ? "\nFAIL" : "\nPASS");

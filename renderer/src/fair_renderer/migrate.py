@@ -213,7 +213,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("library", type=Path)
     ap.add_argument("--apply", action="store_true",
                     help="write the changes (otherwise only prints the plan)")
+    ap.add_argument("--outcomes", action="store_true",
+                    help="lift free-text outcomes into outcomes.yaml "
+                         "(for a library already in block shape)")
     args = ap.parse_args(argv)
+
+    if args.outcomes:
+        return _main_outcomes(args)
 
     try:
         plan = plan_migration(args.library)
@@ -236,6 +242,169 @@ def main(argv: list[str] | None = None) -> int:
         f"\nwrote {COURSE_FILE} and {BLOCKS_DIR}/. "
         "sessions/ is left in place; delete it once you have checked the build."
     )
+    return 0
+
+
+
+
+# ---- lifting free-text outcomes into the catalogue ----------------------
+
+
+def _outcome_id(taken: set[str]) -> str:
+    for n in range(1, 1000):
+        candidate = f"O{n}"
+        if candidate not in taken:
+            return candidate
+    return f"O{len(taken) + 1}"
+
+
+def plan_outcomes(root: Path) -> dict:
+    """Lift free-text `outcomes:` out of deck frontmatter into a catalogue.
+
+    Outcomes have lived in each deck's frontmatter as bare sentences,
+    carried into catalog.json and interpreted by nothing. This turns them
+    into tagged items with ids that slides and questions can point at.
+
+    Two things this deliberately does **not** do:
+
+    - It does not assign outcomes to individual slides. Which slide
+      serves which outcome is a judgement, and guessing it would fill the
+      alignment map with plausible-looking claims nobody made.
+    - It does not treat the competencies it seeds as fact. They come from
+      the block the outcome was written in, which is a starting point for
+      an author to correct, and the printed plan says so.
+    """
+    from .library import BLOCK_FILE, BLOCKS_DIR, SLIDES_FILE
+    from .outcomes import OUTCOMES_FILE
+
+    if (root / OUTCOMES_FILE).exists():
+        raise MigrationError(f"{root}: {OUTCOMES_FILE} already exists")
+
+    blocks_dir = root / BLOCKS_DIR
+    if not blocks_dir.is_dir():
+        raise MigrationError(f"{root}: no {BLOCKS_DIR}/ — is this a library?")
+
+    catalogue: dict[str, dict] = {}
+    by_statement: dict[str, str] = {}
+    blocks: list[dict] = []
+
+    for block_dir in sorted(p for p in blocks_dir.iterdir() if p.is_dir()):
+        slides_path = block_dir / SLIDES_FILE
+        if not slides_path.is_file():
+            continue
+        meta = _session_frontmatter(slides_path)
+        statements = meta.get("outcomes") or []
+        if not isinstance(statements, list) or not statements:
+            continue
+
+        # The competencies this block declares, as the first guess at what
+        # its outcomes develop. block.yaml is the block's manifest and
+        # wins; the deck's frontmatter is the older place to say it.
+        competencies = None
+        meta_path = block_dir / BLOCK_FILE
+        if meta_path.is_file():
+            block_meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            competencies = block_meta.get("competencies")
+        if not competencies:
+            competencies = meta.get("competencies") or {}
+        if isinstance(competencies, dict):
+            competencies = list(competencies)
+        seeded = [str(c) for c in competencies]
+
+        ids = []
+        for statement in statements:
+            statement = str(statement).strip()
+            if not statement:
+                continue
+            # The same wording in two sessions is one outcome, not two.
+            if statement in by_statement:
+                ids.append(by_statement[statement])
+                continue
+            oid = _outcome_id(set(catalogue))
+            catalogue[oid] = {"statement": statement, "develops": list(seeded)}
+            by_statement[statement] = oid
+            ids.append(oid)
+
+        blocks.append({"block_id": block_dir.name, "path": block_dir, "outcomes": ids})
+
+    if not catalogue:
+        raise MigrationError(f"{root}: no free-text outcomes found to lift")
+    return {"root": root, "catalogue": catalogue, "blocks": blocks}
+
+
+def apply_outcomes(plan: dict) -> list[str]:
+    """Write outcomes.yaml and point each block at its outcomes."""
+    from .library import BLOCK_FILE
+    from .outcomes import OUTCOMES_FILE
+
+    root: Path = plan["root"]
+    written: list[str] = []
+
+    path = root / OUTCOMES_FILE
+    header = (
+        "# Learning outcomes: what this course claims to teach.\n"
+        "#\n"
+        "# Slides and assessment questions point at these ids, and the\n"
+        "# competencies a slide develops come from the outcomes it serves.\n"
+        "#\n"
+        "# `develops:` below was seeded from the competencies each block\n"
+        "# declared. It is a starting point, not a finding — check it.\n"
+    )
+    path.write_text(
+        header + yaml.safe_dump({"outcomes": plan["catalogue"]}, sort_keys=False,
+                                allow_unicode=True),
+        encoding="utf-8",
+    )
+    written.append(str(path))
+
+    for block in plan["blocks"]:
+        meta_path = block["path"] / BLOCK_FILE
+        meta = {}
+        if meta_path.is_file():
+            meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+        meta["outcomes"] = block["outcomes"]
+        meta_path.write_text(
+            yaml.safe_dump(meta, sort_keys=False, allow_unicode=True), encoding="utf-8"
+        )
+        written.append(str(meta_path))
+    return written
+
+
+def _main_outcomes(args) -> int:
+    try:
+        plan = plan_outcomes(args.library)
+    except MigrationError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    catalogue = plan["catalogue"]
+    print(f"would create outcomes.yaml with {len(catalogue)} outcome(s)")
+    for oid, entry in catalogue.items():
+        develops = ", ".join(entry["develops"]) or "nothing yet"
+        print(f"  {oid:5} {entry['statement']}")
+        print(f"        develops: {develops}")
+    print()
+    for block in plan["blocks"]:
+        print(f"  {block['block_id']:36} outcomes: {block['outcomes']}")
+
+    print()
+    print(
+        "The competencies above were seeded from what each block declares.",
+    )
+    print("That is a starting point, not a finding — check every one.")
+    print()
+    print(
+        "Slides are NOT tagged: which slide serves which outcome is a",
+        "judgement, and guessing would fill the map with claims nobody",
+        "made. Do that in the workbench, a slide at a time.",
+    )
+    if not args.apply:
+        print()
+        print("nothing written — re-run with --apply")
+        return 0
+
+    for line in apply_outcomes(plan):
+        print(f"wrote {line}")
     return 0
 
 

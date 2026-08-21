@@ -28,6 +28,7 @@ export const MODULES = [
   "layoutmap",
   "library",
   "mermaid",
+  "outcomes",
   "parser",
   "render",
   "runs",

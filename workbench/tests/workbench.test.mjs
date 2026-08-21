@@ -26,6 +26,7 @@ import {
   withoutResource,
 } from "../documents.js";
 import { markdownToHtml } from "../markdown.js";
+import { freeOutcomeId, outcomeDoc, outcomeList } from "../outcomes.js";
 import {
   competencyTags,
   renderQuizFile,
@@ -597,7 +598,11 @@ test("competency and depth of knowledge are written as Moodle tags", () => {
   const xml = writeQuestion({ type: "essay", name: "e", tags: toTags(["AP1", "AP3"], 3) });
   assert.ok(xml.includes("<tag><text>AP1</text></tag>"));
   assert.ok(xml.includes("<tag><text>dok:3</text></tag>"));
-  assert.deepEqual(competencyTags(["AP1", "dok:3"]), { develops: ["AP1"], dok: 3 });
+  assert.deepEqual(competencyTags(["AP1", "dok:3"]), {
+    develops: ["AP1"],
+    outcomes: [],
+    dok: 3,
+  });
 });
 
 test("CDATA wraps what needs it and nothing else", () => {
@@ -612,4 +617,64 @@ test("a question whose text contains ]]> does not break out of its CDATA", () =>
   const xml = writeQuestion({ type: "essay", name: "x", questiontext: "a ]]> b" });
   assert.ok(!/\]\]>\s*b/.test(xml.split("questiontext")[1].split("</text>")[0].replace("<![CDATA[", "")));
   assert.ok(xml.includes("]]]]><![CDATA[>"));
+});
+
+test("a question's tags carry the outcome it assesses, namespaced", () => {
+  // Three kinds share one flat list, because that is all Moodle gives
+  // us, so outcomes are prefixed and everything else stays a competency.
+  const xml = writeQuestion({
+    type: "essay",
+    name: "e",
+    tags: toTags(["AP1"], 2, ["O1"]),
+  });
+  assert.ok(xml.includes("<tag><text>outcome:O1</text></tag>"));
+  assert.ok(xml.includes("<tag><text>AP1</text></tag>"));
+  assert.ok(xml.includes("<tag><text>dok:2</text></tag>"));
+
+  assert.deepEqual(competencyTags(["outcome:O1", "AP1", "dok:2"]), {
+    develops: ["AP1"],
+    outcomes: ["O1"],
+    dok: 2,
+  });
+});
+
+test("a hand-written tag is kept, not thrown away", () => {
+  // Anything unrecognised is treated as a competency rather than dropped.
+  assert.deepEqual(competencyTags(["something-a-human-added"]), {
+    develops: ["something-a-human-added"],
+    outcomes: [],
+    dok: null,
+  });
+});
+
+// ---- the outcome catalogue --------------------------------------------
+
+test("the catalogue round-trips through the editor's shape", () => {
+  const doc = {
+    outcomes: {
+      O1: { statement: "Do a thing", develops: ["AP1"], dok: 2 },
+      O2: "Not yet mapped",
+    },
+  };
+  const list = outcomeList(doc);
+  assert.deepEqual(list[0], {
+    id: "O1",
+    statement: "Do a thing",
+    develops: ["AP1"],
+    dok: 2,
+  });
+  // A bare string is just a statement, for a catalogue not yet mapped.
+  assert.deepEqual(list[1].develops, []);
+  assert.deepEqual(outcomeDoc(list).outcomes.O1, {
+    statement: "Do a thing",
+    develops: ["AP1"],
+    dok: 2,
+  });
+  // Empty keys are not written: an unmapped outcome stays a one-liner.
+  assert.deepEqual(outcomeDoc(list).outcomes.O2, { statement: "Not yet mapped" });
+});
+
+test("a new outcome gets a free id", () => {
+  assert.equal(freeOutcomeId(new Set()), "O1");
+  assert.equal(freeOutcomeId(new Set(["O1", "O2"])), "O3");
 });

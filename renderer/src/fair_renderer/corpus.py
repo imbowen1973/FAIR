@@ -13,6 +13,7 @@ catalog.json schema (as-built spec section 4, plus credentials):
     {
       "sessions":     [{"sessionId", "title", "version", "pptx"}],
       "competencies": {"CE1": "label", ...},
+      "outcomes":     {"O1": {"statement", "develops", "dok"}, ...},
       "slides":       [<index entries, sourcePptx data-relative>],
       "credentials":  [<credential definitions, passthrough>]
     }
@@ -37,6 +38,7 @@ from pathlib import Path
 import yaml
 
 from .assets import check_assets
+from .outcomes import OUTCOMES_FILE, load_outcomes
 from .library import Library, LibraryError, load_library
 from .render import render_session
 
@@ -231,12 +233,21 @@ def build_corpus(
     if not units:
         raise CorpusError(f"no content to render in {root}")
 
+    # Loaded before anything renders: slides derive their competencies
+    # from it. Passed explicitly rather than left to render_session's
+    # auto-detect, which walks up from the session file and lands in
+    # blocks/ for a library.
+    outcomes_path = root / OUTCOMES_FILE
+    if not outcomes_path.is_file():
+        outcomes_path = None
+
     for unit in units:
         result = render_session(
             session_path=unit["source"],
             template_path=template,
             layout_map_path=layout_map,
             attribution_path=attribution,
+            outcomes_path=outcomes_path,
             out_dir=out_dir / "sessions" / unit["id"],
         )
         index_doc = json.loads(result["index"].read_text())
@@ -301,6 +312,11 @@ def build_corpus(
     if framework and framework.exists():
         competencies.update(_load_framework(framework))
 
+    # Re-read now that the framework is known, so an outcome naming a
+    # competency that does not exist raises rather than passing silently.
+    catalogue = load_outcomes(outcomes_path, set(competencies) or None) if outcomes_path else {}
+
+
     referenced = {c for s in slides for c in s["develops"]}
     unlabeled = sorted(referenced - set(competencies))
     if unlabeled:
@@ -331,6 +347,16 @@ def build_corpus(
         "blocks": blocks_out,
         "sessions": sessions,
         "competencies": dict(sorted(competencies.items())),
+        # The chain a report needs: slide -> outcome -> competency. Slides
+        # carry their outcome ids, and each outcome says what it develops.
+        "outcomes": {
+            oid: {
+                "statement": o.statement,
+                "develops": o.develops,
+                **({"dok": o.dok} if o.dok is not None else {}),
+            }
+            for oid, o in sorted(catalogue.items())
+        },
         "slides": slides,
         "credentials": credentials,
         # The funder credit travels with the content, so any surface
@@ -347,6 +373,7 @@ def build_corpus(
         "sessions": len(sessions),
         "slides": len(slides),
         "competencies": len(competencies),
+        "outcomes": len(catalogue),
         "credentials": len(credentials),
     }
 

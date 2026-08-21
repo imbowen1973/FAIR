@@ -1681,3 +1681,246 @@ def test_a_block_may_have_a_lesson_plan_and_no_deck(tmp_path):
     assert not block.has_slides
     assert [r.type for r in block.resources] == ["lessonplan", "questions"]
     assert check_blocks(root) == []
+
+
+def _with_outcomes(root: Path, catalogue: dict, block_outcomes=None) -> Path:
+    """Add an outcome catalogue to a library made by _make_library."""
+    (root / "competencies").mkdir(exist_ok=True)
+    (root / "competencies" / "framework.yaml").write_text(
+        yaml.safe_dump(
+            {"competencies": {"CE1": {"label": "Designing clinical teaching sessions"}}}
+        ),
+        encoding="utf-8",
+    )
+    (root / "outcomes.yaml").write_text(
+        yaml.safe_dump({"outcomes": catalogue}, sort_keys=False), encoding="utf-8"
+    )
+    if block_outcomes is not None:
+        meta_path = root / "blocks" / "01-foundations" / "block.yaml"
+        meta = yaml.safe_load(meta_path.read_text(encoding="utf-8"))
+        meta["outcomes"] = block_outcomes
+        meta_path.write_text(yaml.safe_dump(meta, sort_keys=False), encoding="utf-8")
+    return root
+
+
+def test_an_outcome_may_not_develop_a_competency_that_does_not_exist(tmp_path):
+    """A claim the library cannot support is an error, not a warning."""
+    from fair_renderer.outcomes import OutcomeError, load_outcomes
+
+    root = _make_library(tmp_path / "lib")
+    _with_outcomes(root, {"O1": {"statement": "Do a thing", "develops": ["NOPE"]}})
+
+    with pytest.raises(OutcomeError, match="unknown competency"):
+        load_outcomes(root / "outcomes.yaml", {"CE1"})
+
+
+def test_a_slide_develops_what_its_outcomes_develop(tmp_path):
+    """The derivation everything downstream depends on."""
+    from fair_renderer.outcomes import derive_develops, load_outcomes
+
+    root = _make_library(tmp_path / "lib")
+    _with_outcomes(root, {"O1": {"statement": "Teach well", "develops": ["CE1"]}})
+    catalogue = load_outcomes(root / "outcomes.yaml", {"CE1"})
+
+    assert derive_develops([], ["O1"], catalogue) == ["CE1"]
+    # Declared competencies keep their place, so a library that has not
+    # adopted outcomes renders byte-identically.
+    assert derive_develops(["CE2"], ["O1"], catalogue) == ["CE2", "CE1"]
+    assert derive_develops(["CE1"], ["O1"], catalogue) == ["CE1"]
+    assert derive_develops(["CE1"], [], {}) == ["CE1"]
+
+
+def test_a_bare_string_outcome_is_just_its_statement(tmp_path):
+    from fair_renderer.outcomes import load_outcomes
+
+    root = _make_library(tmp_path / "lib")
+    _with_outcomes(root, {"O1": "Not yet mapped to anything"})
+    catalogue = load_outcomes(root / "outcomes.yaml", {"CE1"})
+    assert catalogue["O1"].statement == "Not yet mapped to anything"
+    assert catalogue["O1"].develops == []
+
+
+def test_alignment_reports_every_kind_of_gap(tmp_path):
+    from fair_renderer.library import check_alignment
+
+    root = _make_library(tmp_path / "lib")
+    _with_outcomes(
+        root,
+        {
+            "O1": {"statement": "Served by a slide", "develops": ["CE1"]},
+            "O2": {"statement": "Declared but unserved", "develops": ["CE1"]},
+            "O3": {"statement": "Addressed by nobody", "develops": ["CE1"]},
+        },
+        block_outcomes=["O1", "O2"],
+    )
+    slides = root / "blocks" / "01-foundations" / "slides.md"
+    text = slides.read_text(encoding="utf-8")
+    # First slide serves O1; second references an outcome that does not exist.
+    text = text.replace("--- slide", "--- slide\noutcomes: [O1]", 1)
+    text = text.replace("--- slide\nid", "--- slide\noutcomes: [O99]\nid", 1)
+    slides.write_text(text, encoding="utf-8")
+
+    problems = check_alignment(root)
+    messages = [p["message"] for p in problems]
+    errors = [p for p in problems if p["level"] == "error"]
+
+    assert any("unknown outcome 'O99'" in m for m in messages)
+    assert errors, "an unknown outcome reference is an error"
+    assert any("'O2' but no slide serves it" in m for m in messages)
+    assert any("'O3' is not addressed by any block" in m for m in messages)
+
+
+def test_alignment_is_quiet_without_a_catalogue(tmp_path):
+    """Additive: a library that never adopts outcomes is not nagged."""
+    from fair_renderer.library import check_alignment
+
+    assert check_alignment(_make_library(tmp_path / "lib")) == []
+
+
+def test_outcomes_on_a_slide_is_metadata_not_a_region(tmp_path):
+    from fair_renderer.parser import SessionParseError, parse_session
+
+    path = tmp_path / "s.md"
+    path.write_text(
+        "---\nsession: '01'\ntitle: T\nversion: 1.0.0\n---\n\n"
+        "--- slide\nid: s1\nlayout: Full\noutcomes: {text: not a list}\n---\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SessionParseError, match="not a region"):
+        parse_session(path)
+
+
+def test_a_slide_with_only_outcomes_reaches_the_competency_everywhere(tmp_path):
+    """The whole point, proved end to end.
+
+    A slide names an outcome and no competency. That competency must
+    still appear in catalog.json, in the slides projection, and in
+    learner_competency — which is how we know nothing downstream had to
+    learn about outcomes.
+    """
+    import sqlite3
+
+    from fair_renderer.corpus import build_corpus
+    from fair_renderer.tracking import connect, record, sync_curriculum
+
+    root = _make_library(tmp_path / "lib")
+    _with_outcomes(
+        root,
+        {"O1": {"statement": "Teach a clinical session well", "develops": ["CE1"], "dok": 3}},
+        block_outcomes=["O1"],
+    )
+    slides = root / "blocks" / "01-foundations" / "slides.md"
+    text = slides.read_text(encoding="utf-8")
+    # Strip any competency the fixture declares, so CE1 can only arrive
+    # through the outcome.
+    text = re.sub(r"(?m)^develops:.*(?:\n[ \t]+-.*)*\n", "", text)
+    text = text.replace("--- slide", "--- slide\noutcomes: [O1]", 1)
+    slides.write_text(text, encoding="utf-8")
+
+    out = tmp_path / "out"
+    build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda m: None,
+    )
+    catalog = json.loads((out / "catalog.json").read_text(encoding="utf-8"))
+
+    assert catalog["outcomes"]["O1"]["develops"] == ["CE1"]
+    first = catalog["slides"][0]
+    assert first["outcomes"] == ["O1"]
+    assert "CE1" in first["develops"], "the derived competency must reach catalog.json"
+
+    conn = connect(tmp_path / "t.db")
+    sync_curriculum(conn, catalog)
+    assert conn.execute(
+        "SELECT competency_id FROM outcome_competencies WHERE outcome_id='O1'"
+    ).fetchone()[0] == "CE1"
+    assert conn.execute("SELECT COUNT(*) FROM slide_outcomes").fetchone()[0] >= 1
+
+    record(conn, "learner@example.org", "completed", block_id="01-foundations")
+    competencies = {
+        row[0] for row in conn.execute("SELECT competency_id FROM learner_competency")
+    }
+    assert "CE1" in competencies, "evidence must flow through the outcome"
+    outcomes = {row[0] for row in conn.execute("SELECT outcome_id FROM learner_outcome")}
+    assert outcomes == {"O1"}
+
+
+def test_a_library_without_outcomes_renders_identically(tmp_path):
+    """Additive: adopting outcomes is a choice, not a migration."""
+    from fair_renderer.corpus import build_corpus
+
+    root = _make_library(tmp_path / "lib")
+    out = tmp_path / "out"
+    build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda m: None,
+    )
+    catalog = json.loads((out / "catalog.json").read_text(encoding="utf-8"))
+    assert catalog["outcomes"] == {}
+    assert catalog["slides"][0]["outcomes"] == []
+
+
+def test_lifting_outcomes_is_a_dry_run_until_asked(tmp_path):
+    from fair_renderer.migrate import plan_outcomes
+
+    root = _make_library(tmp_path / "lib")
+    plan = plan_outcomes(root)
+
+    assert not (root / "outcomes.yaml").exists(), "planning must write nothing"
+    # The fixture deck carries its outcomes as free text in frontmatter,
+    # which is exactly the shape this lifts.
+    assert [o["statement"] for o in plan["catalogue"].values()] == [
+        "Maintain compliant cold chain documentation",
+    ]
+    assert plan["blocks"][0]["outcomes"] == ["O1"]
+    # Seeded from the block's own competencies: a starting point the
+    # printed plan is explicit about, not a finding.
+    assert plan["catalogue"]["O1"]["develops"] == ["CE1"]
+
+
+def test_lifting_outcomes_writes_the_catalogue_and_points_blocks_at_it(tmp_path):
+    from fair_renderer.migrate import apply_outcomes, plan_outcomes
+
+    root = _make_library(tmp_path / "lib")
+    apply_outcomes(plan_outcomes(root))
+
+    catalogue = yaml.safe_load((root / "outcomes.yaml").read_text(encoding="utf-8"))
+    assert (
+        catalogue["outcomes"]["O1"]["statement"]
+        == "Maintain compliant cold chain documentation"
+    )
+    meta = yaml.safe_load(
+        (root / "blocks" / "01-foundations" / "block.yaml").read_text(encoding="utf-8")
+    )
+    assert meta["outcomes"] == ["O1"]
+    # Everything the block already declared survives.
+    assert meta["duration_minutes"] == 180
+
+
+def test_the_same_outcome_in_two_sessions_is_one_outcome(tmp_path):
+    """Wording repeated across blocks is one claim, not two."""
+    import shutil
+
+    from fair_renderer.migrate import plan_outcomes
+
+    root = _make_library(tmp_path / "lib")
+    shutil.copytree(root / "blocks" / "01-foundations", root / "blocks" / "02-more")
+
+    plan = plan_outcomes(root)
+    assert len(plan["catalogue"]) == 1
+    assert [b["outcomes"] for b in plan["blocks"]] == [["O1"], ["O1"]]
+
+
+def test_lifting_outcomes_refuses_to_overwrite_a_catalogue(tmp_path):
+    from fair_renderer.migrate import MigrationError, plan_outcomes
+
+    root = _make_library(tmp_path / "lib")
+    (root / "outcomes.yaml").write_text("outcomes: {}\n", encoding="utf-8")
+    with pytest.raises(MigrationError, match="already exists"):
+        plan_outcomes(root)

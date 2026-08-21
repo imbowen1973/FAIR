@@ -67,6 +67,9 @@ class Block:
     title: str
     duration_minutes: int | None = None
     competencies: dict[str, str] = field(default_factory=dict)
+    # Which catalogue outcomes this session addresses. The catalogue does
+    # not list its blocks: the recipe stays stable while content churns.
+    outcomes: list[str] = field(default_factory=list)
     resources: list[Resource] = field(default_factory=list)
 
     @property
@@ -141,12 +144,19 @@ def load_block(block_dir: Path) -> Block:
     if duration is not None and not isinstance(duration, int):
         raise LibraryError(f"{meta_path}: 'duration_minutes' must be an integer")
 
+    outcomes = meta.get("outcomes") or []
+    if isinstance(outcomes, str):
+        outcomes = [outcomes]
+    if not isinstance(outcomes, list):
+        raise LibraryError(f"{meta_path}: 'outcomes' must be a list of outcome ids")
+
     return Block(
         block_id=block_dir.name,
         directory=block_dir,
         title=str(meta.get("title") or block_dir.name.replace("-", " ")),
         duration_minutes=duration,
         competencies={str(k): str(v) for k, v in competencies.items()},
+        outcomes=[str(o) for o in outcomes],
         resources=_load_resources(block_dir, meta.get("resources")),
     )
 
@@ -283,3 +293,118 @@ def load_library(root: Path) -> Library:
         ]
 
     return Library(root=root, course=course, blocks=blocks, structure=structure)
+
+
+def check_alignment(root: Path) -> list[dict]:
+    """Where a course's claims and its content disagree.
+
+    The catalogue is only worth having if it can answer "what do we say
+    we teach, and where do we actually teach it". These checks are that
+    question, asked six ways.
+
+    Errors are claims the library cannot support; warnings are gaps.
+    Both are reported together — an author opening a course wants the
+    whole picture, not the first problem.
+
+    `[{"where", "message", "level"}]`, empty when everything lines up.
+    """
+    from .outcomes import OUTCOMES_FILE, OutcomeError, load_outcomes
+    from .parser import SessionParseError, parse_session
+
+    problems: list[dict] = []
+
+    def add(where: str, message: str, level: str = "warning") -> None:
+        problems.append({"where": where, "message": message, "level": level})
+
+    known_competencies = _framework_ids(root)
+    try:
+        catalogue = load_outcomes(root / OUTCOMES_FILE, known_competencies)
+    except OutcomeError as exc:
+        return [{"where": OUTCOMES_FILE, "message": str(exc), "level": "error"}]
+    if not catalogue:
+        return problems  # no catalogue: nothing to align against, and that is fine
+
+    blocks_dir = root / BLOCKS_DIR
+    addressed: set[str] = set()
+    developed: set[str] = set()
+
+    for block_dir in sorted(p for p in blocks_dir.iterdir() if p.is_dir()) if blocks_dir.is_dir() else []:
+        block_id = block_dir.name
+        try:
+            block = load_block(block_dir)
+        except LibraryError:
+            continue  # check_blocks reports this; do not say it twice
+
+        for oid in block.outcomes:
+            if oid not in catalogue:
+                add(block_id, f"declares unknown outcome {oid!r}", "error")
+            else:
+                addressed.add(oid)
+
+        slides_path = block_dir / SLIDES_FILE
+        if not slides_path.is_file():
+            continue
+        try:
+            session = parse_session(slides_path)
+        except SessionParseError:
+            continue  # the grammar check reports this
+
+        served: set[str] = set()
+        for slide in session.slides:
+            for oid in slide.outcomes:
+                if oid not in catalogue:
+                    add(
+                        f"{block_id}/{slide.id}",
+                        f"references unknown outcome {oid!r}; "
+                        f"known: {sorted(catalogue)}",
+                        "error",
+                    )
+                    continue
+                served.add(oid)
+                developed.update(catalogue[oid].develops)
+
+            # A slide claiming a competency none of its outcomes cover is
+            # reaching outside its own alignment. Worth seeing, not worth
+            # blocking: it is how a library looks mid-migration.
+            covered = {
+                cid for oid in slide.outcomes for cid in catalogue.get(oid, _NO_OUTCOME).develops
+            }
+            stray = [c for c in slide.develops if c not in covered]
+            if stray and slide.outcomes:
+                add(
+                    f"{block_id}/{slide.id}",
+                    f"develops {stray!r}, which none of its outcomes cover",
+                )
+
+        for oid in block.outcomes:
+            if oid in catalogue and oid not in served:
+                add(block_id, f"declares outcome {oid!r} but no slide serves it")
+
+    for oid in sorted(catalogue):
+        if oid not in addressed:
+            add(OUTCOMES_FILE, f"outcome {oid!r} is not addressed by any block")
+
+    for cid in sorted(known_competencies - {c for o in catalogue.values() for c in o.develops}):
+        add(OUTCOMES_FILE, f"competency {cid!r} is not developed by any outcome")
+
+    return problems
+
+
+class _NoOutcome:
+    develops: list[str] = []
+
+
+_NO_OUTCOME = _NoOutcome()
+
+
+def _framework_ids(root: Path) -> set[str]:
+    """Competency ids the framework defines, or an empty set."""
+    path = root / "competencies" / "framework.yaml"
+    if not path.is_file():
+        return set()
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return set()
+    entries = (data or {}).get("competencies")
+    return {str(k) for k in entries} if isinstance(entries, dict) else set()

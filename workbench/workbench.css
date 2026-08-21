@@ -518,3 +518,31 @@ label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.
 .q-row-type.readonly::after { content: " · read-only"; }
 .add-question { display: flex; gap: 6px; align-items: center; padding: 6px 0 2px; }
 .add-question select { font-size: 0.8rem; }
+
+/* ---- outcomes -------------------------------------------------------- */
+/* The alignment map: what the course claims, against where it teaches it. */
+
+.course-entry { margin-bottom: 10px; }
+.course-heading { margin: 0 0 4px; font-size: 1.05rem; }
+
+.outcome {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin: 10px 0; background: var(--bg-raised);
+  max-width: 54rem;
+}
+.outcome-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.outcome-head input.id { font-family: Consolas, Menlo, monospace; font-weight: 600; }
+.outcome-foot {
+  display: flex; align-items: center; gap: 14px;
+  flex-wrap: wrap; margin-top: 8px;
+}
+.outcome textarea.q-text { width: 100%; }
+
+/* An outcome nothing serves is a claim with no content behind it. */
+.coverage { font-size: 0.78rem; color: var(--muted); margin-right: auto; }
+.coverage.none { color: var(--warn-fg, #a15c00); font-weight: 600; }
+
+/* Derived from an outcome, so not clickable here. */
+.chip.derived { cursor: default; opacity: 0.9; }
+.problem.warn { color: var(--muted); }
+.problem.warn strong { color: var(--warn-fg, #a15c00); }

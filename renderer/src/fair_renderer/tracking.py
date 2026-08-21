@@ -70,6 +70,28 @@ CREATE TABLE IF NOT EXISTS slide_competencies (
     FOREIGN KEY (block_id, slide_id) REFERENCES slides(block_id, slide_id) ON DELETE CASCADE
 );
 
+-- The link between a slide and a competency. All projection: rebuilt
+-- from the catalog on every sync, never a store of record.
+CREATE TABLE IF NOT EXISTS outcomes (
+    outcome_id TEXT PRIMARY KEY,
+    course_id  TEXT REFERENCES courses(course_id) ON DELETE CASCADE,
+    statement  TEXT,
+    dok        INTEGER          -- the level this outcome targets
+);
+
+CREATE TABLE IF NOT EXISTS outcome_competencies (
+    outcome_id    TEXT NOT NULL REFERENCES outcomes(outcome_id) ON DELETE CASCADE,
+    competency_id TEXT NOT NULL,
+    PRIMARY KEY (outcome_id, competency_id)
+);
+
+CREATE TABLE IF NOT EXISTS slide_outcomes (
+    block_id   TEXT NOT NULL REFERENCES blocks(block_id) ON DELETE CASCADE,
+    slide_id   TEXT NOT NULL,
+    outcome_id TEXT NOT NULL,
+    PRIMARY KEY (block_id, slide_id, outcome_id)
+);
+
 CREATE TABLE IF NOT EXISTS resources (
     block_id TEXT NOT NULL REFERENCES blocks(block_id) ON DELETE CASCADE,
     path     TEXT NOT NULL,
@@ -121,6 +143,22 @@ JOIN slides s              ON s.block_id = e.block_id
 JOIN slide_competencies sc ON sc.block_id = s.block_id AND sc.slide_id = s.slide_id
 WHERE e.kind = 'completed'
 GROUP BY e.learner, sc.competency_id;
+
+-- The same question asked of outcomes: which has this learner met, and
+-- at what level did the slides that served it reach. Competency evidence
+-- is unchanged and still comes from slide_competencies, which receives
+-- the derived set -- so adding outcomes changed nothing beneath it.
+CREATE VIEW IF NOT EXISTS learner_outcome AS
+SELECT
+    e.learner          AS learner,
+    so.outcome_id      AS outcome_id,
+    MAX(s.dok)         AS dok,
+    MIN(e.occurred_at) AS first_evidenced
+FROM events e
+JOIN slides s         ON s.block_id = e.block_id
+JOIN slide_outcomes so ON so.block_id = s.block_id AND so.slide_id = s.slide_id
+WHERE e.kind = 'completed'
+GROUP BY e.learner, so.outcome_id;
 """
 
 
@@ -170,6 +208,23 @@ def sync_curriculum(conn: sqlite3.Connection, catalog: dict, *, now: str | None 
                 (cid, label),
             )
 
+        for oid, outcome in (catalog.get("outcomes") or {}).items():
+            conn.execute(
+                "INSERT OR REPLACE INTO outcomes (outcome_id, course_id, statement, dok) "
+                "VALUES (?,?,?,?)",
+                (oid, course_id, outcome.get("statement"), outcome.get("dok")),
+            )
+            for cid in outcome.get("develops") or []:
+                conn.execute(
+                    "INSERT OR IGNORE INTO competencies (competency_id, label) VALUES (?,?)",
+                    (cid, cid),
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO outcome_competencies "
+                    "(outcome_id, competency_id) VALUES (?,?)",
+                    (oid, cid),
+                )
+
         for position, block in enumerate(catalog.get("blocks") or []):
             conn.execute(
                 "INSERT INTO blocks (block_id, course_id, title, duration_minutes, position) "
@@ -199,6 +254,15 @@ def sync_curriculum(conn: sqlite3.Connection, catalog: dict, *, now: str | None 
                 "VALUES (?,?,?,?,?)",
                 (block_id, slide["slideId"], slide.get("title"), slide.get("dok"), position),
             )
+            for oid in slide.get("outcomes") or []:
+                conn.execute(
+                    "INSERT OR IGNORE INTO slide_outcomes (block_id, slide_id, outcome_id) "
+                    "VALUES (?,?,?)",
+                    (block_id, slide["slideId"], oid),
+                )
+            # `develops` is already the derived set -- what the slide
+            # declares plus what its outcomes develop -- so competency
+            # evidence needs no knowledge of outcomes at all.
             for cid in slide.get("develops") or []:
                 conn.execute(
                     "INSERT OR IGNORE INTO competencies (competency_id, label) VALUES (?,?)",
@@ -227,7 +291,8 @@ def sync_curriculum(conn: sqlite3.Connection, catalog: dict, *, now: str | None 
 
     counts = {
         table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-        for table in ("blocks", "slides", "competencies", "credentials", "resources")
+        for table in ("blocks", "slides", "competencies", "outcomes",
+                      "credentials", "resources")
     }
     counts["course"] = course_id
     return counts

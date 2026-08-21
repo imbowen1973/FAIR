@@ -47,6 +47,12 @@ import {
   workingQuestions,
 } from "./assessment.js";
 import { questionForm } from "./assessmentui.js";
+import {
+  outcomeDoc,
+  outcomeList,
+  outcomesEditor,
+  OUTCOMES_PATH,
+} from "./outcomes.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -69,6 +75,9 @@ const state = {
   docByBlock: new Map(), // blockId -> document id
   quizzes: new Map(), // assessment path -> {parsed, working}
   quizIndex: 0,
+  // The course itself is a thing you can open, above the blocks: its
+  // outcomes are library-wide, so they have no block to belong to.
+  courseOpen: false,
   problems: [],
 };
 
@@ -308,6 +317,23 @@ function renderOutline() {
   host.innerHTML = "";
   const { library } = state;
 
+  // The course, above its blocks. Outcomes are library-wide, so they
+  // belong to the course rather than to any one session.
+  const courseGroup = document.createElement("div");
+  courseGroup.className = "block course-entry";
+  const courseHead = document.createElement("button");
+  courseHead.type = "button";
+  courseHead.className = "block-head";
+  courseHead.textContent = library.course.title || "This course";
+  if (state.courseOpen) courseHead.classList.add("on");
+  courseHead.addEventListener("click", () => {
+    state.courseOpen = true;
+    renderOutline();
+    renderCourse();
+  });
+  courseGroup.appendChild(courseHead);
+  host.appendChild(courseGroup);
+
   const ordered = placedBlocks(library.course.structure);
   const ids = [...library.blocks.keys()];
   const sequence = [...ordered.filter((id) => library.blocks.has(id)),
@@ -326,6 +352,7 @@ function renderOutline() {
     head.addEventListener("click", () => {
       state.blockId = id;
       state.slideIndex = 0;
+      state.courseOpen = false;
       renderOutline();
       renderSlide();
     });
@@ -480,6 +507,7 @@ function renderCanvas({ redraw = true } = {}) {
   slideMeta($("meta"), {
     slide: data,
     competencies: state.library.competencies,
+    outcomes: catalogueDoc().outcomes || {},
     onChange: (next) => {
       commitSlide(next);
       // Metadata never changes the canvas, so leave the caret where it is.
@@ -668,6 +696,13 @@ function removeDocument(id) {
 }
 
 function renderTabs() {
+  if (state.courseOpen) {
+    // The course is not a block, so it has no document tabs. Clearing
+    // the strip is honest; leaving the last block's tabs there would
+    // suggest they apply to what is on screen.
+    $("tabs").innerHTML = "";
+    return;
+  }
   const doc = activeDoc();
   tabs($("tabs"), {
     documents: documents(),
@@ -680,6 +715,7 @@ function renderTabs() {
 
 /** Draw whichever editor the active document needs. */
 function renderBlock() {
+  if (state.courseOpen) return renderCourse();
   if (!currentBlock()) return;
   renderTabs();
   const doc = activeDoc();
@@ -744,6 +780,68 @@ function renderDocument(doc) {
     },
     onAttach: attachFile,
   });
+}
+
+// ---- the course --------------------------------------------------------
+
+/** The catalogue as data: the edited copy if there is one. */
+function catalogueDoc() {
+  const text = state.edits.get(OUTCOMES_PATH) ?? state.files.get(OUTCOMES_PATH) ?? "";
+  return parseYaml(text) || {};
+}
+
+/**
+ * Where each outcome is actually taught.
+ *
+ * An outcome nothing serves is a claim with no content behind it, which
+ * is the thing nobody notices until someone external asks. Counting it
+ * here puts it in front of the author instead.
+ */
+function outcomeCoverage() {
+  const coverage = {};
+  const bump = (oid, key) => {
+    coverage[oid] = coverage[oid] || { blocks: 0, slides: 0, questions: 0 };
+    coverage[oid][key] += 1;
+  };
+  for (const [id, block] of state.library.blocks) {
+    for (const oid of block.meta?.outcomes ?? []) bump(String(oid), "blocks");
+    const slides = state.working.get(id) ?? workingSlides(block.parsed);
+    for (const entry of slides) {
+      for (const oid of entry.data?.outcomes ?? []) bump(String(oid), "slides");
+    }
+  }
+  return coverage;
+}
+
+function renderCourse() {
+  renderTabs();
+  $("slidesview").hidden = true;
+  $("ribbon").hidden = true;
+  $("document").hidden = false;
+
+  const host = $("document");
+  host.innerHTML = "";
+  const heading = document.createElement("h2");
+  heading.className = "course-heading";
+  heading.textContent = "Learning outcomes";
+  host.appendChild(heading);
+
+  const editorHost = document.createElement("div");
+  host.appendChild(editorHost);
+
+  const draw = () =>
+    outcomesEditor(editorHost, {
+      outcomes: outcomeList(catalogueDoc()),
+      competencies: state.library.competencies,
+      coverage: outcomeCoverage(),
+      onChange: (list) => {
+        state.edits.set(OUTCOMES_PATH, stringifyYaml(outcomeDoc(list)));
+        state.library.outcomes = outcomeDoc(list);
+        updateActions();
+        draw();
+      },
+    });
+  draw();
 }
 
 // ---- assessments -------------------------------------------------------
@@ -950,6 +1048,7 @@ function renderQuestion(host, doc) {
       view = questionForm(form, {
         data: next,
         competencies: state.library.competencies,
+        outcomes: catalogueDoc().outcomes || {},
         onChange,
       });
     }
@@ -959,6 +1058,7 @@ function renderQuestion(host, doc) {
   view = questionForm(form, {
     data,
     competencies: state.library.competencies,
+    outcomes: catalogueDoc().outcomes || {},
     onChange,
   });
 }
@@ -1090,8 +1190,8 @@ function updateActions() {
     : "no changes";
   const writable = state.canWrite !== false;
   $("save").disabled = changed.length === 0 || !writable;
-  $("submit").disabled =
-    changed.length === 0 || state.problems.length > 0 || !writable;
+  const blocking = state.problems.filter((p) => p.level !== "warning").length;
+  $("submit").disabled = changed.length === 0 || blocking > 0 || !writable;
   const why = !writable ? "This token cannot push to this repository." : "";
   $("save").title = why;
   $("submit").title = why;
@@ -1106,17 +1206,24 @@ async function runValidate() {
     });
     const strip = $("problems");
     strip.innerHTML = "";
+    // Warnings are gaps in the alignment map: worth seeing, not reasons
+    // to stop. Only errors hold Submit back.
+    const errors = state.problems.filter((p) => p.level !== "warning");
+    const warnings = state.problems.filter((p) => p.level === "warning");
     if (!state.problems.length) {
       strip.innerHTML = '<p class="ok">No problems.</p>';
       status("Checked: no problems.", "ok");
     } else {
-      for (const problem of state.problems) {
+      for (const problem of [...errors, ...warnings]) {
         const row = document.createElement("p");
-        row.className = "problem";
+        row.className = problem.level === "warning" ? "problem warn" : "problem";
         row.innerHTML = `<strong>${escapeHtml(problem.where)}</strong> ${escapeHtml(problem.message)}`;
         strip.appendChild(row);
       }
-      status(`${state.problems.length} problem(s) — see below.`, "error");
+      const parts = [];
+      if (errors.length) parts.push(`${errors.length} problem${errors.length === 1 ? "" : "s"}`);
+      if (warnings.length) parts.push(`${warnings.length} warning${warnings.length === 1 ? "" : "s"}`);
+      status(`${parts.join(", ")} — see below.`, errors.length ? "error" : "");
     }
     updateActions();
   } catch (err) {

@@ -39,6 +39,12 @@ not interpret them.
 
 ## Slide blocks
 
+A slide names the **outcomes** it serves. The competencies it develops
+follow from those outcomes, so a slide cannot claim more than they
+cover — see `library-format.md`. `develops:` still works for a
+competency no outcome covers, and validation warns when it is used that
+way.
+
 A slide begins with a line that is exactly `--- slide` and ends with a line
 that is exactly `---`. Everything between is YAML.
 
@@ -61,7 +67,7 @@ right:
   src: assets/coldchain.png
 notes: |
   Speaker notes here.
-develops: [C1, C4]
+outcomes: [O1]
 dok: 2
 ---
 ```
@@ -73,7 +79,8 @@ dok: 2
 | `id`       | yes      | Slide id, unique within the session                 |
 | `layout`   | yes      | Layout key; must exist in `layout-map.yaml`         |
 | `notes`    | no       | Speaker notes (plain text)                          |
-| `develops` | no       | Competency ids / ESCO URIs (list) — for `index.json`|
+| `outcomes` | no       | Outcome ids from `outcomes.yaml` (list)             |
+| `develops` | no       | Competency ids claimed directly (list)              |
 | `dok`      | no       | Depth-of-knowledge level (int) — for `index.json`   |
 
 Every other top-level key is a **region name** and must match a region

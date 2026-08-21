@@ -29,6 +29,7 @@ from .layoutmap import (
     validate_against_template,
 )
 from .mermaid import resolve_mermaid
+from .outcomes import OUTCOMES_FILE, derive_develops, load_outcomes
 from .parser import ListItem, Region, Session, Slide, parse_session
 from .runs import DEFAULT_CODE_TYPEFACE, plain_text, write_runs
 from .zipnorm import normalize_zip
@@ -248,6 +249,7 @@ def render_session(
     layout_map_path: Path,
     out_dir: Path,
     attribution_path: Path | None = None,
+    outcomes_path: Path | None = None,
 ) -> dict:
     """Render one session. Returns a summary dict with output paths.
 
@@ -262,6 +264,13 @@ def render_session(
         candidate = session_path.parent.parent / "attribution.yaml"
         attribution_path = candidate if candidate.exists() else None
     attribution = load_attribution(attribution_path) if attribution_path else None
+
+    # The outcome catalogue, found the same way. Optional: a library
+    # without one derives nothing and renders exactly as it did before.
+    if outcomes_path is None:
+        candidate = session_path.parent.parent / OUTCOMES_FILE
+        outcomes_path = candidate if candidate.exists() else None
+    catalogue = load_outcomes(outcomes_path) if outcomes_path else {}
 
     prs = Presentation(str(template_path))
     validate_against_template(bindings, prs, template_path)
@@ -317,7 +326,15 @@ def render_session(
                 "sourceRef": source_ref,
                 "sourcePptx": pptx_name,
                 "title": plain_title,
-                "develops": slide_src.develops,
+                # Derived: what the slide declares, plus what its outcomes
+                # develop. Everything downstream -- catalog.json, the pane,
+                # tracking, credential checking -- reads this one field and
+                # needed no change. `outcomes` rides alongside so the
+                # provenance stays recoverable.
+                "develops": derive_develops(
+                    slide_src.develops, slide_src.outcomes, catalogue
+                ),
+                "outcomes": slide_src.outcomes,
                 "dok": slide_src.dok,
                 # Carried so the pane can search narration, not just titles.
                 "notes": slide_src.notes,

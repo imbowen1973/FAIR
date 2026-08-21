@@ -6,6 +6,7 @@ are content too, and they belong beside the deck they are taught with.
 
 ```
 course.yaml                     the recipe: identity and delivery structure
+outcomes.yaml                   learning outcomes: what the course claims
 competencies/framework.yaml     competency ids and labels
 credentials/*.yaml              accreditation claims over the course
 template.pptx                   the brand
@@ -182,6 +183,97 @@ orphans left in a shared bucket.
 Image policy is unchanged and still enforced at build time: **≤ 500 KB
 and ≤ 2200 px**, EXIF stripped, and **no video files, ever** — video is
 hosted and referenced with `{type: video, url: ...}`.
+
+## `outcomes.yaml` — what the course claims to teach
+
+A slide used to name a competency directly. That cannot express what a
+session is actually *for*, because the thing a session is for is a
+learning outcome, and a competency is what an outcome builds towards:
+
+```
+slide ─┐
+       ├─▶ outcome ─▶ competency ─▶ credential
+question ┘
+```
+
+Outcomes are tagged items with stable ids, in one catalogue at the root:
+
+```yaml
+outcomes:
+  O1:
+    statement: Distinguish andragogy from pedagogy in a clinical context
+    develops: [AP1]
+    dok: 2            # the level this outcome targets
+  O2: Not yet mapped to any competency
+```
+
+An outcome naming a competency the framework does not define is an
+**error**, not a warning: it is a claim the library cannot support.
+
+A block declares which outcomes it addresses, in `block.yaml`:
+
+```yaml
+outcomes: [O1, O2]
+```
+
+The catalogue does not list its blocks — the recipe stays stable while
+content churns, for the same reason `course.yaml` holds no content.
+
+### A slide's competencies are derived
+
+A slide names outcomes; what it develops follows from them.
+
+```yaml
+--- slide
+id: s-03
+layout: Full
+outcomes: [O1]
+---
+```
+
+That slide develops `AP1`, because `O1` does. **This means `develops` in
+`catalog.json` will not match the slide's source file** — it is the union
+of what the slide declares directly and what its outcomes develop. The
+index entry carries `outcomes` alongside it, so the provenance is
+always recoverable.
+
+The point of deriving rather than duplicating is that a slide cannot
+claim a competency its own outcomes do not cover. `develops:` on a slide
+still works, and validation warns where it reaches outside the alignment
+— which is what a library mid-migration looks like, and is not an error.
+
+### What the alignment check reports
+
+| Condition | Level |
+|---|---|
+| outcome develops an unknown competency | error |
+| slide references an unknown outcome | error |
+| block declares an outcome nothing in it serves | warning |
+| slide `develops:` a competency its outcomes do not cover | warning |
+| outcome in the catalogue no block addresses | warning |
+| a competency no outcome develops | warning |
+
+The last two are why the catalogue is worth keeping: they are how an
+author finds the gap between what a course claims and what it teaches.
+Warnings never block a build or a pull request.
+
+### Adopting outcomes
+
+Entirely optional. A library with no `outcomes.yaml` builds exactly as it
+did before. For one whose outcomes are still free text in deck
+frontmatter:
+
+```bash
+fair-migrate path/to/library --outcomes          # prints the plan
+fair-migrate path/to/library --outcomes --apply
+```
+
+It lifts the statements into the catalogue, de-duplicates wording that
+repeats across sessions, and points each block at its outcomes. It seeds
+each outcome's `develops:` from what its block declares — **a starting
+point to correct, not a finding** — and it does not tag slides, because
+which slide serves which outcome is a judgement rather than something to
+guess at.
 
 ## `credentials/` stays separate
 

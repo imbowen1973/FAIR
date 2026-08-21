@@ -18,6 +18,7 @@ export const RESERVED_SLIDE_KEYS = new Set([
   "layout",
   "notes",
   "develops",
+  "outcomes",
   "dok",
 ]);
 
@@ -31,6 +32,7 @@ export function libraryPaths(paths) {
       p === "layout-map.yaml" ||
       p === "attribution.yaml" ||
       p === "course.yaml" ||
+      p === "outcomes.yaml" ||
       p === "layout-geometry.json" ||
       p === "competencies/framework.yaml" ||
       p.startsWith("branding/") ||
@@ -235,6 +237,7 @@ export function readLibrary(files) {
   const course = parseYaml(files.get("course.yaml") || "") || {};
   const layoutMap = parseYaml(files.get("layout-map.yaml") || "") || {};
   const framework = parseYaml(files.get("competencies/framework.yaml") || "") || {};
+  const outcomes = parseYaml(files.get("outcomes.yaml") || "") || {};
   const geometry = files.has("layout-geometry.json")
     ? JSON.parse(files.get("layout-geometry.json"))
     : null;
@@ -264,7 +267,7 @@ export function readLibrary(files) {
     competencies[id] = typeof entry === "string" ? entry : entry?.label || id;
   }
 
-  return { course, layoutMap, geometry, competencies, blocks };
+  return { course, layoutMap, geometry, competencies, outcomes, blocks };
 }
 
 /** A list's items as plain lines, depth first. */
