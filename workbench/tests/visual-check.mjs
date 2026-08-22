@@ -36,6 +36,7 @@ const result = await page.evaluate(async () => {
   const { questionForm } = await import("./assessmentui.js");
   const { outcomesEditor, outcomeList } = await import("./outcomes.js");
   const { slideMeta } = await import("./meta.js");
+  const { resolveMedia, videoHost, videoThumb } = await import("./media.js");
   const raw = (p) =>
     fetch(
       `https://raw.githubusercontent.com/Agrifoodskills/Andragogy-Pedagogy/HEAD/${p}`
@@ -384,9 +385,68 @@ const result = await page.evaluate(async () => {
     lit: [...metaHost.querySelectorAll(".chip.on")].map((c) => c.textContent),
   };
 
+  // Media is shown, not named. A picture is the one thing on a slide
+  // whose effect cannot be judged from its file path, so a preview that
+  // prints the path is not a preview of anything.
+  const mediaHelpers = {
+    resolve: (src) =>
+      resolveMedia(src, {
+        blockId: "b",
+        repo: { owner: "o", repo: "r", defaultBranch: "main" },
+        uploads: new Map(),
+        urls: new Map(),
+      }),
+    thumb: videoThumb,
+    host: videoHost,
+  };
+  const pictureLayout = Object.keys(geometry.layouts).find((key) =>
+    Object.keys(geometry.layouts[key].regions || {}).some((n) => /picture|image/i.test(n))
+  );
+  let media = { skipped: true };
+  if (pictureLayout) {
+    const pictureRegion = Object.keys(geometry.layouts[pictureLayout].regions).find(
+      (n) => /picture|image/i.test(n)
+    );
+    const mediaHost = document.createElement("div");
+    mediaHost.style.width = "900px";
+    document.body.appendChild(mediaHost);
+    let opened = null;
+    drawSlide(mediaHost, {
+      geometry,
+      layoutKey: pictureLayout,
+      slide: { id: "m", layout: pictureLayout, [pictureRegion]: { type: "image", src: "media/x.png" } },
+      editable: true,
+      media: mediaHelpers,
+      onChange: () => {},
+      onMedia: (region, value, kind) => (opened = { region, kind }),
+    });
+    const videoHostEl = document.createElement("div");
+    videoHostEl.style.width = "900px";
+    document.body.appendChild(videoHostEl);
+    drawSlide(videoHostEl, {
+      geometry,
+      layoutKey: pictureLayout,
+      slide: {
+        id: "v", layout: pictureLayout,
+        [pictureRegion]: { type: "video", url: "https://youtu.be/dQw4w9WgXcQ" },
+      },
+      editable: true, media: mediaHelpers, onChange: () => {}, onMedia: () => {},
+    });
+    mediaHost.querySelector(".media")?.click();
+    media = {
+      skipped: false,
+      image: Boolean(mediaHost.querySelector("img.media-image")),
+      // A still for the video, and a mark saying it is one -- a frame of
+      // a video and a picture are not the same thing to a reader.
+      videoStill: Boolean(videoHostEl.querySelector("img.media-image")),
+      playBadge: Boolean(videoHostEl.querySelector(".media-play")),
+      opensPicker: opened,
+    };
+  }
+
   const vacant = host.querySelectorAll(".region.vacant").length;
   return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes,
-    tabbar, mdeditor, question, alignment, derived, rich };
+    tabbar, mdeditor, question, alignment, derived, rich, media };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -438,6 +498,7 @@ console.log(`  outcome coverage: ${result.alignment.coverage.join(" / ")}`);
 console.log(`  grouped by session: ${result.alignment.groups.join(" | ")}`);
 console.log(`  competencies confined to one session: ${result.alignment.confined.join(", ") || "none"}`);
 console.log(`  derived from outcome: ${JSON.stringify(result.derived.fromOutcome)}`);
+console.log(`  media: ${JSON.stringify(result.media)}`);
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
 console.log(`marks survived serialisation:`, JSON.stringify(result.markEdit));
 if (errors.length) console.log("console errors:", errors.slice(0, 5));
@@ -486,6 +547,11 @@ const failed =
   JSON.stringify(result.derived.fromOutcome) !== JSON.stringify(["AP1"]) ||
   !result.derived.lit.includes("O1") ||
   !result.derived.lit.includes("AP9") ||
+  (!result.media.skipped &&
+    (!result.media.image ||
+      !result.media.videoStill ||
+      !result.media.playBadge ||
+      !result.media.opensPicker)) ||
   !Array.isArray(result.tabbed?.items?.[0]?.items) ||
   JSON.stringify(result.untabbed?.items) !== JSON.stringify(["one", "two", "three"]);
 console.log(failed ? "\nFAIL" : "\nPASS");

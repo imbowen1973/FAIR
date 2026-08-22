@@ -26,6 +26,7 @@ import {
   withoutResource,
 } from "../documents.js";
 import { markdownToHtml } from "../markdown.js";
+import { repoImages, resolveMedia, videoHost, videoThumb } from "../media.js";
 import {
   fillRole,
   freeOutcomeId,
@@ -1038,4 +1039,47 @@ test("an untouched question is still byte-identical after all of this", () => {
     sourceIndex: i, data: null, dirty: false,
   }));
   assert.equal(renderQuizFile(parsed, untouched), QUIZ);
+});
+
+// ---- media --------------------------------------------------------------
+
+test("a hosted video gets a still without an API call", () => {
+  // YouTube publishes one at a predictable address, so a slide shows a
+  // real frame with no key and no request from us.
+  const expected = "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg";
+  assert.equal(videoThumb("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), expected);
+  assert.equal(videoThumb("https://youtu.be/dQw4w9WgXcQ"), expected);
+  assert.equal(videoThumb("https://www.youtube.com/embed/dQw4w9WgXcQ"), expected);
+  // Anywhere else needs a poster committed alongside, and saying so is
+  // more useful than showing a grey box.
+  assert.equal(videoThumb("https://vimeo.com/12345"), null);
+  assert.equal(videoHost("https://vimeo.com/12345"), "Vimeo");
+});
+
+test("media resolves to somewhere a browser can actually load it", () => {
+  const repo = { owner: "o", repo: "r", defaultBranch: "main" };
+  const args = { blockId: "a", repo, uploads: new Map(), urls: new Map() };
+
+  // Relative to the block, which is how a slide refers to its own media.
+  assert.equal(
+    resolveMedia("media/x.png", args),
+    "https://raw.githubusercontent.com/o/r/main/blocks/a/media/x.png"
+  );
+  // A link is already a URL and is left alone.
+  assert.equal(resolveMedia("https://x/y.png", args), "https://x/y.png");
+  assert.equal(resolveMedia("", args), null);
+});
+
+test("the picture already in the repo is offered, the branding is not", () => {
+  // A course uses the same diagram in four sessions and should not
+  // carry four copies of it.
+  assert.deepEqual(
+    repoImages([
+      "blocks/a/media/x.png",
+      "branding/logo.png",
+      "course.yaml",
+      "blocks/b/media/y.jpg",
+    ]),
+    ["blocks/a/media/x.png", "blocks/b/media/y.jpg"]
+  );
 });

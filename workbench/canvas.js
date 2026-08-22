@@ -185,7 +185,7 @@ function paragraph(text, sizePx) {
  * Fill a region box and, when it holds text, make it editable.
  * `commit(value)` is called with the region's new value on every edit.
  */
-function fillRegion(box, value, style, theme, scale, commit, editable) {
+function fillRegion(box, value, style, theme, scale, commit, editable, media0 = {}, onMedia) {
   const size = style.sizePt ? style.sizePt * scale : null;
   box.style.textAlign = ALIGN[style.align] ?? "left";
   if (style.bold) box.style.fontWeight = "700";
@@ -235,26 +235,57 @@ function fillRegion(box, value, style, theme, scale, commit, editable) {
     return;
   }
 
-  // Media: the canvas cannot fetch a repo image, so it names what will be
-  // there. Clicking it edits the path rather than pretending to be a
-  // drop target for something we cannot render.
+  // Media, shown rather than named. A picture is the one thing on a slide
+  // whose effect cannot be judged from its file path, so a preview that
+  // prints "▨ media/x.jpg" is not a preview of anything.
   const media = document.createElement("div");
   media.className = "media";
-  media.textContent =
+
+  const source =
     type === "video"
-      ? `▶ ${value.url || "hosted video"}`
-      : type === "mermaid"
-        ? `◈ ${value.src || "diagram"}`
-        : `▨ ${value.src || "image"}`;
+      ? media0.thumb?.(value.url) ?? null
+      : media0.resolve?.(value.src) ?? null;
+
+  if (source) {
+    const img = document.createElement("img");
+    img.src = source;
+    img.alt = "";
+    img.loading = "lazy";
+    // The template decides the shape of the hole; the picture fills it
+    // the way PowerPoint fills a picture placeholder.
+    img.className = "media-image";
+    media.appendChild(img);
+    // A poster that cannot load says so rather than leaving a gap: a
+    // broken path is exactly what an author needs to see.
+    img.addEventListener("error", () => {
+      img.remove();
+      media.classList.add("broken");
+      media.textContent =
+        type === "video" ? `▶ ${value.url}` : `▨ ${value.src} — not found`;
+    });
+  } else {
+    media.textContent =
+      type === "video"
+        ? `▶ ${value.url ? media0.host?.(value.url) ?? "video" : "hosted video"}`
+        : type === "mermaid"
+          ? `◈ ${value.src || "diagram"}`
+          : `▨ ${value.src || "picture"}`;
+  }
+
+  if (type === "video" && source) {
+    // Marked as video, because a still of a video and a picture are not
+    // the same thing to whoever is looking at the slide.
+    const badge = document.createElement("span");
+    badge.className = "media-play";
+    badge.textContent = "▶";
+    media.appendChild(badge);
+  }
+
   box.appendChild(media);
   if (editable) {
     box.dataset.editable = "media";
-    media.title = "Click to change the path";
-    media.addEventListener("click", () => {
-      const key = type === "video" ? "url" : "src";
-      const next = prompt(`${key} for this ${type}:`, value[key] ?? "");
-      if (next !== null) commit({ ...value, [key]: next });
-    });
+    media.title = "Click to choose a picture or a video";
+    media.addEventListener("click", () => onMedia?.(value, type));
   }
 }
 
@@ -275,7 +306,10 @@ export function drawSlide(
     // the deck will show them; not editable, because typing here would
     // silently make a second copy of something the library already holds.
     derived = [],
-    onChange, onSelectRegion,
+    // How to turn a slide's `src` or `url` into something a browser can
+    // load, and what to do when a placeholder is clicked.
+    media = {},
+    onChange, onSelectRegion, onMedia,
   }
 ) {
   host.innerHTML = "";
@@ -351,7 +385,9 @@ export function drawSlide(
       theme,
       scale,
       (next) => onChange?.(region, next),
-      editable && !fromLibrary
+      editable && !fromLibrary,
+      media,
+      (value_, kind) => onMedia?.(region, value_, kind)
     );
 
     if (editable && !fromLibrary) {

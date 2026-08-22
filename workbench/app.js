@@ -40,6 +40,13 @@ import { markdownEditor } from "./mdeditor.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "./yaml.js";
 import { linkFor, prepareUpload, toBase64 } from "./attach.js";
 import {
+  mediaPicker,
+  repoImages,
+  resolveMedia,
+  videoHost,
+  videoThumb,
+} from "./media.js";
+import {
   blankQuestion,
   EDITABLE,
   readQuestion,
@@ -92,6 +99,10 @@ const state = {
   // outcomes are library-wide, so they have no block to belong to.
   courseOpen: false,
   courseTab: "overview",
+  tree: [], // every path in the repo, for reusing media already there
+  // Object URLs for pending uploads, made once so the canvas does not
+  // leak one per repaint or flicker as the image reloads.
+  mediaUrls: new Map(),
   problems: [],
 };
 
@@ -203,6 +214,7 @@ async function openRepo(fullName) {
     // access opens a library happily and then fails at Save. Say so now.
     state.canWrite = Boolean(info.permissions?.push);
     const paths = await state.gh.tree(owner, repo, defaultBranch);
+    state.tree = paths;
 
     if (!isLibrary(paths)) {
       status(
@@ -483,6 +495,7 @@ function renderOutline() {
           geometry: state.library.geometry,
           layoutKey: data.layout,
           slide: previewData(data),
+          media: mediaHelpers(),
           compact: true,
         });
 
@@ -598,6 +611,8 @@ function renderCanvas({ redraw = true } = {}) {
       layoutKey: data.layout,
       slide: shown,
       derived: roleRegions(data, layoutRegions(state.library.layoutMap, data.layout)),
+      media: mediaHelpers(),
+      onMedia: openMediaPicker,
       activeRegion,
       editable: true,
       // Leave room for the metadata and notes beneath, or they sit below
@@ -1448,6 +1463,89 @@ function renderCourseSource(host) {
     updateActions();
   });
   host.append(problem, area);
+}
+
+// ---- media -------------------------------------------------------------
+//
+// A picture is the one thing on a slide whose effect cannot be judged
+// from its file path, so the canvas shows it. Three ways one arrives:
+// uploaded through the asset policy, reused from the repo, or linked.
+// All three land in a placeholder the template defines.
+
+/** How the canvas turns a slide's src or url into something loadable. */
+function mediaHelpers() {
+  return {
+    resolve: (src) =>
+      resolveMedia(src, {
+        blockId: state.blockId,
+        repo: state.repo,
+        uploads: state.uploads,
+        urls: state.mediaUrls,
+      }),
+    thumb: (url) => videoThumb(url),
+    host: (url) => videoHost(url),
+  };
+}
+
+/** Images already in the repo, plus any staged but not yet committed. */
+function availableImages() {
+  const staged = [...state.uploads.keys()].filter((p) => /\.(png|jpe?g|gif|webp|svg)$/i.test(p));
+  return [...new Set([...repoImages(state.tree), ...staged])];
+}
+
+/** Fill a placeholder: the panel below the slide, not a modal. */
+function openMediaPicker(region, value, kind) {
+  const host = $("meta");
+  const panel = document.createElement("div");
+  host.prepend(panel);
+  panel.scrollIntoView({ block: "nearest" });
+
+  const set = (next) => {
+    const current = slideData(state.slideIndex);
+    commitSlide({ ...current, [region]: next });
+    renderCanvas();
+    updateActions();
+  };
+
+  mediaPicker(panel, {
+    region,
+    kind,
+    images: availableImages(),
+    resolve: mediaHelpers().resolve,
+    onPick: (next) => set(next),
+    onClear: () => {
+      const current = { ...slideData(state.slideIndex) };
+      delete current[region];
+      commitSlide(current);
+      renderCanvas();
+      updateActions();
+    },
+    onUpload: async (files) => {
+      try {
+        const upload = await prepareUpload(files[0]);
+        if (!upload.isImage) {
+          status("That is not a picture. Attach it to a document instead.", "error");
+          return;
+        }
+        const rel = `${MEDIA_DIR}/${upload.name}`;
+        const path = `blocks/${state.blockId}/${rel}`;
+        state.uploads.set(path, upload.bytes);
+        // Declared as well as committed, so the catalog carries it and a
+        // portal can find the picture the slide uses.
+        setBlockResources(
+          withResource(blockMeta().data.resources, {
+            type: "image",
+            title: files[0].name,
+            path: rel,
+          })
+        );
+        set({ type: "image", src: rel });
+        status(`${upload.name} added — resized and metadata stripped.`, "ok");
+      } catch (err) {
+        status(err.message, "error");
+      }
+    },
+  });
 }
 
 // ---- assessments -------------------------------------------------------

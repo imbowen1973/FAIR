@@ -139,6 +139,15 @@ promised it.
 | `media/` | images | resized to 2000 px, re-encoded, **all metadata stripped** |
 | `files/` | spreadsheets, PDFs, anything else | carried byte for byte |
 
+A slide refers to its own media relatively — `media/diagram.png` — and
+the workbench shows the picture in its placeholder rather than naming
+the path. Video is never committed: the slide carries `{type: video,
+url: …}` and a still. YouTube's is derived from the URL; anything else
+needs a `poster:` alongside.
+
+An image already in the repo can be reused by any slide in the course,
+so a diagram used in four sessions is one file, not four.
+
 The split is not tidiness. Clinical photographs must not carry GPS
 coordinates or device identifiers into a public repo, so images go
 through the asset policy without exception — and running that policy

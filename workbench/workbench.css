@@ -758,3 +758,55 @@ button.kind-option.on .kind-label::before { content: "✓ "; color: var(--accent
 .q-settings { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
 .q-settings .q-field { margin-bottom: 0; }
 label.check.tight { font-size: 0.76rem; color: var(--muted); gap: 3px; }
+
+/* ---- media ------------------------------------------------------------ */
+/* A picture is the one thing on a slide whose effect cannot be judged
+   from its file path, so the canvas shows it rather than naming it. */
+
+.region .media { position: relative; width: 100%; height: 100%; }
+img.media-image {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.media.broken { color: var(--warn-fg, #a15c00); }
+.media-play {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 2.2em; height: 2.2em; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.55); color: #fff; font-size: 0.9em;
+  pointer-events: none;
+}
+
+.media-picker {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px; margin-bottom: 14px; background: var(--bg-raised);
+  max-width: 54rem;
+}
+.media-picker h4 { margin: 0 0 8px; font-size: 0.86rem; }
+.media-picker h4 + * { margin-top: 0; }
+.media-drop { margin-bottom: 12px; }
+.media-drop input[type="file"] { display: none; }
+label.media-droplabel {
+  display: inline-block; padding: 7px 14px; cursor: pointer;
+  border: 1px dashed var(--border-strong); border-radius: 6px;
+  font-size: 0.86rem;
+}
+label.media-droplabel:hover { border-color: var(--accent); color: var(--accent); }
+.media-link { display: flex; gap: 8px; margin-bottom: 12px; }
+.media-grid {
+  display: grid; gap: 8px; margin-bottom: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+}
+button.media-thumb {
+  display: flex; flex-direction: column; gap: 4px; padding: 4px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--fg); font: inherit;
+}
+button.media-thumb:hover { border-color: var(--accent); }
+button.media-thumb img {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 3px;
+  background: var(--bg-sunken);
+}
+button.media-thumb span {
+  font-size: 0.68rem; color: var(--muted); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
