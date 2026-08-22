@@ -1767,7 +1767,7 @@ def test_alignment_reports_every_kind_of_gap(tmp_path):
     assert any("unknown outcome 'O99'" in m for m in messages)
     assert errors, "an unknown outcome reference is an error"
     assert any("'O2' but no slide serves it" in m for m in messages)
-    assert any("'O3' is not addressed by any block" in m for m in messages)
+    assert any("'O3' belongs to no session" in m for m in messages)
 
 
 def test_alignment_is_quiet_without_a_catalogue(tmp_path):
@@ -1903,8 +1903,12 @@ def test_lifting_outcomes_writes_the_catalogue_and_points_blocks_at_it(tmp_path)
     assert meta["duration_minutes"] == 180
 
 
-def test_the_same_outcome_in_two_sessions_is_one_outcome(tmp_path):
-    """Wording repeated across blocks is one claim, not two."""
+def test_the_same_wording_in_two_sessions_makes_two_outcomes(tmp_path):
+    """An outcome belongs to one session, so wording is not merged.
+
+    Merging would quietly turn a session outcome into something that
+    spans sessions, which is a competency and a different thing.
+    """
     import shutil
 
     from fair_renderer.migrate import plan_outcomes
@@ -1913,8 +1917,13 @@ def test_the_same_outcome_in_two_sessions_is_one_outcome(tmp_path):
     shutil.copytree(root / "blocks" / "01-foundations", root / "blocks" / "02-more")
 
     plan = plan_outcomes(root)
-    assert len(plan["catalogue"]) == 1
-    assert [b["outcomes"] for b in plan["blocks"]] == [["O1"], ["O1"]]
+    assert len(plan["catalogue"]) == 2, "two sessions, two outcomes"
+    assert [b["outcomes"] for b in plan["blocks"]] == [["O1"], ["O2"]]
+    # And the repeat is reported, because it usually means the two
+    # sessions need distinguishing.
+    assert plan["repeated"], "repeated wording must be surfaced"
+    statement, first, again = plan["repeated"][0]
+    assert first == "01-foundations" and again == "02-more"
 
 
 def test_lifting_outcomes_refuses_to_overwrite_a_catalogue(tmp_path):
@@ -1924,3 +1933,129 @@ def test_lifting_outcomes_refuses_to_overwrite_a_catalogue(tmp_path):
     (root / "outcomes.yaml").write_text("outcomes: {}\n", encoding="utf-8")
     with pytest.raises(MigrationError, match="already exists"):
         plan_outcomes(root)
+
+
+def test_an_outcome_belongs_to_one_session(tmp_path):
+    """Two sessions claiming one outcome is a modelling mistake.
+
+    An outcome is what a session is for. Something that spans sessions is
+    a competency, and calling it an outcome hides that.
+    """
+    import shutil
+
+    from fair_renderer.library import check_alignment
+
+    root = _make_library(tmp_path / "lib")
+    shutil.copytree(root / "blocks" / "01-foundations", root / "blocks" / "02-more")
+    _with_outcomes(
+        root,
+        {"O1": {"statement": "Shared by two", "develops": ["CE1"]}},
+        block_outcomes=["O1"],
+    )
+    second = root / "blocks" / "02-more" / "block.yaml"
+    meta = yaml.safe_load(second.read_text(encoding="utf-8"))
+    meta["outcomes"] = ["O1"]
+    second.write_text(yaml.safe_dump(meta), encoding="utf-8")
+
+    problems = check_alignment(root)
+    clash = [p for p in problems if "belongs to" in p["message"]]
+    assert clash and clash[0]["level"] == "error"
+    assert "something that spans sessions is a competency" in clash[0]["message"].lower()
+
+
+def test_a_competency_confined_to_one_session_is_flagged(tmp_path):
+    """A competency builds across sessions; one that does not is an outcome."""
+    from fair_renderer.library import check_alignment
+
+    root = _make_library(tmp_path / "lib")
+    _with_outcomes(
+        root,
+        {"O1": {"statement": "Only ever here", "develops": ["CE1"]}},
+        block_outcomes=["O1"],
+    )
+    messages = [p["message"] for p in check_alignment(root)]
+    assert any("built only in" in m for m in messages)
+    # A gap, not a failure: plenty of courses have one session per topic.
+    assert all(
+        p["level"] == "warning"
+        for p in check_alignment(root)
+        if "built only in" in p["message"]
+    )
+
+
+def test_a_competency_across_two_sessions_is_not_flagged(tmp_path):
+    import shutil
+
+    from fair_renderer.library import check_alignment
+
+    root = _make_library(tmp_path / "lib")
+    shutil.copytree(root / "blocks" / "01-foundations", root / "blocks" / "02-more")
+    _with_outcomes(
+        root,
+        {
+            "O1": {"statement": "First step", "develops": ["CE1"]},
+            "O2": {"statement": "Building on it", "develops": ["CE1"]},
+        },
+        block_outcomes=["O1"],
+    )
+    second = root / "blocks" / "02-more" / "block.yaml"
+    meta = yaml.safe_load(second.read_text(encoding="utf-8"))
+    meta["outcomes"] = ["O2"]
+    second.write_text(yaml.safe_dump(meta), encoding="utf-8")
+
+    messages = [p["message"] for p in check_alignment(root)]
+    assert not any("built only in" in m for m in messages)
+
+
+def test_a_competency_progression_shows_where_it_is_built(tmp_path):
+    """The distinction, made visible rather than only checkable.
+
+    An outcome belongs to one session. A competency runs through several,
+    and the progression is the list of those sessions in delivery order.
+    """
+    import shutil
+
+    from fair_renderer.corpus import build_corpus
+    from fair_renderer.tracking import connect, sync_curriculum
+
+    root = _make_library(tmp_path / "lib")
+    shutil.copytree(root / "blocks" / "01-foundations", root / "blocks" / "02-more")
+    _with_outcomes(
+        root,
+        {
+            "O1": {"statement": "Recognise it", "develops": ["CE1"], "dok": 1},
+            "O2": {"statement": "Do it unaided", "develops": ["CE1"], "dok": 3},
+        },
+        block_outcomes=["O1"],
+    )
+    second = root / "blocks" / "02-more" / "block.yaml"
+    meta = yaml.safe_load(second.read_text(encoding="utf-8"))
+    meta["outcomes"] = ["O2"]
+    second.write_text(yaml.safe_dump(meta), encoding="utf-8")
+
+    course_path = root / "course.yaml"
+    course = yaml.safe_load(course_path.read_text(encoding="utf-8"))
+    course["structure"] = [{"block": "01-foundations"}, {"block": "02-more"}]
+    course_path.write_text(yaml.safe_dump(course), encoding="utf-8")
+
+    out = tmp_path / "out"
+    build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda m: None,
+    )
+    catalog = json.loads((out / "catalog.json").read_text(encoding="utf-8"))
+
+    # Each outcome records the session it belongs to.
+    assert catalog["outcomes"]["O1"]["block"] == "01-foundations"
+    assert catalog["outcomes"]["O2"]["block"] == "02-more"
+
+    conn = connect(tmp_path / "t.db")
+    sync_curriculum(conn, catalog)
+    rows = conn.execute(
+        "SELECT block_id, dok FROM competency_progression WHERE competency_id='CE1'"
+    ).fetchall()
+    assert [r[0] for r in rows] == ["01-foundations", "02-more"], "in delivery order"
+    assert [r[1] for r in rows] == [1, 3], "and it builds"

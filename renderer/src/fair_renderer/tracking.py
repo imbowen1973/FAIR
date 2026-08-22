@@ -75,6 +75,9 @@ CREATE TABLE IF NOT EXISTS slide_competencies (
 CREATE TABLE IF NOT EXISTS outcomes (
     outcome_id TEXT PRIMARY KEY,
     course_id  TEXT REFERENCES courses(course_id) ON DELETE CASCADE,
+    -- The session this outcome belongs to. An outcome is what one
+    -- session is for; a competency is the thread across sessions.
+    block_id   TEXT,
     statement  TEXT,
     dok        INTEGER          -- the level this outcome targets
 );
@@ -148,6 +151,22 @@ GROUP BY e.learner, sc.competency_id;
 -- at what level did the slides that served it reach. Competency evidence
 -- is unchanged and still comes from slide_competencies, which receives
 -- the derived set -- so adding outcomes changed nothing beneath it.
+-- How a competency is built: every session that develops it, in
+-- delivery order, with the level its outcomes target there. A competency
+-- appearing once is not building across sessions, whatever it is called.
+CREATE VIEW IF NOT EXISTS competency_progression AS
+SELECT
+    oc.competency_id AS competency_id,
+    b.block_id       AS block_id,
+    b.position       AS position,
+    b.title          AS block_title,
+    MAX(o.dok)       AS dok
+FROM outcome_competencies oc
+JOIN outcomes o ON o.outcome_id = oc.outcome_id
+JOIN blocks   b ON b.block_id = o.block_id
+GROUP BY oc.competency_id, b.block_id
+ORDER BY oc.competency_id, b.position;
+
 CREATE VIEW IF NOT EXISTS learner_outcome AS
 SELECT
     e.learner          AS learner,
@@ -210,9 +229,15 @@ def sync_curriculum(conn: sqlite3.Connection, catalog: dict, *, now: str | None 
 
         for oid, outcome in (catalog.get("outcomes") or {}).items():
             conn.execute(
-                "INSERT OR REPLACE INTO outcomes (outcome_id, course_id, statement, dok) "
-                "VALUES (?,?,?,?)",
-                (oid, course_id, outcome.get("statement"), outcome.get("dok")),
+                "INSERT OR REPLACE INTO outcomes "
+                "(outcome_id, course_id, block_id, statement, dok) VALUES (?,?,?,?,?)",
+                (
+                    oid,
+                    course_id,
+                    outcome.get("block"),
+                    outcome.get("statement"),
+                    outcome.get("dok"),
+                ),
             )
             for cid in outcome.get("develops") or []:
                 conn.execute(

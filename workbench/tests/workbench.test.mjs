@@ -26,7 +26,12 @@ import {
   withoutResource,
 } from "../documents.js";
 import { markdownToHtml } from "../markdown.js";
-import { freeOutcomeId, outcomeDoc, outcomeList } from "../outcomes.js";
+import { freeOutcomeId, outcomeDoc, outcomeList, progression } from "../outcomes.js";
+import {
+  hasOutcomesSection,
+  refreshOutcomes,
+  summaryTemplate,
+} from "../summary.js";
 import {
   competencyTags,
   renderQuizFile,
@@ -677,4 +682,97 @@ test("the catalogue round-trips through the editor's shape", () => {
 test("a new outcome gets a free id", () => {
   assert.equal(freeOutcomeId(new Set()), "O1");
   assert.equal(freeOutcomeId(new Set(["O1", "O2"])), "O3");
+});
+
+// ---- the session summary -----------------------------------------------
+
+const SESSION = {
+  block: { id: "v130-big-data", title: "Big data", code: "V130", duration: 90 },
+  outcomes: [
+    { id: "O1", statement: "Identify common ways big data could be misused" },
+    { id: "O2", statement: "Evaluate the ethical and legal implications" },
+  ],
+  documents: [
+    { id: "slides", file: "slides.md", title: "Slides", type: "slides" },
+    { id: "assessment.xml", file: "assessment.xml", title: "Assessment", type: "assessment" },
+  ],
+};
+
+test("a summary names the session and lists the outcomes it owns", () => {
+  const out = summaryTemplate(SESSION);
+  assert.ok(out.includes("# Big data — Summary"));
+  assert.ok(out.includes("**Session:** V130"));
+  assert.ok(out.includes("- Identify common ways big data could be misused"));
+  assert.ok(out.includes("- Evaluate the ethical and legal implications"));
+});
+
+test("a summary links the block's own documents, not a folder somewhere", () => {
+  // The template a course inherits points at a .docx in a numbered
+  // folder. Here the deck and the assessment are in the block.
+  const out = summaryTemplate(SESSION);
+  assert.ok(out.includes("[Slides](slides.md)"));
+  assert.ok(out.includes("[Assessment](assessment.xml)"));
+});
+
+test("a section with nothing in it says so", () => {
+  // "No assignment" is information; a missing heading is ambiguous.
+  const out = summaryTemplate(SESSION);
+  assert.ok(out.includes("## Assignment"));
+  assert.ok(out.includes("There is no assignment."));
+  assert.ok(out.includes("There are no extra materials or sources."));
+});
+
+test("refreshing the outcomes leaves every other word alone", () => {
+  const out = summaryTemplate(SESSION);
+  const edited = out.replace(
+    "*Two or three sentences on what this session covers, and why it*",
+    "This session explores the ethics of big data in veterinary practice."
+  );
+  const again = refreshOutcomes(edited, [{ id: "O9", statement: "Something else" }]);
+
+  assert.ok(again.includes("This session explores the ethics of big data"));
+  assert.ok(again.includes("- Something else"));
+  assert.ok(!again.includes("Identify common ways big data could be misused"));
+  assert.ok(again.includes("[Assessment](assessment.xml)"));
+});
+
+test("a summary somebody rewrote by hand is never clobbered", () => {
+  const theirs = "# My own summary\n\nNo markers here.\n";
+  assert.equal(refreshOutcomes(theirs, [{ id: "O1", statement: "x" }]), theirs);
+  assert.equal(hasOutcomesSection(theirs), false);
+  assert.equal(hasOutcomesSection(summaryTemplate(SESSION)), true);
+});
+
+test("a session with no outcomes yet says where to add them", () => {
+  const out = summaryTemplate({ ...SESSION, outcomes: [] });
+  assert.ok(out.includes("No outcomes are assigned to this session yet"));
+});
+
+test("a competency spanning sessions is not flagged; one confined to a session is", () => {
+  // The distinction the model rests on: an outcome belongs to one
+  // session, a competency builds across several.
+  const outcomes = [
+    { id: "O1", statement: "a", develops: ["V1"], dok: 1 },
+    { id: "O2", statement: "b", develops: ["V1", "V2"], dok: 3 },
+  ];
+  const blocks = [{ id: "b1", title: "First" }, { id: "b2", title: "Second" }];
+  const owner = { O1: "b1", O2: "b2" };
+  const rows = progression(outcomes, owner, blocks, { V1: "Spans", V2: "Confined" });
+
+  const spans = rows.find((r) => r.id === "V1");
+  assert.deepEqual(spans.sessions.map((s) => s.blockId), ["b1", "b2"], "in delivery order");
+  assert.deepEqual(spans.sessions.map((s) => s.dok), [1, 3], "and it builds");
+  assert.equal(spans.confined, false);
+
+  assert.equal(rows.find((r) => r.id === "V2").confined, true);
+});
+
+test("an outcome with no session contributes to no progression", () => {
+  const rows = progression(
+    [{ id: "O1", statement: "a", develops: ["V1"], dok: 2 }],
+    {},
+    [{ id: "b1", title: "First" }],
+    { V1: "Nothing builds this" }
+  );
+  assert.deepEqual(rows[0].sessions, []);
 });

@@ -299,8 +299,16 @@ def check_alignment(root: Path) -> list[dict]:
     """Where a course's claims and its content disagree.
 
     The catalogue is only worth having if it can answer "what do we say
-    we teach, and where do we actually teach it". These checks are that
-    question, asked six ways.
+    we teach, and where do we actually teach it".
+
+    Two kinds of thing hang off that question, and they are not the same
+    kind of thing:
+
+    - A **learning outcome** belongs to one session. It is what that
+      session is for, and it is assessable inside it.
+    - A **competency** is broader and builds across sessions. If only one
+      session ever touches it, it is an outcome wearing a competency's
+      name, and the checks below say so.
 
     Errors are claims the library cannot support; warnings are gaps.
     Both are reported together — an author opening a course wants the
@@ -325,8 +333,8 @@ def check_alignment(root: Path) -> list[dict]:
         return problems  # no catalogue: nothing to align against, and that is fine
 
     blocks_dir = root / BLOCKS_DIR
-    addressed: set[str] = set()
-    developed: set[str] = set()
+    owner: dict[str, str] = {}          # outcome -> the block that claims it
+    builds: dict[str, set[str]] = {}    # competency -> blocks that build it
 
     for block_dir in sorted(p for p in blocks_dir.iterdir() if p.is_dir()) if blocks_dir.is_dir() else []:
         block_id = block_dir.name
@@ -338,8 +346,22 @@ def check_alignment(root: Path) -> list[dict]:
         for oid in block.outcomes:
             if oid not in catalogue:
                 add(block_id, f"declares unknown outcome {oid!r}", "error")
-            else:
-                addressed.add(oid)
+                continue
+            # An outcome belongs to one session. Two sessions claiming
+            # the same one means either a duplicate that should be two
+            # outcomes, or a competency written as though it were one.
+            if oid in owner:
+                add(
+                    block_id,
+                    f"also claims outcome {oid!r}, which belongs to "
+                    f"{owner[oid]!r}. An outcome belongs to one session; "
+                    "something that spans sessions is a competency.",
+                    "error",
+                )
+                continue
+            owner[oid] = block_id
+            for cid in catalogue[oid].develops:
+                builds.setdefault(cid, set()).add(block_id)
 
         slides_path = block_dir / SLIDES_FILE
         if not slides_path.is_file():
@@ -361,7 +383,6 @@ def check_alignment(root: Path) -> list[dict]:
                     )
                     continue
                 served.add(oid)
-                developed.update(catalogue[oid].develops)
 
             # A slide claiming a competency none of its outcomes cover is
             # reaching outside its own alignment. Worth seeing, not worth
@@ -381,11 +402,23 @@ def check_alignment(root: Path) -> list[dict]:
                 add(block_id, f"declares outcome {oid!r} but no slide serves it")
 
     for oid in sorted(catalogue):
-        if oid not in addressed:
-            add(OUTCOMES_FILE, f"outcome {oid!r} is not addressed by any block")
+        if oid not in owner:
+            add(OUTCOMES_FILE, f"outcome {oid!r} belongs to no session")
 
-    for cid in sorted(known_competencies - {c for o in catalogue.values() for c in o.develops}):
+    for cid in sorted(known_competencies - set(builds)):
         add(OUTCOMES_FILE, f"competency {cid!r} is not developed by any outcome")
+
+    # The distinction made checkable. A competency is the thread that
+    # runs through a course; one confined to a single session is not
+    # doing that work, whatever it is called.
+    for cid, where in sorted(builds.items()):
+        if len(where) == 1:
+            add(
+                OUTCOMES_FILE,
+                f"competency {cid!r} is built only in {next(iter(where))!r}. "
+                "A competency should build across sessions — if it does "
+                "not, it may really be a learning outcome.",
+            )
 
     return problems
 

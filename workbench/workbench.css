@@ -574,3 +574,34 @@ button.viewtab.on {
 .rich .ProseMirror { padding: 14px 18px; min-height: 54vh; }
 .rich .ProseMirror:focus { outline: none; }
 .viewbody { min-width: 0; }
+
+/* Outcomes grouped by the session that owns them; competencies shown as
+   the thread through the course rather than edited as items. */
+.outcome-group {
+  margin: 20px 0 6px; font-size: 0.86rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+}
+.outcome-group.unassigned { color: var(--warn-fg, #a15c00); }
+.outcome-head select.session { font-size: 0.8rem; max-width: 16rem; }
+
+.progression {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 12px; margin: 8px 0; background: var(--bg-raised);
+  max-width: 54rem;
+}
+.progression-head { display: flex; align-items: baseline; gap: 8px; }
+.prog-id { font-family: Consolas, Menlo, monospace; font-weight: 700; }
+.prog-label { font-size: 0.88rem; }
+.prog-track {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-top: 6px;
+}
+.prog-step {
+  display: inline-flex; flex-direction: column;
+  padding: 4px 9px; border-radius: 6px; background: var(--bg-sunken);
+  border: 1px solid var(--border);
+}
+.prog-session { font-size: 0.8rem; }
+.prog-dok { font-size: 0.72rem; color: var(--muted); }
+.prog-arrow { color: var(--muted); }
+.progression .coverage { display: block; margin-top: 6px; }

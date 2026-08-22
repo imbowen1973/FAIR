@@ -316,6 +316,13 @@ def build_corpus(
     # competency that does not exist raises rather than passing silently.
     catalogue = load_outcomes(outcomes_path, set(competencies) or None) if outcomes_path else {}
 
+    # Which session owns each outcome, from the blocks' own declarations.
+    outcome_owner: dict[str, str] = {}
+    if lib:
+        for block in lib.blocks.values():
+            for oid in block.outcomes:
+                outcome_owner.setdefault(oid, block.block_id)
+
 
     referenced = {c for s in slides for c in s["develops"]}
     unlabeled = sorted(referenced - set(competencies))
@@ -353,6 +360,9 @@ def build_corpus(
             oid: {
                 "statement": o.statement,
                 "develops": o.develops,
+                # The session it belongs to. An outcome is what one
+                # session is for; the competency is the thread across them.
+                **({"block": outcome_owner[oid]} if oid in outcome_owner else {}),
                 **({"dok": o.dok} if o.dok is not None else {}),
             }
             for oid, o in sorted(catalogue.items())

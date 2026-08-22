@@ -285,7 +285,8 @@ def plan_outcomes(root: Path) -> dict:
         raise MigrationError(f"{root}: no {BLOCKS_DIR}/ — is this a library?")
 
     catalogue: dict[str, dict] = {}
-    by_statement: dict[str, str] = {}
+    seen_statements: dict[str, str] = {}   # wording -> the block that had it
+    repeated: list[tuple[str, str, str]] = []
     blocks: list[dict] = []
 
     for block_dir in sorted(p for p in blocks_dir.iterdir() if p.is_dir()):
@@ -316,20 +317,30 @@ def plan_outcomes(root: Path) -> dict:
             statement = str(statement).strip()
             if not statement:
                 continue
-            # The same wording in two sessions is one outcome, not two.
-            if statement in by_statement:
-                ids.append(by_statement[statement])
-                continue
+            # An outcome belongs to one session, so the same wording in
+            # two sessions makes two outcomes, not one. Merging them
+            # would quietly turn a session outcome into something that
+            # spans sessions -- which is a competency, and a different
+            # thing. It is reported instead, because repeated wording
+            # usually means the sessions need distinguishing.
+            if statement in seen_statements:
+                repeated.append((statement, seen_statements[statement], block_dir.name))
+            else:
+                seen_statements[statement] = block_dir.name
             oid = _outcome_id(set(catalogue))
             catalogue[oid] = {"statement": statement, "develops": list(seeded)}
-            by_statement[statement] = oid
             ids.append(oid)
 
         blocks.append({"block_id": block_dir.name, "path": block_dir, "outcomes": ids})
 
     if not catalogue:
         raise MigrationError(f"{root}: no free-text outcomes found to lift")
-    return {"root": root, "catalogue": catalogue, "blocks": blocks}
+    return {
+        "root": root,
+        "catalogue": catalogue,
+        "blocks": blocks,
+        "repeated": repeated,
+    }
 
 
 def apply_outcomes(plan: dict) -> list[str]:
@@ -387,6 +398,14 @@ def _main_outcomes(args) -> int:
     for block in plan["blocks"]:
         print(f"  {block['block_id']:36} outcomes: {block['outcomes']}")
 
+    if plan["repeated"]:
+        print()
+        print("Repeated wording, kept as separate outcomes:")
+        for statement, first, again in plan["repeated"]:
+            print(f"  {statement!r}")
+            print(f"    in {first} and {again} -- an outcome belongs to one")
+            print("    session, so these are two. Distinguish them, or make it")
+            print("    a competency that both sessions develop.")
     print()
     print(
         "The competencies above were seeded from what each block declares.",

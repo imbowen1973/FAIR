@@ -69,6 +69,9 @@ export function blockDocuments(block, files) {
       id: "slides",
       title: "Slides",
       type: "slides",
+      // The name to link by, relative to the block. For everything else
+      // the id already is that; the deck is the one whose id is a label.
+      file: SLIDES_FILE,
       path: `${dir}/${SLIDES_FILE}`,
       editor: "slides",
       missing: false, // the deck tab always opens; it may simply be empty
@@ -92,6 +95,7 @@ export function blockDocuments(block, files) {
       id: rel,
       title: String(entry.title || "").trim() || titleFrom(rel),
       type,
+      file: rel,
       path,
       editor: editorFor(type, rel),
       missing: files ? !files.has(path) : false,

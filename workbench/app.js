@@ -655,26 +655,16 @@ function starterFor(kind, title, block) {
   }
   const heading = `# ${title}: ${block.meta.title || block.id}`;
   if (kind === "lessonplan") {
-    return [
-      heading,
-      "",
-      "## Learning outcomes",
-      "",
-      "By the end of this session learners will be able to:",
-      "",
-      "- ",
-      "",
-      "## Before the session",
-      "",
-      "## Running the session",
-      "",
-      "| Time | Activity | Notes |",
-      "|---|---|---|",
-      "|  |  |  |",
-      "",
-      "## After the session",
-      "",
-    ].join("\n");
+    return summaryTemplate({
+      block: {
+        id: block.id,
+        title: block.meta.title,
+        code: block.meta.code,
+        duration: block.meta.duration_minutes,
+      },
+      outcomes: ownedOutcomes(block.id),
+      documents: documents().filter((d) => d.type !== "lessonplan"),
+    });
   }
   return [heading, "", ""].join("\n");
 }
@@ -770,6 +760,35 @@ function renderDocument(doc) {
     host.appendChild(note);
   }
 
+  // The outcomes section is generated from the catalogue, so it can be
+  // brought back into step without touching a word of the prose around
+  // it. Only offered when the markers are still there: a summary
+  // somebody rewrote by hand is theirs.
+  if (doc.type === "lessonplan" && hasOutcomesSection(seeded)) {
+    const owned = ownedOutcomes(currentBlock().id);
+    const current = refreshOutcomes(seeded, owned);
+    if (current !== seeded) {
+      const row = document.createElement("p");
+      row.className = "hint";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "link";
+      button.textContent = "Update the outcomes section";
+      button.addEventListener("click", () => {
+        state.edits.set(doc.path, refreshOutcomes(docText(doc) || seeded, owned));
+        updateActions();
+        renderBlock();
+      });
+      row.append(
+        document.createTextNode(
+          "The learning outcomes here differ from the ones this session owns. "
+        ),
+        button
+      );
+      host.appendChild(row);
+    }
+  }
+
   const editorHost = document.createElement("div");
   host.appendChild(editorHost);
   markdownEditor(editorHost, {
@@ -804,13 +823,78 @@ function outcomeCoverage() {
     coverage[oid][key] += 1;
   };
   for (const [id, block] of state.library.blocks) {
-    for (const oid of block.meta?.outcomes ?? []) bump(String(oid), "blocks");
     const slides = state.working.get(id) ?? workingSlides(block.parsed);
     for (const entry of slides) {
       for (const oid of entry.data?.outcomes ?? []) bump(String(oid), "slides");
     }
   }
   return coverage;
+}
+
+/** The outcomes a session owns, as {id, statement} in catalogue order. */
+function ownedOutcomes(blockId) {
+  const owned = new Set(blockOutcomes(blockId));
+  return outcomeList(catalogueDoc()).filter((o) => owned.has(o.id));
+}
+
+/** Blocks in delivery order, for the session pickers. */
+function blocksInOrder() {
+  const ordered = placedBlocks(state.library.course.structure);
+  const ids = [...state.library.blocks.keys()];
+  const sequence = [
+    ...ordered.filter((id) => state.library.blocks.has(id)),
+    ...ids.filter((id) => !ordered.includes(id)),
+  ];
+  return sequence.map((id) => ({
+    id,
+    title: state.library.blocks.get(id).meta?.title || id,
+  }));
+}
+
+/**
+ * Which session owns each outcome.
+ *
+ * An outcome belongs to one session, so the first block to claim it
+ * wins. check_alignment reports a second claim as an error rather than
+ * this quietly picking one.
+ */
+function outcomeOwners() {
+  const owner = {};
+  for (const [id, block] of state.library.blocks) {
+    for (const oid of blockOutcomes(id)) {
+      if (!(oid in owner)) owner[String(oid)] = id;
+    }
+  }
+  return owner;
+}
+
+/** A block's declared outcomes, edits included. */
+function blockOutcomes(blockId) {
+  const path = `blocks/${blockId}/block.yaml`;
+  const text = state.edits.get(path) ?? state.files.get(path) ?? "";
+  const meta = parseYaml(text) || {};
+  return Array.isArray(meta.outcomes) ? meta.outcomes.map(String) : [];
+}
+
+/** Move an outcome to a session — or to none. */
+function setOutcomeOwner(outcomeId, blockId) {
+  for (const [id] of state.library.blocks) {
+    const path = `blocks/${id}/block.yaml`;
+    const text = state.edits.get(path) ?? state.files.get(path) ?? "";
+    const meta = parseYaml(text) || {};
+    const had = blockOutcomes(id);
+    const wants = id === blockId;
+    const has = had.includes(outcomeId);
+    if (wants === has) continue;
+    const next = wants ? [...had, outcomeId] : had.filter((o) => o !== outcomeId);
+    const nextMeta = { ...meta };
+    if (next.length) nextMeta.outcomes = next;
+    else delete nextMeta.outcomes;
+    state.edits.set(path, stringifyYaml(nextMeta));
+    state.library.blocks.get(id).meta = nextMeta;
+  }
+  updateActions();
+  renderCourse();
 }
 
 function renderCourse() {
@@ -823,7 +907,7 @@ function renderCourse() {
   host.innerHTML = "";
   const heading = document.createElement("h2");
   heading.className = "course-heading";
-  heading.textContent = "Learning outcomes";
+  heading.textContent = "Outcomes and competencies";
   host.appendChild(heading);
 
   const editorHost = document.createElement("div");
@@ -833,6 +917,8 @@ function renderCourse() {
     outcomesEditor(editorHost, {
       outcomes: outcomeList(catalogueDoc()),
       competencies: state.library.competencies,
+      blocks: blocksInOrder(),
+      owner: outcomeOwners(),
       coverage: outcomeCoverage(),
       onChange: (list) => {
         state.edits.set(OUTCOMES_PATH, stringifyYaml(outcomeDoc(list)));
@@ -840,6 +926,7 @@ function renderCourse() {
         updateActions();
         draw();
       },
+      onOwner: setOutcomeOwner,
     });
   draw();
 }

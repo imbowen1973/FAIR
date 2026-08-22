@@ -305,12 +305,23 @@ const result = await page.evaluate(async () => {
   outcomesEditor(outHost, {
     outcomes: outcomeList(catalogue),
     competencies: { AP1: "a", AP2: "b" },
-    coverage: { O1: { blocks: 1, slides: 3, questions: 1 } },
+    blocks: [{ id: "b1", title: "First session" }, { id: "b2", title: "Second session" }],
+    owner: { O1: "b1" },
+    coverage: { O1: { slides: 3, questions: 1 } },
     onChange: () => {},
+    onOwner: () => {},
   });
   const alignment = {
-    coverage: [...outHost.querySelectorAll(".coverage")].map((c) => c.textContent),
-    flagged: outHost.querySelectorAll(".coverage.none").length,
+    // Outcome cards only: the progression rows below carry their own
+    // coverage line, and counting both together measures nothing.
+    coverage: [...outHost.querySelectorAll(".outcome .coverage")].map((c) => c.textContent),
+    flagged: outHost.querySelectorAll(".outcome .coverage.none").length,
+    groups: [...outHost.querySelectorAll(".outcome-group")].map((g) => g.textContent),
+    // A competency built in one session is a learning outcome wearing a
+    // competency's name, and the panel has to say so.
+    confined: [...outHost.querySelectorAll(".progression")]
+      .filter((r) => r.querySelector(".coverage.none"))
+      .map((r) => r.querySelector(".prog-id")?.textContent),
   };
 
   // A slide's competencies are derived from its outcomes, and shown as
@@ -373,6 +384,8 @@ console.log(`  rich editor mounted: ${result.rich.mounted}` +
 console.log(`  markdown bold: ${JSON.stringify(result.mdeditor.bolded)}`);
 console.log(`  question edits kept: ${JSON.stringify(result.question)}`);
 console.log(`  outcome coverage: ${result.alignment.coverage.join(" / ")}`);
+console.log(`  grouped by session: ${result.alignment.groups.join(" | ")}`);
+console.log(`  competencies confined to one session: ${result.alignment.confined.join(", ") || "none"}`);
 console.log(`  derived from outcome: ${JSON.stringify(result.derived.fromOutcome)}`);
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
 console.log(`marks survived serialisation:`, JSON.stringify(result.markEdit));
@@ -406,6 +419,9 @@ const failed =
   !result.question.tags?.includes("AP1") ||
   !result.question.showsSource ||
   result.alignment.flagged !== 1 ||
+  !result.alignment.groups.includes("First session") ||
+  !result.alignment.groups.includes("Not yet assigned to a session") ||
+  !result.alignment.confined.includes("AP1") ||
   !result.alignment.coverage[0].includes("3 slides") ||
   JSON.stringify(result.derived.fromOutcome) !== JSON.stringify(["AP1"]) ||
   !result.derived.lit.includes("O1") ||
