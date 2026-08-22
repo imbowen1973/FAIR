@@ -4,10 +4,10 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:type="TaskPaneApp">
   <Id>9f3c1a52-6b7e-4d2a-9c48-0e5a1f70c3d8</Id>
-  <Version>0.5.0</Version>
+  <Version>0.6.0</Version>
   <ProviderName>FAIR Consortium</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="FAIR Deck Assembler"/>
+  <DisplayName DefaultValue="eduFAIR Deck Assembler"/>
   <Description DefaultValue="Assemble a deck by competency from rendered session decks"/>
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>

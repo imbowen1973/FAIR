@@ -1,4 +1,4 @@
-"""fair-migrate: turn a flat sessions/ library into a course of blocks.
+"""edufair-migrate: turn a flat sessions/ library into a course of blocks.
 
 The old shape put every deck in `sessions/*.md` with the delivery
 structure declared separately in `credentials/*.yaml`, and had nowhere
@@ -6,7 +6,7 @@ at all to put a lesson plan, a workbook or a question bank. The block
 shape makes the filesystem the structure and gives each block a folder
 its resources and media can live in.
 
-    fair-migrate <library-root>
+    edufair-migrate <library-root>
 
 Moves each session to `blocks/<id>/slides.md`, writes a `block.yaml`
 carrying what the session's frontmatter knew, and derives `course.yaml`
@@ -207,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(
-        prog="fair-migrate",
+        prog="edufair-migrate",
         description="Convert a flat sessions/ library into a course of blocks",
     )
     ap.add_argument("library", type=Path)

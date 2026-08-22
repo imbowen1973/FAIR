@@ -34,7 +34,7 @@ Rendering happens at the point of use:
 
 1. **In your browser (serverless — the flagship).** Type `owner/repo`
    into the pane's picker. The pane fetches the markdown straight from
-   GitHub and runs the real `fair_renderer` (Python, via Pyodide/
+   GitHub and runs the real `edufair_renderer` (Python, via Pyodide/
    WebAssembly) inside the pane: git → ppt in one hop, decks existing
    only in the tab's memory. First use downloads the ~10 MB Python
    runtime once; after that it's seconds. Public repos only (a browser

@@ -1,5 +1,5 @@
 // git -> ppt entirely inside the pane: fetch a library's markdown
-// straight from GitHub, run the real fair_renderer (Python) in
+// straight from GitHub, run the real edufair_renderer (Python) in
 // WebAssembly via Pyodide, and hand back catalog + deck bytes in
 // memory. No server, no disk, nothing stored anywhere: the render
 // lives in this tab's RAM and dies with it.
@@ -14,7 +14,7 @@ const OUT_DIR = "/out";
 
 const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 
-// fair_renderer modules to load into the Pyodide filesystem. This must
+// edufair_renderer modules to load into the Pyodide filesystem. This must
 // cover every module reachable from corpus.build_corpus — a missing name
 // is a ModuleNotFoundError at render time, in the browser, where nothing
 // else would catch it. tests/wasm-modules.test.mjs derives the required
@@ -89,11 +89,11 @@ async function ensurePyodide(status) {
     await py.pyimport("micropip").install("python-pptx");
 
     status("Loading the FAIR renderer…");
-    py.FS.mkdirTree("/py/fair_renderer");
+    py.FS.mkdirTree("/py/edufair_renderer");
     for (const mod of MODULES) {
-      const res = await fetch(`py/fair_renderer/${mod}.py`);
+      const res = await fetch(`py/edufair_renderer/${mod}.py`);
       if (!res.ok) throw new Error(`cannot load renderer module ${mod} (${res.status})`);
-      py.FS.writeFile(`/py/fair_renderer/${mod}.py`, await res.text());
+      py.FS.writeFile(`/py/edufair_renderer/${mod}.py`, await res.text());
     }
     return py;
   })();
@@ -141,7 +141,7 @@ from pathlib import Path
 if "/py" not in sys.path:
     sys.path.insert(0, "/py")
 shutil.rmtree("${OUT_DIR}", ignore_errors=True)
-from fair_renderer.corpus import build_corpus
+from edufair_renderer.corpus import build_corpus
 root = Path("${LIB_DIR}")
 fw = root / "competencies/framework.yaml"
 cd = root / "credentials"
@@ -159,7 +159,7 @@ Path("${OUT_DIR}/catalog.json").read_text()
 `;
 
 /**
- * The whole flow: repo tree -> raw files -> Pyodide FS -> fair_renderer
+ * The whole flow: repo tree -> raw files -> Pyodide FS -> edufair_renderer
  * -> {catalog, decks}. Decks is Map<sourcePptx, Uint8Array>, alive only
  * in this tab's memory.
  */

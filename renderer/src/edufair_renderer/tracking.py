@@ -1,4 +1,4 @@
-"""fair-track: the curriculum in SQLite, and completion against it.
+"""edufair-track: the curriculum in SQLite, and completion against it.
 
 Two kinds of table live here, and the difference is the whole design:
 
@@ -16,9 +16,9 @@ what, when. Losing it loses activity history, never content.
 That asymmetry is deliberate. Content lives in git; the database holds
 what happened. It never becomes a second place where a slide lives.
 
-    fair-track sync catalog.json --db curriculum.db
-    fair-track complete --learner ada --block 01-foundations --db curriculum.db
-    fair-track report --db curriculum.db
+    edufair-track sync catalog.json --db curriculum.db
+    edufair-track complete --learner ada --block 01-foundations --db curriculum.db
+    edufair-track report --db curriculum.db
 """
 
 from __future__ import annotations
@@ -402,7 +402,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(
-        prog="fair-track",
+        prog="edufair-track",
         description="Project a curriculum into SQLite and record completion against it",
     )
     ap.add_argument("--db", type=Path, default=Path("curriculum.db"))

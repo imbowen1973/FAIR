@@ -1,4 +1,4 @@
-"""Command-line entry point: fair-render."""
+"""Command-line entry point: edufair-render."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .render import RenderError, render_session
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        prog="fair-render",
+        prog="edufair-render",
         description="Render a session.md into a template-bound .pptx deck",
     )
     ap.add_argument("session", type=Path, help="path to session.md")

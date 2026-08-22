@@ -1,11 +1,11 @@
-"""fair-audit: read the provenance out of any .pptx.
+"""edufair-audit: read the provenance out of any .pptx.
 
 Walks every slide of the given deck(s) and reports what the FAIR
 attribution extension and creationId say about where each slide came
 from — including decks assembled from many sources, re-themed, or
 edited after the visible attribution was removed.
 
-    fair-audit deck.pptx [more.pptx ...] [--json]
+    edufair-audit deck.pptx [more.pptx ...] [--json]
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def audit_deck(path: Path) -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="fair-audit", description=__doc__)
+    ap = argparse.ArgumentParser(prog="edufair-audit", description=__doc__)
     ap.add_argument("decks", nargs="+", type=Path)
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     args = ap.parse_args(argv)

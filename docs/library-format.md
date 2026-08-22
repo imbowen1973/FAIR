@@ -34,7 +34,7 @@ Two properties follow from that shape, and they are the reason for it:
 
 **A block is a session, not a deck.** `lessonplan.md` is required and
 `slides.md` is not: plenty of sessions are taught from a plan and a
-workbook with no slides at all. `fair-corpus`, the pane and the workbench
+workbook with no slides at all. `edufair-corpus`, the pane and the workbench
 all apply that rule, because it comes from `library.check_blocks()`
 rather than from any one client.
 
@@ -312,8 +312,8 @@ did before. For one whose outcomes are still free text in deck
 frontmatter:
 
 ```bash
-fair-migrate path/to/library --outcomes          # prints the plan
-fair-migrate path/to/library --outcomes --apply
+edufair-migrate path/to/library --outcomes          # prints the plan
+edufair-migrate path/to/library --outcomes --apply
 ```
 
 It lifts the statements into the catalogue, de-duplicates wording that
@@ -335,11 +335,11 @@ course is taught.
 
 Libraries used to be a flat `sessions/*.md` with the structure declared
 inside the credential, and had nowhere to put anything that was not a
-slide. `fair-migrate` converts one:
+slide. `edufair-migrate` converts one:
 
 ```bash
-fair-migrate path/to/library          # prints the plan, writes nothing
-fair-migrate path/to/library --apply
+edufair-migrate path/to/library          # prints the plan, writes nothing
+edufair-migrate path/to/library --apply
 ```
 
 It moves each session to `blocks/<id>/slides.md`, writes a `block.yaml`

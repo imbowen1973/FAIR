@@ -23,7 +23,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "renderer" / "src"))
 
-from fair_renderer.corpus import build_corpus, CorpusError  # noqa: E402
+from edufair_renderer.corpus import build_corpus, CorpusError  # noqa: E402
 
 # Library layout, per the authoring convention in docs/platform-architecture.md.
 # Only sessions/ and a template are required; the rest sharpen the catalog.

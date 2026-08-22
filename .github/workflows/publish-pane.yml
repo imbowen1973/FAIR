@@ -1,7 +1,7 @@
 name: Publish pane (tool only — no content, no decks)
 
 # Deploys the assembler PANE as a static app to GitHub Pages: HTML/JS/CSS
-# plus the fair_renderer .py sources the in-browser (Pyodide) renderer
+# plus the edufair_renderer .py sources the in-browser (Pyodide) renderer
 # imports. This publishes the TOOL, never content — no catalogs, no
 # decks, no data directory. Rendering happens in each user's browser
 # from markdown fetched straight out of git.
@@ -32,10 +32,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Assemble the static pane (no data)
         run: |
-          mkdir -p _site/py/fair_renderer
+          mkdir -p _site/py/edufair_renderer
           cp -r assembler/web/* _site/
           rm -rf _site/data _site/libraries
-          cp renderer/src/fair_renderer/*.py _site/py/fair_renderer/
+          cp renderer/src/edufair_renderer/*.py _site/py/edufair_renderer/
           # The landing page offers this for download; it lives a level up.
           cp assembler/manifest.web.xml _site/
           # The workbench is the authoring SPA; same static hosting, same

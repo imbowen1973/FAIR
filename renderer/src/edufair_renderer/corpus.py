@@ -1,6 +1,6 @@
 """Corpus builder: render a library of sessions and emit its catalog.
 
-This is what a library repo's CI calls (`fair-corpus`) to publish its
+This is what a library repo's CI calls (`edufair-corpus`) to publish its
 data/ directory — the contract the assembler's Library picker consumes:
 
     <out>/catalog.json
@@ -392,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(
-        prog="fair-corpus",
+        prog="edufair-corpus",
         description="Render every session in a library and emit its catalog (data/ directory)",
     )
     ap.add_argument("library", type=Path, nargs="?", default=None,

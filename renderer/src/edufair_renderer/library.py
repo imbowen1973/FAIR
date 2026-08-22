@@ -168,7 +168,7 @@ def check_blocks(root: Path) -> list[dict]:
     problem at once, not the first one. `[{"where", "message"}]`, empty
     when clean.
 
-    This lives here, not in a client, so `fair-corpus`, the pane and the
+    This lives here, not in a client, so `edufair-corpus`, the pane and the
     workbench all apply the same rule. A rule enforced in one client is
     not a rule.
     """

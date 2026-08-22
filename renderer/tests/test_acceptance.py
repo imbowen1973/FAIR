@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
-from fair_renderer.render import render_session
+from edufair_renderer.render import render_session
 
 REPO = Path(__file__).resolve().parents[2]
 EXAMPLES = REPO / "examples"
@@ -168,7 +168,7 @@ def test_creation_id_present_and_mapped(rendered):
 
 
 def test_creation_id_is_stable():
-    from fair_renderer.creation_id import derive_creation_id
+    from edufair_renderer.creation_id import derive_creation_id
 
     a = derive_creation_id("01", "s01-03")
     b = derive_creation_id("01", "s01-03")
@@ -418,7 +418,7 @@ def test_attribution_notes_line(rendered):
 
 
 def test_audit_reads_provenance(rendered):
-    from fair_renderer.audit import audit_deck
+    from edufair_renderer.audit import audit_deck
 
     entries = audit_deck(rendered["pptx"])
     assert len(entries) == 5
@@ -476,7 +476,7 @@ def test_master_bullet_levels_colored():
 
 def test_layout_map_validation_fails_loudly(tmp_path):
     """A stale placeholder index must abort the build, not misbind."""
-    from fair_renderer.layoutmap import LayoutMapError
+    from edufair_renderer.layoutmap import LayoutMapError
 
     bad_map = tmp_path / "bad-map.yaml"
     bad_map.write_text(
@@ -500,7 +500,7 @@ def _corpus(tmp_path, credential: dict):
 
     import yaml
 
-    from fair_renderer.corpus import build_corpus
+    from edufair_renderer.corpus import build_corpus
 
     sessions = tmp_path / "sessions"
     if not sessions.exists():
@@ -554,7 +554,7 @@ def test_flat_credential_still_validates(tmp_path):
 
 
 def test_unknown_session_in_nested_block_raises(tmp_path):
-    from fair_renderer.corpus import CorpusError
+    from edufair_renderer.corpus import CorpusError
 
     with pytest.raises(CorpusError, match="unknown session"):
         _corpus(
@@ -574,7 +574,7 @@ def test_unknown_session_in_nested_block_raises(tmp_path):
 
 
 def test_container_with_both_sessions_and_days_raises(tmp_path):
-    from fair_renderer.corpus import CorpusError
+    from edufair_renderer.corpus import CorpusError
 
     with pytest.raises(CorpusError, match="one or the other"):
         _corpus(
@@ -626,7 +626,7 @@ def test_attribution_opacity_and_scale_reach_the_xml(tmp_path):
 
 
 def test_attribution_rejects_out_of_range_opacity(tmp_path):
-    from fair_renderer.attribution import AttributionError, load_attribution
+    from edufair_renderer.attribution import AttributionError, load_attribution
 
     path = tmp_path / "attribution.yaml"
     path.write_text('text: "x"\nopacity: 1.5\n', encoding="utf-8")
@@ -635,7 +635,7 @@ def test_attribution_rejects_out_of_range_opacity(tmp_path):
 
 
 def test_attribution_defaults_to_opaque(tmp_path):
-    from fair_renderer.attribution import load_attribution
+    from edufair_renderer.attribution import load_attribution
 
     path = tmp_path / "attribution.yaml"
     path.write_text('text: "x"\n', encoding="utf-8")
@@ -649,7 +649,7 @@ def test_catalog_carries_attribution_and_copies_the_logo(tmp_path):
 
     from PIL import Image
 
-    from fair_renderer.corpus import build_corpus
+    from edufair_renderer.corpus import build_corpus
 
     lib = tmp_path / "lib"
     shutil.copytree(EXAMPLES / "sessions", lib / "sessions")
@@ -685,7 +685,7 @@ def test_catalog_carries_attribution_and_copies_the_logo(tmp_path):
 def test_catalog_attribution_is_null_without_a_config(tmp_path):
     import shutil
 
-    from fair_renderer.corpus import build_corpus
+    from edufair_renderer.corpus import build_corpus
 
     lib = tmp_path / "lib"
     shutil.copytree(EXAMPLES / "sessions", lib / "sessions")
@@ -738,14 +738,14 @@ def test_logo_sizing_and_opacity_are_independent_of_the_text(tmp_path):
     assert abs(cy - 360000) < 2000, f"emblem is {cy / 360000:.2f} cm high, not 1 cm"
 
 
-# --- template profile / fair-template ------------------------------------
+# --- template profile / edufair-template ------------------------------------
 
 STOCK = Path(__import__("pptx").__file__).parent / "templates" / "default.pptx"
 
 
 def test_stock_powerpoint_template_conforms_to_the_core_profile():
     """The whole point: a plain PowerPoint template works unedited."""
-    from fair_renderer.template_inspect import CORE, inspect_template
+    from edufair_renderer.template_inspect import CORE, inspect_template
 
     results = {r.key: r for r in inspect_template(STOCK)}
     for spec in CORE:
@@ -755,8 +755,8 @@ def test_stock_powerpoint_template_conforms_to_the_core_profile():
 
 
 def test_generated_map_renders_real_content_on_a_stock_template(tmp_path):
-    from fair_renderer.layoutmap import load_layout_map
-    from fair_renderer.template_inspect import inspect_template, to_layout_map
+    from edufair_renderer.layoutmap import load_layout_map
+    from edufair_renderer.template_inspect import inspect_template, to_layout_map
 
     map_path = tmp_path / "layout-map.yaml"
     map_path.write_text(to_layout_map(inspect_template(STOCK)), encoding="utf-8")
@@ -775,7 +775,7 @@ def test_inspector_reproduces_the_hand_written_map():
     """The generator agrees with the map this repo has used all along."""
     import yaml
 
-    from fair_renderer.template_inspect import inspect_template, to_layout_map
+    from edufair_renderer.template_inspect import inspect_template, to_layout_map
 
     generated = yaml.safe_load(to_layout_map(inspect_template(EXAMPLES / "template.pptx")))
     committed = yaml.safe_load((EXAMPLES / "layout-map.yaml").read_text(encoding="utf-8"))
@@ -792,7 +792,7 @@ def test_left_and_right_come_from_geometry_not_index_order(tmp_path):
     """
     from pptx import Presentation
 
-    from fair_renderer.template_inspect import _by_x, _r_two_content, Placeholder
+    from edufair_renderer.template_inspect import _by_x, _r_two_content, Placeholder
 
     # idx 1 sits on the RIGHT, idx 2 on the left.
     title = Placeholder(0, None, 0, 0, 100, 10)
@@ -804,7 +804,7 @@ def test_left_and_right_come_from_geometry_not_index_order(tmp_path):
 
 
 def test_missing_picture_placeholder_is_reported_not_silently_bound():
-    from fair_renderer.template_inspect import LayoutResult, report
+    from edufair_renderer.template_inspect import LayoutResult, report
 
     result = LayoutResult(
         key="Picture",
@@ -866,8 +866,8 @@ def _rebrand(src: Path, dst: Path, accents: dict[str, str]) -> Path:
 
 
 def test_cards_injects_into_a_stock_template(tmp_path):
-    from fair_renderer.cards_layout import inject_cards
-    from fair_renderer.template_inspect import inspect_template
+    from edufair_renderer.cards_layout import inject_cards
+    from edufair_renderer.template_inspect import inspect_template
 
     out = tmp_path / "with-cards.pptx"
     assert inject_cards(STOCK, out)["added"] is True
@@ -881,7 +881,7 @@ def test_cards_injects_into_a_stock_template(tmp_path):
 
 def test_injected_cards_take_the_target_theme_colours(tmp_path):
     """The point of injection: theme slots travel, colour values do not."""
-    from fair_renderer.cards_layout import inject_cards
+    from edufair_renderer.cards_layout import inject_cards
 
     brand = {
         "accent1": "E4572E",
@@ -906,7 +906,7 @@ def test_injected_cards_take_the_target_theme_colours(tmp_path):
 def test_cards_injection_is_idempotent(tmp_path):
     from pptx import Presentation
 
-    from fair_renderer.cards_layout import inject_cards
+    from edufair_renderer.cards_layout import inject_cards
 
     assert inject_cards(STOCK, tmp_path / "one.pptx")["added"] is True
     second = inject_cards(tmp_path / "one.pptx", tmp_path / "two.pptx")
@@ -925,7 +925,7 @@ def test_cards_geometry_fits_a_short_widescreen_slide(tmp_path):
     from pptx import Presentation
     from pptx.util import Inches
 
-    from fair_renderer.cards_layout import inject_cards
+    from edufair_renderer.cards_layout import inject_cards
 
     wide = tmp_path / "wide.pptx"
     prs = Presentation(str(STOCK))
@@ -943,8 +943,8 @@ def test_cards_geometry_fits_a_short_widescreen_slide(tmp_path):
 
 
 def test_injected_cards_render_a_real_session(tmp_path):
-    from fair_renderer.cards_layout import inject_cards
-    from fair_renderer.template_inspect import inspect_template, to_layout_map
+    from edufair_renderer.cards_layout import inject_cards
+    from edufair_renderer.template_inspect import inspect_template, to_layout_map
 
     template = tmp_path / "with-cards.pptx"
     inject_cards(STOCK, template)
@@ -981,7 +981,7 @@ def test_regenerating_the_template_reproduces_the_committed_cards():
     """Geometry is exact integer fractions, so the template stays stable."""
     from pptx import Presentation
 
-    from fair_renderer.cards_layout import build_card_shapes
+    from edufair_renderer.cards_layout import build_card_shapes
 
     committed = []
     with zipfile.ZipFile(EXAMPLES / "template.pptx") as z:
@@ -1075,7 +1075,7 @@ def _make_library(root: Path, *, resources: bool = True) -> Path:
 
 
 def test_library_loads_course_blocks_and_resources(tmp_path):
-    from fair_renderer.library import load_library
+    from edufair_renderer.library import load_library
 
     lib = load_library(_make_library(tmp_path / "lib"))
     assert lib.title == "Clinical Educator"
@@ -1096,7 +1096,7 @@ def test_library_loads_course_blocks_and_resources(tmp_path):
 
 
 def test_library_rejects_a_reference_to_a_missing_block(tmp_path):
-    from fair_renderer.library import LibraryError, load_library
+    from edufair_renderer.library import LibraryError, load_library
 
     root = _make_library(tmp_path / "lib")
     course = yaml.safe_load((root / "course.yaml").read_text(encoding="utf-8"))
@@ -1108,7 +1108,7 @@ def test_library_rejects_a_reference_to_a_missing_block(tmp_path):
 
 
 def test_library_rejects_a_resource_that_is_not_there(tmp_path):
-    from fair_renderer.library import LibraryError, load_library
+    from edufair_renderer.library import LibraryError, load_library
 
     root = _make_library(tmp_path / "lib")
     meta_path = root / "blocks" / "01-foundations" / "block.yaml"
@@ -1122,7 +1122,7 @@ def test_library_rejects_a_resource_that_is_not_there(tmp_path):
 
 def test_a_block_missing_from_the_recipe_is_unplaced_not_an_error(tmp_path):
     """Drafting a block before placing it must not break the build."""
-    from fair_renderer.library import load_library
+    from edufair_renderer.library import load_library
 
     root = _make_library(tmp_path / "lib")
     extra = root / "blocks" / "02-draft"
@@ -1137,7 +1137,7 @@ def test_a_block_missing_from_the_recipe_is_unplaced_not_an_error(tmp_path):
 
 
 def test_corpus_from_a_course_carries_structure_and_resources(tmp_path):
-    from fair_renderer.corpus import build_corpus
+    from edufair_renderer.corpus import build_corpus
 
     root = _make_library(tmp_path / "lib")
     out = tmp_path / "out"
@@ -1168,7 +1168,7 @@ def test_corpus_from_a_course_carries_structure_and_resources(tmp_path):
 
 def test_flat_sessions_still_build(tmp_path):
     """The legacy shape has to keep working while libraries migrate."""
-    from fair_renderer.corpus import build_corpus
+    from edufair_renderer.corpus import build_corpus
 
     out = tmp_path / "out"
     summary = build_corpus(
@@ -1216,7 +1216,7 @@ def _flat_library(root: Path) -> Path:
 
 
 def test_migration_is_a_dry_run_until_asked(tmp_path):
-    from fair_renderer.migrate import plan_migration
+    from edufair_renderer.migrate import plan_migration
 
     root = _flat_library(tmp_path / "lib")
     plan = plan_migration(root)
@@ -1227,9 +1227,9 @@ def test_migration_is_a_dry_run_until_asked(tmp_path):
 
 
 def test_migration_builds_blocks_and_keeps_delivery_order(tmp_path):
-    from fair_renderer.corpus import build_corpus
-    from fair_renderer.library import load_library
-    from fair_renderer.migrate import apply_migration, plan_migration
+    from edufair_renderer.corpus import build_corpus
+    from edufair_renderer.library import load_library
+    from edufair_renderer.migrate import apply_migration, plan_migration
 
     root = _flat_library(tmp_path / "lib")
     apply_migration(plan_migration(root))
@@ -1265,7 +1265,7 @@ def test_migration_builds_blocks_and_keeps_delivery_order(tmp_path):
 
 
 def test_migration_refuses_a_library_already_migrated(tmp_path):
-    from fair_renderer.migrate import MigrationError, apply_migration, plan_migration
+    from edufair_renderer.migrate import MigrationError, apply_migration, plan_migration
 
     root = _flat_library(tmp_path / "lib")
     apply_migration(plan_migration(root))
@@ -1285,7 +1285,7 @@ def _marks(spec):
 
 
 def test_every_mark_parses():
-    from fair_renderer.runs import parse_emphasis
+    from edufair_renderer.runs import parse_emphasis
 
     runs = parse_emphasis("**b** *i* ***bi*** x^2^ H~2~O ~~s~~ __u__ `c`")
     by_text = {r.text: _marks(r) for r in runs if r.text.strip()}
@@ -1302,7 +1302,7 @@ def test_every_mark_parses():
 
 def test_marks_nest():
     """A split regex cannot express this; the tokenizer must."""
-    from fair_renderer.runs import parse_emphasis, plain_text
+    from edufair_renderer.runs import parse_emphasis, plain_text
 
     runs = parse_emphasis("**CO~2~ uptake**")
     assert all(r.bold for r in runs), "bold must survive across the nested mark"
@@ -1312,7 +1312,7 @@ def test_marks_nest():
 
 def test_tilde_pairs_before_single_tilde():
     """Otherwise strikethrough would swallow subscript."""
-    from fair_renderer.runs import parse_emphasis
+    from edufair_renderer.runs import parse_emphasis
 
     runs = parse_emphasis("~~struck~~ and H~2~O")
     assert _marks(next(r for r in runs if r.text == "struck")) == {"strike"}
@@ -1320,7 +1320,7 @@ def test_tilde_pairs_before_single_tilde():
 
 
 def test_code_spans_are_literal():
-    from fair_renderer.runs import parse_emphasis
+    from edufair_renderer.runs import parse_emphasis
 
     (run,) = [r for r in parse_emphasis("`**not bold**`") if r.text.strip()]
     assert run.code and not run.bold
@@ -1329,7 +1329,7 @@ def test_code_spans_are_literal():
 
 def test_unclosed_and_underscores_stay_literal():
     """Authors write snake_case and stray asterisks; neither is a mark."""
-    from fair_renderer.runs import parse_emphasis, plain_text
+    from edufair_renderer.runs import parse_emphasis, plain_text
 
     assert plain_text("unclosed ** stays") == "unclosed ** stays"
     assert plain_text("snake_case_name") == "snake_case_name"
@@ -1399,7 +1399,7 @@ def test_code_typeface_is_owned_by_the_library(tmp_path):
         "title: Code\n"
         "full:\n"
         "  type: p\n"
-        '  text: "run `fair-corpus` now"\n'
+        '  text: "run `edufair-corpus` now"\n'
         "---\n",
         encoding="utf-8",
     )
@@ -1417,7 +1417,7 @@ def test_code_typeface_is_owned_by_the_library(tmp_path):
 
 def test_style_block_is_not_mistaken_for_a_layout(tmp_path):
     """_style sits in layout-map.yaml; the loader must skip it."""
-    from fair_renderer.layoutmap import load_layout_map, load_style
+    from edufair_renderer.layoutmap import load_layout_map, load_style
 
     path = tmp_path / "layout-map.yaml"
     path.write_text(
@@ -1504,7 +1504,7 @@ def _catalog_for_tracking() -> dict:
 
 
 def test_sync_projects_the_curriculum(tmp_path):
-    from fair_renderer.tracking import connect, sync_curriculum
+    from edufair_renderer.tracking import connect, sync_curriculum
 
     conn = connect(tmp_path / "c.db")
     counts = sync_curriculum(conn, _catalog_for_tracking())
@@ -1517,7 +1517,7 @@ def test_sync_projects_the_curriculum(tmp_path):
 
 def test_resync_is_idempotent_and_never_touches_events(tmp_path):
     """Curriculum is derived and rebuildable; events are the store of record."""
-    from fair_renderer.tracking import connect, record, sync_curriculum
+    from edufair_renderer.tracking import connect, record, sync_curriculum
 
     conn = connect(tmp_path / "c.db")
     catalog = _catalog_for_tracking()
@@ -1537,7 +1537,7 @@ def test_resync_is_idempotent_and_never_touches_events(tmp_path):
 
 
 def test_completion_evidences_competencies_at_the_slides_dok(tmp_path):
-    from fair_renderer.tracking import connect, record, sync_curriculum
+    from edufair_renderer.tracking import connect, record, sync_curriculum
 
     conn = connect(tmp_path / "c.db")
     sync_curriculum(conn, _catalog_for_tracking())
@@ -1555,7 +1555,7 @@ def test_completion_evidences_competencies_at_the_slides_dok(tmp_path):
 
 def test_credential_requires_the_dok_not_just_the_competency(tmp_path):
     """DOK 2 evidence must not satisfy a DOK 3 requirement."""
-    from fair_renderer.tracking import (
+    from edufair_renderer.tracking import (
         connect,
         credential_progress,
         record,
@@ -1575,7 +1575,7 @@ def test_credential_requires_the_dok_not_just_the_competency(tmp_path):
 
 
 def test_a_learner_with_no_events_has_no_evidence(tmp_path):
-    from fair_renderer.tracking import connect, credential_progress, sync_curriculum
+    from edufair_renderer.tracking import connect, credential_progress, sync_curriculum
 
     conn = connect(tmp_path / "c.db")
     sync_curriculum(conn, _catalog_for_tracking())
@@ -1587,7 +1587,7 @@ def test_a_learner_with_no_events_has_no_evidence(tmp_path):
 
 def test_completion_against_an_unknown_block_is_refused(tmp_path):
     """Otherwise the record accumulates events pointing at nothing."""
-    from fair_renderer.tracking import TrackingError, connect, record, sync_curriculum
+    from edufair_renderer.tracking import TrackingError, connect, record, sync_curriculum
 
     conn = connect(tmp_path / "c.db")
     sync_curriculum(conn, _catalog_for_tracking())
@@ -1598,7 +1598,7 @@ def test_completion_against_an_unknown_block_is_refused(tmp_path):
 
 def test_sync_refuses_a_catalog_with_no_course(tmp_path):
     """A flat library predates the recipe and has nothing to hang events on."""
-    from fair_renderer.tracking import TrackingError, connect, sync_curriculum
+    from edufair_renderer.tracking import TrackingError, connect, sync_curriculum
 
     conn = connect(tmp_path / "c.db")
     with pytest.raises(TrackingError, match="course id"):
@@ -1610,8 +1610,8 @@ def test_tracking_syncs_a_really_rendered_catalog(tmp_path):
     """End to end: render a library, project it, record against it."""
     import shutil
 
-    from fair_renderer.corpus import build_corpus
-    from fair_renderer.tracking import connect, credential_progress, record, sync_curriculum
+    from edufair_renderer.corpus import build_corpus
+    from edufair_renderer.tracking import connect, credential_progress, record, sync_curriculum
 
     root = _make_library(tmp_path / "lib")
     out = tmp_path / "out"
@@ -1639,14 +1639,14 @@ def test_tracking_syncs_a_really_rendered_catalog(tmp_path):
 
 
 def test_check_blocks_is_quiet_on_a_good_library(tmp_path):
-    from fair_renderer.library import check_blocks
+    from edufair_renderer.library import check_blocks
 
     assert check_blocks(_make_library(tmp_path / "lib")) == []
 
 
 def test_check_blocks_wants_a_lesson_plan(tmp_path):
     """A deck with no lesson plan is a slideshow, not a session."""
-    from fair_renderer.library import check_blocks
+    from edufair_renderer.library import check_blocks
 
     root = _make_library(tmp_path / "lib", resources=False)
     problems = check_blocks(root)
@@ -1656,7 +1656,7 @@ def test_check_blocks_wants_a_lesson_plan(tmp_path):
 
 def test_check_blocks_reports_rather_than_raises(tmp_path):
     """An author wants every problem at once, not just the first."""
-    from fair_renderer.library import check_blocks
+    from edufair_renderer.library import check_blocks
 
     root = _make_library(tmp_path / "lib")
     (root / "blocks" / "01-foundations" / "lessonplan.md").unlink()
@@ -1672,7 +1672,7 @@ def test_check_blocks_reports_rather_than_raises(tmp_path):
 
 def test_a_block_may_have_a_lesson_plan_and_no_deck(tmp_path):
     """Not every session is taught from slides."""
-    from fair_renderer.library import check_blocks, load_library
+    from edufair_renderer.library import check_blocks, load_library
 
     root = _make_library(tmp_path / "lib")
     (root / "blocks" / "01-foundations" / "slides.md").unlink()
@@ -1705,7 +1705,7 @@ def _with_outcomes(root: Path, catalogue: dict, block_outcomes=None) -> Path:
 
 def test_an_outcome_may_not_develop_a_competency_that_does_not_exist(tmp_path):
     """A claim the library cannot support is an error, not a warning."""
-    from fair_renderer.outcomes import OutcomeError, load_outcomes
+    from edufair_renderer.outcomes import OutcomeError, load_outcomes
 
     root = _make_library(tmp_path / "lib")
     _with_outcomes(root, {"O1": {"statement": "Do a thing", "develops": ["NOPE"]}})
@@ -1716,7 +1716,7 @@ def test_an_outcome_may_not_develop_a_competency_that_does_not_exist(tmp_path):
 
 def test_a_slide_develops_what_its_outcomes_develop(tmp_path):
     """The derivation everything downstream depends on."""
-    from fair_renderer.outcomes import derive_develops, load_outcomes
+    from edufair_renderer.outcomes import derive_develops, load_outcomes
 
     root = _make_library(tmp_path / "lib")
     _with_outcomes(root, {"O1": {"statement": "Teach well", "develops": ["CE1"]}})
@@ -1731,7 +1731,7 @@ def test_a_slide_develops_what_its_outcomes_develop(tmp_path):
 
 
 def test_a_bare_string_outcome_is_just_its_statement(tmp_path):
-    from fair_renderer.outcomes import load_outcomes
+    from edufair_renderer.outcomes import load_outcomes
 
     root = _make_library(tmp_path / "lib")
     _with_outcomes(root, {"O1": "Not yet mapped to anything"})
@@ -1741,7 +1741,7 @@ def test_a_bare_string_outcome_is_just_its_statement(tmp_path):
 
 
 def test_alignment_reports_every_kind_of_gap(tmp_path):
-    from fair_renderer.library import check_alignment
+    from edufair_renderer.library import check_alignment
 
     root = _make_library(tmp_path / "lib")
     _with_outcomes(
@@ -1772,13 +1772,13 @@ def test_alignment_reports_every_kind_of_gap(tmp_path):
 
 def test_alignment_is_quiet_without_a_catalogue(tmp_path):
     """Additive: a library that never adopts outcomes is not nagged."""
-    from fair_renderer.library import check_alignment
+    from edufair_renderer.library import check_alignment
 
     assert check_alignment(_make_library(tmp_path / "lib")) == []
 
 
 def test_outcomes_on_a_slide_is_metadata_not_a_region(tmp_path):
-    from fair_renderer.parser import SessionParseError, parse_session
+    from edufair_renderer.parser import SessionParseError, parse_session
 
     path = tmp_path / "s.md"
     path.write_text(
@@ -1800,8 +1800,8 @@ def test_a_slide_with_only_outcomes_reaches_the_competency_everywhere(tmp_path):
     """
     import sqlite3
 
-    from fair_renderer.corpus import build_corpus
-    from fair_renderer.tracking import connect, record, sync_curriculum
+    from edufair_renderer.corpus import build_corpus
+    from edufair_renderer.tracking import connect, record, sync_curriculum
 
     root = _make_library(tmp_path / "lib")
     _with_outcomes(
@@ -1850,7 +1850,7 @@ def test_a_slide_with_only_outcomes_reaches_the_competency_everywhere(tmp_path):
 
 def test_a_library_without_outcomes_renders_identically(tmp_path):
     """Additive: adopting outcomes is a choice, not a migration."""
-    from fair_renderer.corpus import build_corpus
+    from edufair_renderer.corpus import build_corpus
 
     root = _make_library(tmp_path / "lib")
     out = tmp_path / "out"
@@ -1867,7 +1867,7 @@ def test_a_library_without_outcomes_renders_identically(tmp_path):
 
 
 def test_lifting_outcomes_is_a_dry_run_until_asked(tmp_path):
-    from fair_renderer.migrate import plan_outcomes
+    from edufair_renderer.migrate import plan_outcomes
 
     root = _make_library(tmp_path / "lib")
     plan = plan_outcomes(root)
@@ -1885,7 +1885,7 @@ def test_lifting_outcomes_is_a_dry_run_until_asked(tmp_path):
 
 
 def test_lifting_outcomes_writes_the_catalogue_and_points_blocks_at_it(tmp_path):
-    from fair_renderer.migrate import apply_outcomes, plan_outcomes
+    from edufair_renderer.migrate import apply_outcomes, plan_outcomes
 
     root = _make_library(tmp_path / "lib")
     apply_outcomes(plan_outcomes(root))
@@ -1911,7 +1911,7 @@ def test_the_same_wording_in_two_sessions_makes_two_outcomes(tmp_path):
     """
     import shutil
 
-    from fair_renderer.migrate import plan_outcomes
+    from edufair_renderer.migrate import plan_outcomes
 
     root = _make_library(tmp_path / "lib")
     shutil.copytree(root / "blocks" / "01-foundations", root / "blocks" / "02-more")
@@ -1927,7 +1927,7 @@ def test_the_same_wording_in_two_sessions_makes_two_outcomes(tmp_path):
 
 
 def test_lifting_outcomes_refuses_to_overwrite_a_catalogue(tmp_path):
-    from fair_renderer.migrate import MigrationError, plan_outcomes
+    from edufair_renderer.migrate import MigrationError, plan_outcomes
 
     root = _make_library(tmp_path / "lib")
     (root / "outcomes.yaml").write_text("outcomes: {}\n", encoding="utf-8")
@@ -1943,7 +1943,7 @@ def test_an_outcome_belongs_to_one_session(tmp_path):
     """
     import shutil
 
-    from fair_renderer.library import check_alignment
+    from edufair_renderer.library import check_alignment
 
     root = _make_library(tmp_path / "lib")
     shutil.copytree(root / "blocks" / "01-foundations", root / "blocks" / "02-more")
@@ -1965,7 +1965,7 @@ def test_an_outcome_belongs_to_one_session(tmp_path):
 
 def test_a_competency_confined_to_one_session_is_flagged(tmp_path):
     """A competency builds across sessions; one that does not is an outcome."""
-    from fair_renderer.library import check_alignment
+    from edufair_renderer.library import check_alignment
 
     root = _make_library(tmp_path / "lib")
     _with_outcomes(
@@ -1986,7 +1986,7 @@ def test_a_competency_confined_to_one_session_is_flagged(tmp_path):
 def test_a_competency_across_two_sessions_is_not_flagged(tmp_path):
     import shutil
 
-    from fair_renderer.library import check_alignment
+    from edufair_renderer.library import check_alignment
 
     root = _make_library(tmp_path / "lib")
     shutil.copytree(root / "blocks" / "01-foundations", root / "blocks" / "02-more")
@@ -2015,8 +2015,8 @@ def test_a_competency_progression_shows_where_it_is_built(tmp_path):
     """
     import shutil
 
-    from fair_renderer.corpus import build_corpus
-    from fair_renderer.tracking import connect, sync_curriculum
+    from edufair_renderer.corpus import build_corpus
+    from edufair_renderer.tracking import connect, sync_curriculum
 
     root = _make_library(tmp_path / "lib")
     shutil.copytree(root / "blocks" / "01-foundations", root / "blocks" / "02-more")
@@ -2087,7 +2087,7 @@ def _role_deck(root: Path) -> Path:
 
 def test_a_role_slide_is_filled_from_the_library(tmp_path):
     """Nothing is typed twice: the deck says what a slide is, not what it says."""
-    from fair_renderer.corpus import build_corpus
+    from edufair_renderer.corpus import build_corpus
 
     root = _make_library(tmp_path / "lib")
     _with_outcomes(
@@ -2135,7 +2135,7 @@ def test_a_role_slide_is_filled_from_the_library(tmp_path):
 
 def test_what_an_author_writes_on_a_role_slide_wins(tmp_path):
     """A role fills what is absent; it never overwrites."""
-    from fair_renderer.corpus import build_corpus
+    from edufair_renderer.corpus import build_corpus
 
     root = _make_library(tmp_path / "lib")
     _with_outcomes(
@@ -2163,7 +2163,7 @@ def test_what_an_author_writes_on_a_role_slide_wins(tmp_path):
 
 
 def test_an_unknown_role_is_refused(tmp_path):
-    from fair_renderer.parser import SessionParseError, parse_session
+    from edufair_renderer.parser import SessionParseError, parse_session
 
     path = tmp_path / "s.md"
     path.write_text(

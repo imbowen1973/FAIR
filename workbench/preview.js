@@ -3,7 +3,7 @@
 // The honest-preview rule (authoring-and-tracking.md §2.2): the schematic
 // answers "is the content in the right region", but the preview an author
 // trusts is the artifact itself. So both validation and Preview deck run
-// the actual fair_renderer in Pyodide — the same Python that runs locally
+// the actual edufair_renderer in Pyodide — the same Python that runs locally
 // and in CI. A simulation could drift; this cannot.
 //
 // The module list is the one thing that must stay in step with the Python
@@ -43,11 +43,11 @@ async function ensurePyodide(status = () => {}) {
     await py.pyimport("micropip").install("python-pptx");
 
     status("Loading the FAIR renderer…");
-    py.FS.mkdirTree("/py/fair_renderer");
+    py.FS.mkdirTree("/py/edufair_renderer");
     for (const mod of MODULES) {
-      const res = await fetch(`../py/fair_renderer/${mod}.py`);
+      const res = await fetch(`../py/edufair_renderer/${mod}.py`);
       if (!res.ok) throw new Error(`cannot load renderer module ${mod} (${res.status})`);
-      py.FS.writeFile(`/py/fair_renderer/${mod}.py`, await res.text());
+      py.FS.writeFile(`/py/edufair_renderer/${mod}.py`, await res.text());
     }
     return py;
   })();
@@ -73,13 +73,13 @@ import json, sys, traceback
 from pathlib import Path
 if "/py" not in sys.path:
     sys.path.insert(0, "/py")
-from fair_renderer.parser import parse_session, SessionParseError
-from fair_renderer.layoutmap import load_layout_map, LayoutMapError
-from fair_renderer.library import check_alignment, check_blocks
+from edufair_renderer.parser import parse_session, SessionParseError
+from edufair_renderer.layoutmap import load_layout_map, LayoutMapError
+from edufair_renderer.library import check_alignment, check_blocks
 
 problems = []
 root = Path("${LIB_DIR}")
-# Block-level rules live in library.py so fair-corpus and the pane apply
+# Block-level rules live in library.py so edufair-corpus and the pane apply
 # the same ones; only the grammar checks below are done here.
 problems.extend(check_blocks(root))
 # Where the course's claims and its content disagree. Warnings here are
@@ -136,7 +136,7 @@ from pathlib import Path
 if "/py" not in sys.path:
     sys.path.insert(0, "/py")
 shutil.rmtree("${OUT_DIR}", ignore_errors=True)
-from fair_renderer.corpus import build_corpus
+from edufair_renderer.corpus import build_corpus
 root = Path("${LIB_DIR}")
 fw = root / "competencies/framework.yaml"
 cd = root / "credentials"

@@ -26,7 +26,7 @@ stock template can be bound with no edits at all — verified in
 
 Designers do diverge: they rename layouts, reorder placeholders, delete
 some and add others. That is what `layout-map.yaml` absorbs, and what
-`fair-template` writes for you.
+`edufair-template` writes for you.
 
 ## Core profile — required
 
@@ -64,7 +64,7 @@ No stock template has `Cards`, and hand-building nine placeholders at
 exact indices would defeat the point of the profile. Inject it instead:
 
 ```bash
-fair-template their-template.pptx --add-cards their-template-cards.pptx
+edufair-template their-template.pptx --add-cards their-template-cards.pptx
 ```
 
 The injected layout carries **no colour values**. Its tabs fill from
@@ -85,7 +85,7 @@ output path is required.
 ## Binding a template
 
 ```bash
-fair-template their-template.pptx --out layout-map.yaml
+edufair-template their-template.pptx --out layout-map.yaml
 ```
 
 It writes the map and prints a conformance report:

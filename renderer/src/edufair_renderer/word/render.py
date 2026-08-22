@@ -295,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
     import yaml
 
     ap = argparse.ArgumentParser(
-        prog="fair-doc",
+        prog="edufair-doc",
         description="Render a markdown document into a branded Word file",
     )
     ap.add_argument("document", type=Path)

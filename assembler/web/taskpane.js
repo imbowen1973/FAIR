@@ -546,7 +546,7 @@ async function assemble() {
 function addSource() {
   const input = $("new-source");
   // A GitHub repo renders IN THE BROWSER: markdown is fetched straight
-  // from git and fair_renderer runs in WebAssembly. git -> ppt, no
+  // from git and edufair_renderer runs in WebAssembly. git -> ppt, no
   // server, decks only in this tab's memory.
   const repo = parseRepoInput(input.value);
   if (repo) {

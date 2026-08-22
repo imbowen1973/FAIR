@@ -58,18 +58,18 @@ LEVEL_BULLET_COLORS = {1: "accent1", 2: "accent2", 3: "accent3"}
 
 CARDS_SOURCE_LAYOUT = "Title and Vertical Text"
 
-# The card shapes themselves live in fair_renderer.cards_layout, which
+# The card shapes themselves live in edufair_renderer.cards_layout, which
 # also injects them into templates this tool did not generate.
 
 
 def build_cards_layout(prs: Presentation) -> None:
     """Turn the unused vertical-text layout into the Cards layout.
 
-    Shares its shapes with fair_renderer.cards_layout, which injects the
+    Shares its shapes with edufair_renderer.cards_layout, which injects the
     same layout into templates we did not generate — one definition, so
     the two can never drift.
     """
-    from fair_renderer.cards_layout import build_card_shapes
+    from edufair_renderer.cards_layout import build_card_shapes
 
     layout = next(
         (

@@ -1,7 +1,7 @@
 """Build this repo's example corpus into the assembler's data directory.
 
-Thin wrapper over `fair-corpus` (fair_renderer.corpus) with the FAIR
-repo's paths. Library repos call `fair-corpus` directly from CI with
+Thin wrapper over `edufair-corpus` (edufair_renderer.corpus) with the FAIR
+repo's paths. Library repos call `edufair-corpus` directly from CI with
 their own paths — see docs/platform-architecture.md.
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "renderer" / "src"))
 
-from fair_renderer.corpus import build_corpus, CorpusError  # noqa: E402
+from edufair_renderer.corpus import build_corpus, CorpusError  # noqa: E402
 
 
 def main() -> int:

@@ -12,7 +12,7 @@ content to deck, so attribution cannot be forgotten):
    origin, licence, session and slide ids. PowerPoint preserves unknown
    extensions through edits, re-theming and cross-deck copies, so this
    survives even after a determined user strips the visible marks —
-   which is what makes stripping provable. `fair-audit` reads it back.
+   which is what makes stripping provable. `edufair-audit` reads it back.
 
 Config: attribution.yaml at the library root (next to sessions/):
 

@@ -186,7 +186,7 @@ async function handler(req, res) {
       await pullLibrary(req, res);
       return;
     }
-    // The fair_renderer sources, for the in-browser (Pyodide) renderer.
+    // The edufair_renderer sources, for the in-browser (Pyodide) renderer.
     // Published deployments serve these as static files under /py/.
     const PY_ROOT = join(REPO, "renderer", "src");
     let filePath;

@@ -20,12 +20,12 @@ notes: |
   layout. Nothing here is styled by the renderer: every colour, font,
   shape and position comes from the template's own masters and layouts.
 
-    fair-render examples/layout-gallery/gallery.md \
+    edufair-render examples/layout-gallery/gallery.md \
       --template <your-template.pptx> \
       --layout-map <your-layout-map.yaml> \
       --out-dir out/gallery
 
-  Generate the layout map first with `fair-template <your-template.pptx>`.
+  Generate the layout map first with `edufair-template <your-template.pptx>`.
 ---
 
 --- slide

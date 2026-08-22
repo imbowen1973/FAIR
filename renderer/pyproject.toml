@@ -1,5 +1,5 @@
 [project]
-name = "fair-renderer"
+name = "edufair-renderer"
 version = "0.1.0"
 description = "Renders session markdown into template-bound .pptx decks (Component A of the MD-to-PowerPoint pipeline)"
 requires-python = ">=3.10"
@@ -14,15 +14,27 @@ dependencies = [
 test = ["pytest>=7.0"]
 
 [project.scripts]
-fair-render = "fair_renderer.cli:main"
-fair-corpus = "fair_renderer.corpus:main"
-fair-template = "fair_renderer.template_inspect:main"
-fair-migrate = "fair_renderer.migrate:main"
-fair-track = "fair_renderer.tracking:main"
-fair-assets = "fair_renderer.assets:main"
-fair-audit = "fair_renderer.audit:main"
-fair-doctemplate = "fair_renderer.word.inspect:main"
-fair-doc = "fair_renderer.word.render:main"
+edufair-render = "edufair_renderer.cli:main"
+edufair-corpus = "edufair_renderer.corpus:main"
+edufair-template = "edufair_renderer.template_inspect:main"
+edufair-migrate = "edufair_renderer.migrate:main"
+edufair-track = "edufair_renderer.tracking:main"
+edufair-assets = "edufair_renderer.assets:main"
+edufair-audit = "edufair_renderer.audit:main"
+edufair-doctemplate = "edufair_renderer.word.inspect:main"
+edufair-doc = "edufair_renderer.word.render:main"
+
+# The old names, kept working. A library's CI calls these by name, and a
+# rename that breaks every project's build on the day it lands is a
+# rename nobody thanks you for. To be removed once the libraries have
+# moved over.
+fair-render = "edufair_renderer.cli:main"
+fair-corpus = "edufair_renderer.corpus:main"
+fair-template = "edufair_renderer.template_inspect:main"
+fair-migrate = "edufair_renderer.migrate:main"
+fair-track = "edufair_renderer.tracking:main"
+fair-assets = "edufair_renderer.assets:main"
+fair-audit = "edufair_renderer.audit:main"
 
 [build-system]
 requires = ["setuptools>=61"]

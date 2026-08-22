@@ -16,8 +16,8 @@ byte-stable determinism (criterion 5).
 
 ```
 docs/                      specs (this file, founding spec, format, platform)
-renderer/                  Component A — Python package `fair-renderer`
-  src/fair_renderer/       parser, layoutmap, runs, render, creation_id,
+renderer/                  Component A — Python package `edufair-renderer`
+  src/edufair_renderer/       parser, layoutmap, runs, render, creation_id,
                            mermaid, zipnorm, cli
   tools/make_template.py   generates the stand-in template
   tests/test_acceptance.py 17 tests, one spec criterion per test
@@ -40,7 +40,7 @@ Python ≥ 3.10; dependencies `python-pptx ≥ 1.0`, `PyYAML ≥ 6.0`.
 Entry point:
 
 ```
-fair-render <session.md> --template <t.pptx> --layout-map <map.yaml> --out-dir <dir>
+edufair-render <session.md> --template <t.pptx> --layout-map <map.yaml> --out-dir <dir>
 ```
 
 ### 2.1 Input grammar

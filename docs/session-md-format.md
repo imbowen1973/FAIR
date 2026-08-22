@@ -167,7 +167,7 @@ Inline marks inside any text:
 | subscript | `H~2~O` | CO~2~ |
 | strikethrough | `~~text~~` | ~~withdrawn~~ |
 | underline | `__text__` | __underlined__ |
-| inline code | `` `text` `` | run `fair-corpus` |
+| inline code | `` `text` `` | run `edufair-corpus` |
 
 **Marks nest**: `**CO~2~ uptake**` is bold throughout with a subscript 2.
 
@@ -208,7 +208,7 @@ hierarchy without writing anything.
 Layouts are addressed by key and bound to the template's own layouts
 by `layout-map.yaml`. The Core profile below is what any stock
 PowerPoint template already provides — see `template-profile.md` for
-the contract and `fair-template` for generating the map.
+the contract and `edufair-template` for generating the map.
 
 The stand-in template ships ten layouts (regions in parentheses):
 
@@ -286,7 +286,7 @@ CC-BY operational:
 2. a source line in the speaker notes
 3. machine-readable provenance (creator, licence, session/slide ids)
    in each slide's XML, which survives re-theming, cross-deck
-   assembly, and removal of the visible marks — `fair-audit deck.pptx`
+   assembly, and removal of the visible marks — `edufair-audit deck.pptx`
    reads it back from any deck, years later
 
 Without the file, layers 1–2 are skipped; layer 3 is always written

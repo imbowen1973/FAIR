@@ -37,7 +37,7 @@ than draft content: the section properties, and any content controls.
 Run the inspector to see what a template offers and get a map to bind to:
 
 ```bash
-fair-doctemplate brand.docx --styles style-map.yaml
+edufair-doctemplate brand.docx --styles style-map.yaml
 ```
 
 ```yaml
@@ -114,7 +114,7 @@ Add them in Word: **Developer → Rich Text Content Control**, then
 ## Rendering
 
 ```bash
-fair-doc workbook.md --template brand.docx --styles style-map.yaml \
+edufair-doc workbook.md --template brand.docx --styles style-map.yaml \
     --out workbook.docx --funding "Co-funded by the Erasmus+ Programme"
 ```
 

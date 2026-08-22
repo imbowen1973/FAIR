@@ -1,6 +1,6 @@
-"""`fair-doctemplate` — what a Word template offers, and the map to bind to.
+"""`edufair-doctemplate` — what a Word template offers, and the map to bind to.
 
-The same job `fair-template` does for a .pptx, and for the same reason.
+The same job `edufair-template` does for a .pptx, and for the same reason.
 Before anything can render, somebody has to answer: which of this
 template's styles is the body text, which is a callout, what is a figure
 caption called here? That answer is `style-map.yaml`, and this writes a
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(
-        prog="fair-doctemplate",
+        prog="edufair-doctemplate",
         description=(
             "Inspect a Word template (.docx, .dotx or .dotm) and emit a draft "
             "style-map.yaml plus a conformance report"

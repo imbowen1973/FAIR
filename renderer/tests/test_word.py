@@ -10,7 +10,7 @@ from docx import Document
 from docx.oxml.ns import qn
 from lxml import etree
 
-from fair_renderer.word.template import (
+from edufair_renderer.word.template import (
     DOCUMENT_CT,
     TEMPLATE_CTS,
     WordTemplateError,
@@ -137,7 +137,7 @@ def test_a_plain_word_template_still_renders(tmp_path):
 
 
 def _blocks(text):
-    from fair_renderer.word.blocks import parse_document
+    from edufair_renderer.word.blocks import parse_document
 
     return parse_document(text)
 
@@ -189,7 +189,7 @@ def test_a_generated_outcomes_section_becomes_a_callout():
 
 def test_the_block_model_has_nowhere_to_put_formatting():
     """The separation, enforced by absence rather than by a rule."""
-    from fair_renderer.word.blocks import Block
+    from edufair_renderer.word.blocks import Block
 
     assert not any(
         field in Block.__dataclass_fields__
@@ -201,7 +201,7 @@ def test_the_block_model_has_nowhere_to_put_formatting():
 
 
 def _render(tmp_path, markdown, *, template=None, meta=None, files=()):
-    from fair_renderer.word.render import DocumentMeta, render_document
+    from edufair_renderer.word.render import DocumentMeta, render_document
 
     tpl = template or _branded(tmp_path / "brand.docx")
     source = tmp_path / "doc.md"
@@ -300,7 +300,7 @@ def test_content_controls_survive_the_clear_and_are_filled(tmp_path):
     Clearing them and then looking for them to fill is how the funding
     statement came out empty.
     """
-    from fair_renderer.word.render import DocumentMeta
+    from edufair_renderer.word.render import DocumentMeta
 
     tpl = _branded(
         tmp_path / "brand.docx",

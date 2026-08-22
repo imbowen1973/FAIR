@@ -9,10 +9,10 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:type="TaskPaneApp">
   <Id>c9d1f7b3-2e84-4a06-b1c5-7f3a9d8e6042</Id>
-  <Version>0.5.0</Version>
+  <Version>0.6.0</Version>
   <ProviderName>FAIR Consortium</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="FAIR Deck Assembler"/>
+  <DisplayName DefaultValue="eduFAIR Deck Assembler"/>
   <Description DefaultValue="Assemble decks by competency from git libraries, rendered in your browser"/>
   <IconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-64.png"/>

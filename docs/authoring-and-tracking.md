@@ -145,7 +145,7 @@ feeding in automatically).
 
 ### 3.1b The curriculum is in the database too — as a projection
 
-`fair-track` implements this in SQLite. Two kinds of table live there,
+`edufair-track` implements this in SQLite. Two kinds of table live there,
 and the difference is the whole design:
 
 - **Curriculum tables are derived.** courses, blocks, slides,
@@ -166,9 +166,9 @@ slides reach. A credential requiring DOK 3 is therefore **not**
 satisfied by DOK 2 evidence, which is the point of recording DOK at all.
 
 ```bash
-fair-track sync data/catalog.json --db curriculum.db
-fair-track complete --learner ada --block 01-foundations --source pr
-fair-track report --learner ada
+edufair-track sync data/catalog.json --db curriculum.db
+edufair-track complete --learner ada --block 01-foundations --source pr
+edufair-track report --learner ada
 ```
 
 The middle layer's API (§3.3) becomes a thin front to this schema; the

@@ -5,7 +5,7 @@ UI, preview the real deck, save to a branch, open a pull request.
 
 Static page, no server. Every repo operation goes browser-direct to
 `api.github.com`, which sends `Access-Control-Allow-Origin: *`. The
-render runs in the tab via Pyodide — the same `fair_renderer` Python that
+render runs in the tab via Pyodide — the same `edufair_renderer` Python that
 runs locally and in CI, so a preview and a build produce identical bytes.
 
 ## Run it
@@ -42,7 +42,7 @@ the template, and a tool that let an author override it would recreate
 exactly what the renderer exists to prevent.
 
 The schematic draws the template's real placeholder rectangles (from
-`layout-geometry.json`, emitted by `fair-template --geometry`) and is
+`layout-geometry.json`, emitted by `edufair-template --geometry`) and is
 styled to look like nothing. It answers *where does this land*.
 **Preview deck** answers *what will it look like*, by rendering the
 actual file.

@@ -1,7 +1,7 @@
 """Inline marks, written as WordprocessingML runs.
 
 The grammar is shared with the deck renderer: `parse_emphasis` in
-`fair_renderer.runs` is the one definition of what `**bold**`, `H~2~O`,
+`edufair_renderer.runs` is the one definition of what `**bold**`, `H~2~O`,
 `x^2^`, `~~struck~~`, `__underlined__` and `` `code` `` mean, and a
 workbook must not disagree with a slide about it.
 

@@ -67,7 +67,7 @@ PowerPoint.
 |---|---|---|
 | `PORT` | 3000 | listen port |
 | `FAIR_BIND` | `127.0.0.1` (local) | set (e.g. `0.0.0.0`) to enable hosted mode: plain HTTP, bind that address |
-| `FAIR_PYTHON` | `<repo>/.venv/bin/python` | python with fair-renderer installed |
+| `FAIR_PYTHON` | `<repo>/.venv/bin/python` | python with edufair-renderer installed |
 | `FAIR_PULL_TOKEN` | unset | if set, `/api/pull` requires `Authorization: Bearer <token>` — a cheap gate for a semi-private instance |
 | `FAIR_PULL_FRESH` | 60 | seconds a pull stays fresh; within the window repeat pulls serve the existing render instead of re-cloning |
 | `FAIR_PULL_TIMEOUT` | 180 | seconds before a stuck pull is killed |

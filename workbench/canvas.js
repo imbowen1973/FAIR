@@ -323,7 +323,7 @@ export function drawSlide(
   if (!layout) {
     host.innerHTML =
       '<p class="empty">No geometry for this layout. Run ' +
-      "<code>fair-template &lt;template&gt; --geometry layout-geometry.json</code> " +
+      "<code>edufair-template &lt;template&gt; --geometry layout-geometry.json</code> " +
       "in the library and commit the result.</p>";
     return new Set(Object.keys(slide || {}));
   }

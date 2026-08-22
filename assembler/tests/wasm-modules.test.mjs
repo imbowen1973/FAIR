@@ -1,4 +1,4 @@
-// The in-browser renderer writes a hand-listed set of fair_renderer
+// The in-browser renderer writes a hand-listed set of edufair_renderer
 // modules into the Pyodide filesystem. A module that render.py imports
 // but the list omits fails only at render time, in a browser, with a
 // ModuleNotFoundError nothing in CI would otherwise catch — which is
@@ -20,7 +20,7 @@ const SRC = join(
   "..",
   "renderer",
   "src",
-  "fair_renderer"
+  "edufair_renderer"
 );
 
 /** Intra-package imports: `from .x import y` and `from . import x`. */
@@ -54,7 +54,7 @@ function reachableFrom(entry) {
 }
 
 test("wasm MODULES covers everything build_corpus imports", () => {
-  // The driver in wasm-renderer.js calls fair_renderer.corpus.build_corpus.
+  // The driver in wasm-renderer.js calls edufair_renderer.corpus.build_corpus.
   const required = reachableFrom("corpus");
   const listed = new Set(MODULES);
   const missing = [...required].filter((m) => !listed.has(m)).sort();
