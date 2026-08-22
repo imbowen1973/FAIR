@@ -208,3 +208,149 @@ export function freeCompetencyId(taken, prefix = "C") {
   }
   return `${prefix}${taken.size + 1}`;
 }
+
+/**
+ * Funding and attribution: the stamp burnt into every slide.
+ *
+ * Repo level, like the competency framework, and for the same reason —
+ * a grant covers a course, not a session. The renderer puts it on every
+ * slide as locked shapes: they cannot be selected, moved or deleted in
+ * PowerPoint's UI, so a deck cannot quietly lose its funder credit on
+ * its way through three people's laptops.
+ *
+ * The logo is sized and faded on its own terms rather than following the
+ * text, and that is not fussiness. An EU emblem carries rules the wording
+ * does not — a 1 cm minimum height, and no alteration — so it has to be
+ * able to sit at full strength beside text that is small and faded.
+ */
+export function attributionEditor(host, { config, logos, resolve, onChange, onUpload, onClear }) {
+  host.innerHTML = "";
+  const data = config || {};
+  const change = (patch, structural = true) =>
+    onChange({ ...data, ...patch }, { structural });
+
+  host.append(
+    el(
+      "p",
+      "hint",
+      "Put on every slide of every session, as shapes PowerPoint will not " +
+        "let anyone select, move or delete. Leave the text empty and no " +
+        "stamp is applied at all."
+    )
+  );
+
+  const text = el("input", "text grow");
+  text.type = "text";
+  text.value = data.text ?? "";
+  text.placeholder = "Funded by … · CC-BY 4.0";
+  text.addEventListener("input", () => change({ text: text.value }, false));
+  host.append(
+    field("Credit line", text, "The wording, exactly as the funder requires it.")
+  );
+
+  // ---- the logo ---------------------------------------------------------
+  const logoBlock = el("div", "attr-logo");
+  logoBlock.append(el("h4", null, "Emblem"));
+
+  if (data.logo) {
+    const current = el("div", "attr-current");
+    const img = el("img");
+    img.src = resolve?.(data.logo) ?? "";
+    img.alt = "";
+    const path = el("span", "hint", data.logo);
+    const drop = el("button", "tool", "×");
+    drop.type = "button";
+    drop.title = "Use no emblem";
+    drop.setAttribute("aria-label", "Remove the emblem");
+    drop.addEventListener("click", () => onClear?.());
+    current.append(img, path, drop);
+    logoBlock.append(current);
+  }
+
+  const file = el("input");
+  file.type = "file";
+  file.accept = "image/*";
+  file.id = "attr-logo-upload";
+  const label = el("label", "media-droplabel", data.logo ? "Replace the emblem" : "Upload an emblem");
+  label.htmlFor = file.id;
+  file.addEventListener("change", () => {
+    if (file.files?.length) onUpload?.(file.files[0]);
+  });
+  logoBlock.append(label, file);
+  logoBlock.append(
+    el(
+      "p",
+      "hint",
+      "Kept as it is: an emblem is not resized or re-encoded the way a " +
+        "photograph is, because most of them may not be altered."
+    )
+  );
+
+  if (logos?.length) {
+    const grid = el("div", "media-grid");
+    for (const path of logos) {
+      const button = el("button", "media-thumb");
+      button.type = "button";
+      button.title = path;
+      const img = el("img");
+      img.src = resolve?.(path) ?? "";
+      img.alt = "";
+      button.append(img, el("span", null, path.split("/").pop()));
+      button.addEventListener("click", () => change({ logo: path }));
+      grid.append(button);
+    }
+    logoBlock.append(grid);
+  }
+  host.append(logoBlock);
+
+  // ---- placement --------------------------------------------------------
+  const corner = el("select", "dok");
+  for (const [value, label_] of [
+    ["bottom-right", "bottom right"],
+    ["bottom-left", "bottom left"],
+  ]) {
+    const option = el("option", null, label_);
+    option.value = value;
+    corner.append(option);
+  }
+  corner.value = data.corner || "bottom-right";
+  corner.addEventListener("change", () => change({ corner: corner.value }));
+  host.append(field("Corner", corner));
+
+  const numbers = el("div", "attr-numbers");
+  for (const [key, label_, hint, min, max, step, fallback] of [
+    ["opacity", "Text opacity", "How far the wording fades back.", 0.1, 1, 0.05, 1],
+    ["scale", "Text size", "Multiplies the stamp's own size.", 0.5, 4, 0.1, 1],
+    [
+      "logo_height_cm",
+      "Emblem height (cm)",
+      "The EU emblem has a 1 cm minimum.",
+      0.3,
+      10,
+      0.1,
+      "",
+    ],
+    ["logo_opacity", "Emblem opacity", "Usually left at 1: most may not be altered.", 0.1, 1, 0.05, 1],
+  ]) {
+    const input = el("input", "text short");
+    input.type = "number";
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = data[key] ?? fallback;
+    input.addEventListener("input", () => {
+      const value = input.value === "" ? null : Number(input.value);
+      const next = { ...data };
+      if (value === null) delete next[key];
+      else next[key] = value;
+      onChange(next, { structural: false });
+    });
+    numbers.append(field(label_, input, hint));
+  }
+  host.append(numbers);
+}
+
+/** Emblems already in the repo. */
+export function repoLogos(paths) {
+  return (paths || []).filter((p) => /^branding\/.+\.(png|jpe?g|gif|svg)$/i.test(p));
+}

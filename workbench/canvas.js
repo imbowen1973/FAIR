@@ -309,6 +309,10 @@ export function drawSlide(
     // How to turn a slide's `src` or `url` into something a browser can
     // load, and what to do when a placeholder is clicked.
     media = {},
+    // The funder stamp the renderer burns into every slide. Shown here
+    // because it is on every slide -- an author who cannot see it will
+    // put a picture under it.
+    attribution = null,
     onChange, onSelectRegion, onMedia,
   }
 ) {
@@ -419,6 +423,33 @@ export function drawSlide(
       box.addEventListener("click", () => onChange?.(region, ""));
     }
     stage.appendChild(box);
+  }
+
+  // The attribution stamp, drawn over the regions exactly as the
+  // renderer layers it: locked shapes on top of the content.
+  if (attribution?.text) {
+    const stamp = document.createElement("div");
+    stamp.className = "attr-stamp " + (attribution.corner === "bottom-left" ? "left" : "right");
+    stamp.style.opacity = String(attribution.opacity ?? 1);
+    if (attribution.logoUrl) {
+      const img = document.createElement("img");
+      img.src = attribution.logoUrl;
+      img.alt = "";
+      img.style.opacity = String(attribution.logo_opacity ?? 1);
+      // Sized in centimetres against the slide's real width, so the
+      // height shown here is the height the deck will use. The EU
+      // emblem has a 1 cm minimum and that has to be checkable on
+      // screen, not only after a render.
+      const cm = attribution.logo_height_cm;
+      const slideCm = ((geometry.slide?.widthEmu ?? 9144000) / 914400) * 2.54;
+      if (cm) img.style.height = `${(cm / slideCm) * stageWidth}px`;
+      stamp.appendChild(img);
+    }
+    const words = document.createElement("span");
+    words.textContent = attribution.text;
+    words.style.fontSize = `${9 * (attribution.scale ?? 1) * scale}px`;
+    stamp.appendChild(words);
+    stage.appendChild(stamp);
   }
 
   host.appendChild(stage);

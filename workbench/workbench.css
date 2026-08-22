@@ -810,3 +810,28 @@ button.media-thumb span {
   font-size: 0.68rem; color: var(--muted); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* The funder stamp, drawn over the regions the way the renderer layers
+   it. Shown while authoring because it is on every slide, and an author
+   who cannot see it will put a picture under it. */
+.attr-stamp {
+  position: absolute; bottom: 1.5%; z-index: 3;
+  display: flex; align-items: center; gap: 0.5em;
+  pointer-events: none; line-height: 1.1;
+}
+.attr-stamp.right { right: 2%; flex-direction: row; }
+.attr-stamp.left { left: 2%; }
+.attr-stamp img { display: block; height: 1.6em; width: auto; }
+
+/* The funding editor. */
+.attr-logo { margin: 16px 0; }
+.attr-logo h4 { margin: 0 0 6px; font-size: 0.82rem; }
+.attr-current {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-sunken); max-width: 30rem;
+}
+.attr-current img { max-height: 40px; max-width: 140px; }
+.attr-logo input[type="file"] { display: none; }
+.attr-numbers { display: flex; gap: 18px; flex-wrap: wrap; }
+.attr-numbers .q-field { max-width: 12rem; }

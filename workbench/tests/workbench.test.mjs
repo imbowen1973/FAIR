@@ -27,6 +27,7 @@ import {
 } from "../documents.js";
 import { markdownToHtml } from "../markdown.js";
 import { repoImages, resolveMedia, videoHost, videoThumb } from "../media.js";
+import { repoLogos } from "../course.js";
 import {
   fillRole,
   freeOutcomeId,
@@ -1081,5 +1082,21 @@ test("the picture already in the repo is offered, the branding is not", () => {
       "blocks/b/media/y.jpg",
     ]),
     ["blocks/a/media/x.png", "blocks/b/media/y.jpg"]
+  );
+});
+
+// ---- funding and attribution -------------------------------------------
+
+test("emblems are found in branding, and only there", () => {
+  // The funder's emblem is a repo-level thing; a picture in a session's
+  // media folder is not one.
+  assert.deepEqual(
+    repoLogos([
+      "branding/eu.png",
+      "branding/university.svg",
+      "blocks/a/media/photo.jpg",
+      "course.yaml",
+    ]),
+    ["branding/eu.png", "branding/university.svg"]
   );
 });

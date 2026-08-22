@@ -38,6 +38,7 @@ const result = await page.evaluate(async () => {
   const { slideMeta } = await import("./meta.js");
   const { resolveMedia, videoHost, videoThumb } = await import("./media.js");
   const { prepareImage } = await import("./attach.js");
+  const { attributionEditor, repoLogos } = await import("./course.js");
   const raw = (p) =>
     fetch(
       `https://raw.githubusercontent.com/Agrifoodskills/Andragogy-Pedagogy/HEAD/${p}`
@@ -472,9 +473,43 @@ const result = await page.evaluate(async () => {
     assets = { skipped: false, refused: String(err.message).slice(0, 60) };
   }
 
+  // The funder stamp goes on every slide, so it is drawn while authoring.
+  // The emblem's height is in centimetres against the slide's real width,
+  // because the EU emblem has a 1 cm minimum and that has to be checkable
+  // on screen rather than only after a render.
+  const stampHost = document.createElement("div");
+  stampHost.style.width = "900px";
+  document.body.appendChild(stampHost);
+  drawSlide(stampHost, {
+    geometry,
+    layoutKey: Object.keys(geometry.layouts)[0],
+    slide: { id: "s", layout: Object.keys(geometry.layouts)[0], title: "A slide" },
+    attribution: {
+      text: "Funded by the European Union",
+      corner: "bottom-left",
+      opacity: 0.45,
+      logo_height_cm: 1,
+      logoUrl:
+        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+    },
+    media: {},
+  });
+  await new Promise((done) => setTimeout(done, 200));
+  const stampEl = stampHost.querySelector(".attr-stamp");
+  const stampImg = stampEl?.querySelector("img");
+  const slideCm = ((geometry.slide?.widthEmu ?? 9144000) / 914400) * 2.54;
+  const stamp = {
+    drawn: Boolean(stampEl),
+    left: Boolean(stampEl?.classList.contains("left")),
+    faded: stampEl?.style.opacity === "0.45",
+    emblemPx: stampImg ? Math.round(stampImg.getBoundingClientRect().height) : 0,
+    // What 1 cm should be on a 900px rendering of this slide.
+    expectedPx: Math.round(900 / slideCm),
+  };
+
   const vacant = host.querySelectorAll(".region.vacant").length;
   return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes,
-    tabbar, mdeditor, question, alignment, derived, rich, media, assets };
+    tabbar, mdeditor, question, alignment, derived, rich, media, assets, stamp };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -528,6 +563,7 @@ console.log(`  competencies confined to one session: ${result.alignment.confined
 console.log(`  derived from outcome: ${JSON.stringify(result.derived.fromOutcome)}`);
 console.log(`  media: ${JSON.stringify(result.media)}`);
 console.log(`  worst-case upload: ${JSON.stringify(result.assets)}`);
+console.log(`  funder stamp: ${JSON.stringify(result.stamp)}`);
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
 console.log(`marks survived serialisation:`, JSON.stringify(result.markEdit));
 if (errors.length) console.log("console errors:", errors.slice(0, 5));
@@ -577,6 +613,10 @@ const failed =
   !result.derived.lit.includes("O1") ||
   !result.derived.lit.includes("AP9") ||
   (!result.assets.skipped && !(result.assets.kb <= 500)) ||
+  !result.stamp.drawn ||
+  !result.stamp.left ||
+  !result.stamp.faded ||
+  Math.abs(result.stamp.emblemPx - result.stamp.expectedPx) > 2 ||
   (!result.media.skipped &&
     (!result.media.image ||
       !result.media.videoStill ||

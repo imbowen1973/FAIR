@@ -38,7 +38,7 @@ import {
 import { tabs } from "./tabs.js";
 import { markdownEditor } from "./mdeditor.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "./yaml.js";
-import { linkFor, prepareUpload, toBase64 } from "./attach.js";
+import { linkFor, prepareUpload, safeName, toBase64 } from "./attach.js";
 import {
   mediaPicker,
   repoImages,
@@ -72,7 +72,13 @@ import {
   hasOutcomesSection,
   refreshOutcomes,
 } from "./summary.js";
-import { competencyEditor, courseHome, freeCompetencyId } from "./course.js";
+import {
+  attributionEditor,
+  competencyEditor,
+  courseHome,
+  freeCompetencyId,
+  repoLogos,
+} from "./course.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -612,6 +618,7 @@ function renderCanvas({ redraw = true } = {}) {
       slide: shown,
       derived: roleRegions(data, layoutRegions(state.library.layoutMap, data.layout)),
       media: mediaHelpers(),
+      attribution: attributionForCanvas(),
       onMedia: openMediaPicker,
       activeRegion,
       editable: true,
@@ -987,6 +994,7 @@ function renderTabs() {
       documents: [
         { id: "overview", title: "Module", type: "course" },
         { id: "competencies", title: "Competencies", type: "course" },
+        { id: "funding", title: "Funding", type: "course" },
         { id: "source", title: "course.yaml", type: "course" },
         ...(back
           ? [{ id: "back", title: `← ${back.meta?.title || back.id}`, type: "back" }]
@@ -1316,6 +1324,7 @@ function renderCourse() {
   host.innerHTML = "";
 
   if (state.courseTab === "source") return renderCourseSource(host);
+  if (state.courseTab === "funding") return renderFunding(host);
   if (state.courseTab === "competencies") return renderCompetencies(host);
 
   const heading = document.createElement("h2");
@@ -1428,6 +1437,74 @@ function renderCompetencies(host) {
   });
 }
 
+/**
+ * Funding and attribution: what goes on every slide.
+ *
+ * Repo level, beside the competency framework, because a grant covers a
+ * course rather than a session.
+ */
+function renderFunding(host) {
+  const heading = document.createElement("h2");
+  heading.className = "course-heading";
+  heading.textContent = "Funding and attribution";
+  host.appendChild(heading);
+  const body = document.createElement("div");
+  host.appendChild(body);
+
+  const path = "attribution.yaml";
+  const read = () => parseYaml(state.edits.get(path) ?? state.files.get(path) ?? "") || {};
+  const write = (next) => {
+    // An empty credit line means no stamp at all, and the renderer reads
+    // that from the file being absent rather than from an empty string.
+    const cleaned = { ...next };
+    for (const [key, value] of Object.entries(cleaned)) {
+      if (value === "" || value === null || value === undefined) delete cleaned[key];
+    }
+    state.edits.set(path, cleaned.text ? stringifyYaml(cleaned) : "");
+    updateActions();
+  };
+
+  const draw = () =>
+    attributionEditor(body, {
+      config: read(),
+      logos: repoLogos([...state.tree, ...state.uploads.keys()]),
+      // Emblems live at the repo root, not inside a block.
+      resolve: (src) =>
+        resolveMedia(src.startsWith("branding/") ? src : `branding/${src}`, {
+          blockId: "",
+          repo: state.repo,
+          uploads: state.uploads,
+          urls: state.mediaUrls,
+        }),
+      onChange: (next, opts) => {
+        write(next);
+        if (opts?.structural !== false) draw();
+      },
+      onClear: () => {
+        const next = { ...read() };
+        delete next.logo;
+        write(next);
+        draw();
+      },
+      onUpload: async (file) => {
+        try {
+          // Kept exactly as supplied. A photograph is resized and
+          // re-encoded; an emblem must not be, because most of them carry
+          // rules forbidding alteration -- the EU's among them.
+          const name = safeName(file.name);
+          const logo = `branding/${name}`;
+          state.uploads.set(logo, new Uint8Array(await file.arrayBuffer()));
+          write({ ...read(), logo });
+          draw();
+          status(`${name} added, unaltered.`, "ok");
+        } catch (err) {
+          status(err.message, "error");
+        }
+      },
+    });
+  draw();
+}
+
 /** course.yaml as text: the orchestrator, edited directly. */
 function renderCourseSource(host) {
   const heading = document.createElement("h2");
@@ -1471,6 +1548,27 @@ function renderCourseSource(host) {
 // from its file path, so the canvas shows it. Three ways one arrives:
 // uploaded through the asset policy, reused from the repo, or linked.
 // All three land in a placeholder the template defines.
+
+/** The funder stamp, as the canvas needs it: config plus a logo URL. */
+function attributionForCanvas() {
+  const text = state.edits.get("attribution.yaml") ?? state.files.get("attribution.yaml") ?? "";
+  let config;
+  try {
+    config = parseYaml(text) || {};
+  } catch {
+    return null; // half-typed YAML is not worth a broken canvas
+  }
+  if (!config.text) return null;
+  const logo = config.logo
+    ? resolveMedia(config.logo.startsWith("branding/") ? config.logo : `branding/${config.logo}`, {
+        blockId: "",
+        repo: state.repo,
+        uploads: state.uploads,
+        urls: state.mediaUrls,
+      })
+    : null;
+  return { ...config, logoUrl: logo };
+}
 
 /** How the canvas turns a slide's src or url into something loadable. */
 function mediaHelpers() {
