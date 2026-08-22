@@ -325,10 +325,16 @@ const result = await page.evaluate(async () => {
   stem.value = "<p>Rewritten</p>";
   stem.dispatchEvent(new Event("input", { bubbles: true }));
   qHost.querySelectorAll(".chip")[1].click();
+  // Moodle's three kinds of feedback are not interchangeable, and the
+  // form has to offer all of them or an import is silently poorer.
   const question = {
     stem: qLatest?.questiontext,
     tags: qLatest?.tags,
     showsSource: Boolean(qHost.querySelector(".q-source code")?.textContent),
+    sections: [...qHost.querySelectorAll("h4")].map((h) => h.textContent),
+    feedbackFields: [...qHost.querySelectorAll(".q-feedback label")].map(
+      (l) => l.textContent
+    ),
   };
 
   // The alignment map: an outcome nothing serves is a claim with no
@@ -425,7 +431,9 @@ console.log(`  rich editor mounted: ${result.rich.mounted}` +
   ` (${result.rich.headings} heading, ${result.rich.items} items),` +
   ` changes on load: ${result.rich.changesOnLoad}`);
 console.log(`  markdown bold: ${JSON.stringify(result.mdeditor.bolded)}`);
-console.log(`  question edits kept: ${JSON.stringify(result.question)}`);
+console.log(`  question edits kept: ${JSON.stringify({ stem: result.question.stem, tags: result.question.tags })}`);
+console.log(`  question sections: ${result.question.sections.join(" | ")}`);
+console.log(`  feedback offered: ${result.question.feedbackFields.join(" | ")}`);
 console.log(`  outcome coverage: ${result.alignment.coverage.join(" / ")}`);
 console.log(`  grouped by session: ${result.alignment.groups.join(" | ")}`);
 console.log(`  competencies confined to one session: ${result.alignment.confined.join(", ") || "none"}`);
@@ -467,6 +475,9 @@ const failed =
   !result.question.tags?.includes("AP2") ||
   !result.question.tags?.includes("AP1") ||
   !result.question.showsSource ||
+  !result.question.sections.includes("Feedback") ||
+  !result.question.sections.includes("Hints between attempts") ||
+  result.question.feedbackFields.length !== 4 ||
   result.alignment.flagged !== 1 ||
   !result.alignment.groups.includes("First session") ||
   !result.alignment.groups.includes("Not yet assigned to a session") ||

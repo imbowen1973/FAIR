@@ -42,6 +42,7 @@ import {
   summaryTemplate,
 } from "../summary.js";
 import {
+  blankQuestion,
   competencyTags,
   renderQuizFile,
   splitQuestions,
@@ -946,4 +947,95 @@ test("a document named by the author takes that name as its file", () => {
   );
   // And with no name given, the kind's own file.
   assert.equal(freePath("workbook", new Set()), "workbook.md");
+});
+
+// ---- Moodle's structured feedback --------------------------------------
+
+test("a multiple choice question carries Moodle's combined feedback", () => {
+  // Three outcomes, not one blob: this is what makes a quiz teach
+  // rather than only score.
+  const xml = writeQuestion({
+    type: "multichoice",
+    name: "Q1",
+    questiontext: "<p>Which?</p>",
+    single: false,
+    shownumcorrect: true,
+    correctfeedback: "Exactly right.",
+    partiallycorrectfeedback: "Half way there.",
+    incorrectfeedback: "Not this time.",
+    answers: [{ text: "a", fraction: "50", feedback: "yes" }],
+  });
+  assert.ok(xml.includes("<correctfeedback format=\"html\">"));
+  assert.ok(xml.includes("Exactly right."));
+  assert.ok(xml.includes("Half way there."));
+  assert.ok(xml.includes("Not this time."));
+  assert.ok(xml.includes("<shownumcorrect/>"));
+  assert.ok(xml.includes("<showstandardinstruction>0</showstandardinstruction>"));
+});
+
+test("a new question gets Moodle's own default wording", () => {
+  // So a question created here imports looking like one created there,
+  // rather than with three empty feedback fields.
+  const q = blankQuestion("multichoice", "Q1");
+  assert.equal(q.correctfeedback, "Your answer is correct.");
+  assert.equal(q.partiallycorrectfeedback, "Your answer is partially correct.");
+  assert.equal(q.incorrectfeedback, "Your answer is incorrect.");
+});
+
+test("counting correct answers is only offered when more than one can be", () => {
+  const single = writeQuestion({
+    type: "multichoice", name: "Q", single: true, shownumcorrect: true, answers: [],
+  });
+  assert.ok(!single.includes("<shownumcorrect/>"), "meaningless on a single-answer question");
+});
+
+test("hints are written in order, with their own flags", () => {
+  const xml = writeQuestion({
+    type: "multichoice",
+    name: "Q",
+    hints: [
+      { text: "Think about consent", shownumcorrect: true },
+      { text: "Two are right", clearwrong: true, options: true },
+      { text: "   " },
+    ],
+    answers: [],
+  });
+  const hints = xml.split("<hint ").length - 1;
+  assert.equal(hints, 2, "an empty hint is not written");
+  assert.ok(xml.indexOf("Think about consent") < xml.indexOf("Two are right"));
+  assert.ok(xml.includes("<clearwrong/>"));
+  assert.ok(xml.includes("<options>1</options>"));
+});
+
+test("a short answer question says whether case matters", () => {
+  assert.ok(writeQuestion({ type: "shortanswer", name: "Q", usecase: true, answers: [] })
+    .includes("<usecase>1</usecase>"));
+  assert.ok(writeQuestion({ type: "shortanswer", name: "Q", answers: [] })
+    .includes("<usecase>0</usecase>"));
+});
+
+test("an essay carries the marker's notes, which the learner never sees", () => {
+  const xml = writeQuestion({
+    type: "essay",
+    name: "Q",
+    graderinfo: "Look for a reference to consent.",
+    responsefieldlines: 15,
+    attachments: 2,
+  });
+  assert.ok(xml.includes("<graderinfo format=\"html\">"));
+  assert.ok(xml.includes("Look for a reference to consent."));
+  assert.ok(xml.includes("<responsefieldlines>15</responsefieldlines>"));
+  assert.ok(xml.includes("<attachments>2</attachments>"));
+  // Combined feedback is a multichoice thing; an essay has no "wrong".
+  assert.ok(!xml.includes("<correctfeedback"));
+});
+
+test("an untouched question is still byte-identical after all of this", () => {
+  // The rule the whole editor rests on, re-checked now the writer emits
+  // considerably more.
+  const parsed = splitQuestions(QUIZ);
+  const untouched = parsed.questions.map((q, i) => ({
+    sourceIndex: i, data: null, dirty: false,
+  }));
+  assert.equal(renderQuizFile(parsed, untouched), QUIZ);
 });

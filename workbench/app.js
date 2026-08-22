@@ -1641,8 +1641,13 @@ function renderQuestion(host, doc) {
   let view;
   const onChange = (next) => {
     const entry = working[index];
+    // What changes the form's own shape: a row added or removed, and the
+    // toggles that reveal or hide a field. Anything else is typing, and
+    // rebuilding then would cost the caret.
     const structural =
       (next.answers?.length ?? 0) !== (entry.data?.answers?.length ?? 0) ||
+      (next.hints?.length ?? 0) !== (entry.data?.hints?.length ?? 0) ||
+      next.single !== entry.data?.single ||
       JSON.stringify(next.tags) !== JSON.stringify(entry.data?.tags);
     entry.data = next;
     entry.dirty = true;

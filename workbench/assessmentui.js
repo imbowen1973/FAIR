@@ -8,6 +8,9 @@
 
 import { EDITABLE, TYPE_LABEL, competencyTags, toTags, writeQuestion } from "./assessment.js";
 
+/** Types Moodle gives combined feedback and hint options to. */
+const COMBINED_TYPES = ["multichoice"];
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -82,13 +85,8 @@ export function questionForm(host, { data, competencies, outcomes, onChange }) {
 
     if (data.type !== "essay") host.append(answersBlock(data, latest, change));
 
-    const feedback = el("textarea", "q-text");
-    feedback.rows = 2;
-    feedback.value = data.generalfeedback ?? "";
-    feedback.addEventListener("input", () => change({ generalfeedback: feedback.value }));
-    host.append(
-      field("General feedback", feedback, "Shown to every learner after they answer.")
-    );
+    host.append(feedbackBlock(data, latest, change));
+    host.append(hintsBlock(data, latest, change));
 
     const grade = el("input", "text short");
     grade.type = "number";
@@ -98,15 +96,7 @@ export function questionForm(host, { data, competencies, outcomes, onChange }) {
     grade.addEventListener("input", () => change({ defaultgrade: Number(grade.value) }));
     host.append(field("Default grade", grade));
 
-    if (data.type === "multichoice") {
-      const single = el("label", "check");
-      const box = el("input");
-      box.type = "checkbox";
-      box.checked = data.single !== false;
-      box.addEventListener("change", () => change({ single: box.checked }));
-      single.append(box, document.createTextNode(" One answer only"));
-      host.append(single);
-    }
+    host.append(settingsBlock(data, change));
 
     host.append(tagsBlock(data, latest, competencies, outcomes, change));
   }
@@ -279,5 +269,226 @@ function tagsBlock(data, latest, competencies, outcomes, change) {
     })
   );
   wrap.append(field("Depth of knowledge", select, "Written as a dok: tag Moodle carries through."));
+  return wrap;
+}
+
+/**
+ * Feedback, as Moodle structures it.
+ *
+ * Three kinds, and they are not interchangeable:
+ *
+ *   General      everyone sees it, whatever they answered. Where the
+ *                explanation goes.
+ *   Combined     one of three, by how they did. This is what makes a
+ *                quiz teach rather than only score.
+ *   Per answer   attached to a single option, and written beside it.
+ *
+ * Moodle's own default wording is used for the combined three, so a
+ * question written here imports looking like one written there.
+ */
+function feedbackBlock(data, latest, change) {
+  const wrap = el("div", "q-feedback");
+  wrap.append(el("h4", null, "Feedback"));
+
+  const general = el("textarea", "q-text");
+  general.rows = 2;
+  general.value = data.generalfeedback ?? "";
+  general.addEventListener("input", () => change({ generalfeedback: general.value }));
+  wrap.append(
+    field("Everyone sees", general, "Shown after answering, whatever they chose.")
+  );
+
+  if (!COMBINED_TYPES.includes(data.type)) return wrap;
+
+  for (const [key, label, hint] of [
+    ["correctfeedback", "When they are right", null],
+    [
+      "partiallycorrectfeedback",
+      "When they are partly right",
+      "Only reachable when more than one answer can be chosen.",
+    ],
+    ["incorrectfeedback", "When they are wrong", null],
+  ]) {
+    const box = el("input", "text grow");
+    box.type = "text";
+    box.value = data[key] ?? "";
+    box.addEventListener("input", () => change({ [key]: box.value }));
+    wrap.append(field(label, box, hint));
+  }
+
+  if (data.single === false) {
+    const line = el("label", "check");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = Boolean(data.shownumcorrect);
+    box.addEventListener("change", () => change({ shownumcorrect: box.checked }));
+    line.append(box, document.createTextNode(" Tell them how many they got right"));
+    wrap.append(line);
+  }
+  return wrap;
+}
+
+/**
+ * Hints: what a quiz shows between attempts.
+ *
+ * They only appear in Moodle's interactive and adaptive modes, which is
+ * worth saying — an author who adds three hints and never sees them in a
+ * plain quiz would reasonably conclude the editor is broken.
+ */
+function hintsBlock(data, latest, change) {
+  const wrap = el("div", "q-hints");
+  wrap.append(el("h4", null, "Hints between attempts"));
+  wrap.append(
+    el(
+      "p",
+      "hint",
+      "Shown one at a time when a learner tries again — in Moodle's " +
+        "interactive or adaptive modes only."
+    )
+  );
+
+  const hints = data.hints ?? [];
+  hints.forEach((hint, index) => {
+    const row = el("div", "q-hint");
+    const text = el("input", "text grow");
+    text.type = "text";
+    text.value = hint.text ?? "";
+    text.placeholder = `Hint ${index + 1}`;
+    text.setAttribute("aria-label", `Hint ${index + 1}`);
+    text.addEventListener("input", () => {
+      const next = [...latest().hints];
+      next[index] = { ...next[index], text: text.value };
+      change({ hints: next });
+    });
+    row.append(text);
+
+    if (COMBINED_TYPES.includes(data.type)) {
+      for (const [key, label, title] of [
+        ["shownumcorrect", "count", "Show how many are right so far"],
+        ["clearwrong", "clear", "Clear the wrong choices before they try again"],
+        ["options", "hide", "Remove the wrong options entirely"],
+      ]) {
+        const toggle = el("label", "check tight");
+        const box = el("input");
+        box.type = "checkbox";
+        box.checked = Boolean(hint[key]);
+        box.title = title;
+        box.addEventListener("change", () => {
+          const next = [...latest().hints];
+          next[index] = { ...next[index], [key]: box.checked };
+          change({ hints: next });
+        });
+        toggle.append(box, document.createTextNode(` ${label}`));
+        row.append(toggle);
+      }
+    }
+
+    const remove = el("button", "tool", "×");
+    remove.type = "button";
+    remove.title = `Remove hint ${index + 1}`;
+    remove.setAttribute("aria-label", `Remove hint ${index + 1}`);
+    remove.addEventListener("click", () =>
+      change({ hints: latest().hints.filter((_, i) => i !== index) })
+    );
+    row.append(remove);
+    wrap.append(row);
+  });
+
+  const add = el("button", "add-slide", "+ hint");
+  add.type = "button";
+  add.addEventListener("click", () =>
+    change({ hints: [...(latest().hints ?? []), { text: "" }] })
+  );
+  wrap.append(add);
+  return wrap;
+}
+
+/**
+ * The settings that belong to one question type.
+ *
+ * Kept together and kept small: Moodle offers a great many per-type
+ * options, and most of them are defaults nobody should have to think
+ * about. These are the ones that change what a learner actually
+ * experiences.
+ */
+function settingsBlock(data, change) {
+  const wrap = el("div", "q-settings");
+
+  if (data.type === "multichoice") {
+    const single = el("label", "check");
+    const one = el("input");
+    one.type = "checkbox";
+    one.checked = data.single !== false;
+    one.addEventListener("change", () => change({ single: one.checked }));
+    single.append(one, document.createTextNode(" One answer only"));
+
+    const shuffle = el("label", "check");
+    const mix = el("input");
+    mix.type = "checkbox";
+    mix.checked = data.shuffleanswers !== false;
+    mix.addEventListener("change", () => change({ shuffleanswers: mix.checked }));
+    shuffle.append(mix, document.createTextNode(" Shuffle the answers"));
+
+    const numbering = el("select", "dok");
+    for (const [value, label] of [
+      ["abc", "a. b. c."],
+      ["ABCD", "A. B. C."],
+      ["123", "1. 2. 3."],
+      ["none", "no numbering"],
+    ]) {
+      const option = el("option", null, label);
+      option.value = value;
+      numbering.append(option);
+    }
+    numbering.value = data.answernumbering || "abc";
+    numbering.addEventListener("change", () =>
+      change({ answernumbering: numbering.value })
+    );
+    wrap.append(single, shuffle, field("Numbering", numbering));
+    return wrap;
+  }
+
+  if (data.type === "shortanswer") {
+    const line = el("label", "check");
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = Boolean(data.usecase);
+    box.addEventListener("change", () => change({ usecase: box.checked }));
+    line.append(box, document.createTextNode(" Capital letters must match"));
+    wrap.append(line);
+    return wrap;
+  }
+
+  if (data.type === "essay") {
+    const lines = el("input", "text short");
+    lines.type = "number";
+    lines.min = "1";
+    lines.value = String(data.responsefieldlines ?? 10);
+    lines.addEventListener("input", () =>
+      change({ responsefieldlines: Number(lines.value) })
+    );
+    wrap.append(field("Lines in the answer box", lines));
+
+    const attachments = el("select", "dok");
+    for (const value of ["0", "1", "2", "3"]) {
+      const option = el("option", null, value === "0" ? "none" : value);
+      option.value = value;
+      attachments.append(option);
+    }
+    attachments.value = String(data.attachments ?? 0);
+    attachments.addEventListener("change", () =>
+      change({ attachments: Number(attachments.value) })
+    );
+    wrap.append(field("Files they may attach", attachments));
+
+    const grader = el("textarea", "q-text");
+    grader.rows = 2;
+    grader.value = data.graderinfo ?? "";
+    grader.addEventListener("input", () => change({ graderinfo: grader.value }));
+    wrap.append(
+      field("Notes for the marker", grader, "Never shown to the learner.")
+    );
+    return wrap;
+  }
   return wrap;
 }

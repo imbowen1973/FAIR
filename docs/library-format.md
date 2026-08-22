@@ -166,6 +166,23 @@ that changed, leaving every other byte identical — including questions
 of a type it does not understand, which it shows read-only rather than
 risk losing.
 
+**Feedback has three kinds in Moodle, and they are not interchangeable:**
+
+| Kind | Who sees it |
+|---|---|
+| General | everyone, whatever they answered — where the explanation goes |
+| Combined | one of three, by whether they were right, partly right or wrong |
+| Per answer | attached to a single option |
+
+The combined three are what make a quiz teach rather than only score,
+and a new question is seeded with Moodle's own default wording so an
+import is never silently missing them.
+
+**Hints** are shown one at a time between attempts, in Moodle's
+interactive and adaptive modes only. Each can also tell the learner how
+many they have right, clear their wrong choices, or remove the wrong
+options entirely.
+
 ## Media
 
 `media/` sits inside the block that uses it, and `slides.md` references

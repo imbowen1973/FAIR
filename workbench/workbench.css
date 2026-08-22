@@ -748,3 +748,13 @@ button.kind-option.on .kind-label::before { content: "✓ "; color: var(--accent
 .menu-name { display: flex; align-items: center; gap: 8px; margin: 8px 4px 6px; }
 .menu-name label { font-size: 0.8rem; color: var(--muted); }
 .menu-actions { display: flex; justify-content: flex-end; margin: 0 4px 4px; }
+
+/* Feedback and hints: Moodle's three kinds, kept apart because they are
+   not interchangeable — everyone, by outcome, and per answer. */
+.q-feedback, .q-hints, .q-settings { margin: 16px 0; }
+.q-feedback h4, .q-hints h4 { margin: 0 0 6px; font-size: 0.82rem; }
+.q-hints .hint { margin: 0 0 8px; }
+.q-hint { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.q-settings { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+.q-settings .q-field { margin-bottom: 0; }
+label.check.tight { font-size: 0.76rem; color: var(--muted); gap: 3px; }

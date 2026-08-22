@@ -156,40 +156,91 @@ function textEl(name, value, indent, { raw = false } = {}) {
  * Written only for questions the author actually changed, so the shape
  * here never touches a question this editor does not understand.
  */
+/**
+ * Moodle's combined feedback, which is per-outcome rather than per-answer.
+ *
+ * A learner sees one of these three depending on how they did, and they
+ * are what makes a quiz teach rather than just score. Moodle's own
+ * defaults are used for a new question so an import is never silently
+ * missing them.
+ */
+const COMBINED = [
+  ["correctfeedback", "Your answer is correct."],
+  ["partiallycorrectfeedback", "Your answer is partially correct."],
+  ["incorrectfeedback", "Your answer is incorrect."],
+];
+
+/** Types that carry combined feedback and hints. */
+const HAS_COMBINED = new Set(["multichoice", "matching", "gapselect", "ddwtos"]);
+
 export function writeQuestion(data, nl = "\n") {
   const i = "    ";
   const out = [`  <question type="${attr(data.type)}">`];
+  const html = (name, value, indent = i) => {
+    out.push(`${indent}<${name} format="html">`);
+    out.push(textEl("text", value || "", indent + "  ", { raw: true }));
+    out.push(`${indent}</${name}>`);
+  };
+
   out.push(`${i}<name>`);
   out.push(textEl("text", data.name || "", i + "  "));
   out.push(`${i}</name>`);
-  out.push(`${i}<questiontext format="html">`);
-  out.push(textEl("text", data.questiontext || "", i + "  ", { raw: true }));
-  out.push(`${i}</questiontext>`);
-  out.push(`${i}<generalfeedback format="html">`);
-  out.push(textEl("text", data.generalfeedback || "", i + "  ", { raw: true }));
-  out.push(`${i}</generalfeedback>`);
+  html("questiontext", data.questiontext);
+  html("generalfeedback", data.generalfeedback);
   out.push(`${i}<defaultgrade>${Number(data.defaultgrade ?? 1).toFixed(7)}</defaultgrade>`);
   out.push(`${i}<penalty>${Number(data.penalty ?? 0.3333333).toFixed(7)}</penalty>`);
   out.push(`${i}<hidden>0</hidden>`);
+  if (data.idnumber) out.push(`${i}<idnumber>${attr(data.idnumber)}</idnumber>`);
 
   if (data.type === "multichoice") {
     out.push(`${i}<single>${data.single === false ? "false" : "true"}</single>`);
     out.push(`${i}<shuffleanswers>${data.shuffleanswers === false ? "false" : "true"}</shuffleanswers>`);
-    out.push(`${i}<answernumbering>abc</answernumbering>`);
+    out.push(`${i}<answernumbering>${attr(data.answernumbering || "abc")}</answernumbering>`);
+    out.push(`${i}<showstandardinstruction>0</showstandardinstruction>`);
+  }
+  if (data.type === "shortanswer") {
+    // Whether case matters. Off is the sane default for free text.
+    out.push(`${i}<usecase>${data.usecase ? 1 : 0}</usecase>`);
   }
   if (data.type === "essay") {
-    out.push(`${i}<responseformat>editor</responseformat>`);
-    out.push(`${i}<responserequired>1</responserequired>`);
-    out.push(`${i}<attachments>0</attachments>`);
+    out.push(`${i}<responseformat>${attr(data.responseformat || "editor")}</responseformat>`);
+    out.push(`${i}<responserequired>${data.responserequired === false ? 0 : 1}</responserequired>`);
+    out.push(`${i}<responsefieldlines>${Number(data.responsefieldlines ?? 10)}</responsefieldlines>`);
+    out.push(`${i}<attachments>${Number(data.attachments ?? 0)}</attachments>`);
+    out.push(`${i}<attachmentsrequired>${Number(data.attachmentsrequired ?? 0)}</attachmentsrequired>`);
+    // What the marker is told, which the learner never sees.
+    html("graderinfo", data.graderinfo);
+    html("responsetemplate", data.responsetemplate);
+  }
+
+  if (HAS_COMBINED.has(data.type)) {
+    for (const [name, fallback] of COMBINED) {
+      html(name, data[name] ?? fallback);
+    }
+    // Only meaningful when more than one answer can be right.
+    if (data.shownumcorrect && data.single === false) {
+      out.push(`${i}<shownumcorrect/>`);
+    }
   }
 
   for (const answer of data.answers ?? []) {
     out.push(`${i}<answer fraction="${attr(answer.fraction ?? 0)}" format="html">`);
     out.push(textEl("text", answer.text || "", i + "  ", { raw: true }));
-    out.push(`${i + "  "}<feedback format="html">`);
-    out.push(textEl("text", answer.feedback || "", i + "    ", { raw: true }));
-    out.push(`${i + "  "}</feedback>`);
+    html("feedback", answer.feedback, i + "  ");
     out.push(`${i}</answer>`);
+  }
+
+  // Hints are what an adaptive or interactive quiz shows between tries.
+  // Each is a nudge; the flags say what Moodle does alongside showing it.
+  for (const hint of data.hints ?? []) {
+    const text = typeof hint === "string" ? hint : hint.text;
+    if (!String(text ?? "").trim()) continue;
+    out.push(`${i}<hint format="html">`);
+    out.push(textEl("text", text, i + "  ", { raw: true }));
+    if (hint.shownumcorrect) out.push(`${i + "  "}<shownumcorrect/>`);
+    if (hint.clearwrong) out.push(`${i + "  "}<clearwrong/>`);
+    if (hint.options) out.push(`${i + "  "}<options>1</options>`);
+    out.push(`${i}</hint>`);
   }
 
   // Competency and depth of knowledge ride in tags, which Moodle imports
@@ -217,8 +268,14 @@ export function blankQuestion(type, name) {
     defaultgrade: 1,
     penalty: 0.3333333,
     tags: [],
+    hints: [],
     answers: [],
   };
+  if (HAS_COMBINED.has(type)) {
+    // Moodle's own wording, so a question created here imports looking
+    // like one created there rather than with three empty fields.
+    for (const [name_, fallback] of COMBINED) base[name_] = fallback;
+  }
   if (type === "multichoice") {
     base.single = true;
     base.shuffleanswers = true;
@@ -290,6 +347,14 @@ export function readQuestion(source) {
     feedback: inner(a, ":scope > feedback > text"),
   }));
 
+  // Hints are ordered, and each carries its own flags.
+  const hints = [...element.querySelectorAll(":scope > hint")].map((h) => ({
+    text: h.querySelector(":scope > text")?.textContent ?? "",
+    shownumcorrect: Boolean(h.querySelector(":scope > shownumcorrect")),
+    clearwrong: Boolean(h.querySelector(":scope > clearwrong")),
+    options: Boolean(h.querySelector(":scope > options")),
+  }));
+
   return {
     type,
     name: inner(element, ":scope > name > text"),
@@ -297,8 +362,23 @@ export function readQuestion(source) {
     generalfeedback: inner(element, ":scope > generalfeedback > text"),
     defaultgrade: Number(inner(element, ":scope > defaultgrade") || 1),
     penalty: Number(inner(element, ":scope > penalty") || 0.3333333),
+    idnumber: inner(element, ":scope > idnumber"),
     single: inner(element, ":scope > single") !== "false",
     shuffleanswers: inner(element, ":scope > shuffleanswers") !== "false",
+    answernumbering: inner(element, ":scope > answernumbering") || "abc",
+    // Moodle's combined feedback: what a learner sees for getting it
+    // right, half right, or wrong.
+    correctfeedback: inner(element, ":scope > correctfeedback > text"),
+    partiallycorrectfeedback: inner(element, ":scope > partiallycorrectfeedback > text"),
+    incorrectfeedback: inner(element, ":scope > incorrectfeedback > text"),
+    shownumcorrect: Boolean(element.querySelector(":scope > shownumcorrect")),
+    usecase: inner(element, ":scope > usecase") === "1",
+    responseformat: inner(element, ":scope > responseformat") || "editor",
+    responsefieldlines: Number(inner(element, ":scope > responsefieldlines") || 10),
+    attachments: Number(inner(element, ":scope > attachments") || 0),
+    graderinfo: inner(element, ":scope > graderinfo > text"),
+    responsetemplate: inner(element, ":scope > responsetemplate > text"),
+    hints,
     answers,
     tags: [...element.querySelectorAll(":scope > tags > tag > text")].map(
       (t) => t.textContent
