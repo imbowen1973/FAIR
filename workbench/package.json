@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/",
-    "test:visual": "node tests/visual-check.mjs"
+    "test:visual": "node tests/visual-check.mjs",
+    "test:create": "node tests/create-check.mjs"
   },
   "devDependencies": {
     "js-yaml": "^4.1.0",

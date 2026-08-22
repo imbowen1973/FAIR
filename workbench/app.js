@@ -60,6 +60,12 @@ import {
   roleRegions,
   OUTCOMES_PATH,
 } from "./outcomes.js";
+import {
+  hasOutcomesSection,
+  refreshOutcomes,
+  summaryTemplate,
+} from "./summary.js";
+import { competencyEditor, courseHome, freeCompetencyId } from "./course.js";
 
 const $ = (id) => document.getElementById(id);
 
