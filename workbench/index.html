@@ -74,6 +74,13 @@
       </div>
     </div>
 
+    <!-- Narrow screens only: the session list is a drawer, not a column.
+         Stacked above the editor it pushed the editor off the screen
+         entirely, so a tab could be tapped and nothing appeared to
+         happen. -->
+    <button id="rail-toggle" class="rail-toggle" type="button" aria-expanded="false"
+            aria-controls="outline">Sessions</button>
+
     <div id="tabs" class="tabs"></div>
     <div id="ribbon" class="ribbon"></div>
 

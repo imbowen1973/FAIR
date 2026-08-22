@@ -352,6 +352,7 @@ function escapeHtml(text) {
 }
 
 function renderOutline() {
+  paintRailToggle();
   const host = $("outline");
   host.innerHTML = "";
   const { library } = state;
@@ -369,6 +370,7 @@ function renderOutline() {
     state.courseOpen = true;
     renderOutline();
     renderCourse();
+    revealEditor();
   });
   courseGroup.appendChild(courseHead);
   host.appendChild(courseGroup);
@@ -394,6 +396,7 @@ function renderOutline() {
       state.courseOpen = false;
       renderOutline();
       renderSlide();
+      revealEditor();
     });
     group.appendChild(head);
 
@@ -640,6 +643,45 @@ function renderRibbon() {
   paintListType($("ribbon"), regionType(activeRegion));
 }
 
+// ---- the session drawer ------------------------------------------------
+//
+// On a phone the session list stacks above the editor, and a course's
+// worth of sessions and thumbnails puts the editor below the fold. A tab
+// could then be tapped and nothing would appear to happen. So on narrow
+// screens the list is a drawer: closed by default, and closing itself
+// whenever a choice is made.
+
+const NARROW = "(max-width: 1100px)";
+
+function narrow() {
+  return window.matchMedia?.(NARROW).matches ?? false;
+}
+
+function setRail(open) {
+  document.querySelector(".panes")?.classList.toggle("rail-open", open);
+  $("rail-toggle").setAttribute("aria-expanded", String(open));
+}
+
+/** Label the drawer with where you actually are. */
+function paintRailToggle() {
+  const button = $("rail-toggle");
+  if (!button) return;
+  const block = currentBlock();
+  button.textContent = state.courseOpen
+    ? state.library?.course?.title || "This course"
+    : block?.meta?.title || block?.id || "Sessions";
+}
+
+/**
+ * After choosing a session or a document, put the editor where the eye
+ * is. Narrow screens only: on a desktop nothing moved.
+ */
+function revealEditor() {
+  if (!narrow()) return;
+  setRail(false);
+  $("tabs")?.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
 // ---- documents ---------------------------------------------------------
 //
 // A block is a session, not a deck. The tab strip is its contents, and
@@ -666,6 +708,7 @@ function openDoc(id) {
   state.docByBlock.set(state.blockId, id);
   renderOutline();
   renderBlock();
+  revealEditor();
 }
 
 /** block.yaml for the current block, as data. */
@@ -1026,11 +1069,13 @@ function renderCourse() {
       blocks: blocksInOrder(),
       owner: outcomeOwners(),
       coverage: outcomeCoverage(),
-      onChange: (list) => {
+      onChange: (list, opts) => {
         state.edits.set(OUTCOMES_PATH, stringifyYaml(outcomeDoc(list)));
         state.library.outcomes = outcomeDoc(list);
         updateActions();
-        draw();
+        // Only when the page's shape changed. Redrawing on every
+        // keystroke takes the caret with it.
+        if (opts?.structural !== false) draw();
       },
       onOwner: setOutcomeOwner,
     });
@@ -1576,6 +1621,11 @@ async function showHistory() {
 
 async function boot() {
   $("broker-signin").hidden = !broker.available();
+
+  $("rail-toggle").addEventListener("click", () => {
+    const panes = document.querySelector(".panes");
+    setRail(!panes.classList.contains("rail-open"));
+  });
 
   try {
     const returned = await broker.complete();

@@ -133,6 +133,10 @@ export function outcomesEditor(host, {
     );
   }
 
+  // The working copy the cards mutate, so the progression panel can be
+  // refreshed without rebuilding a card somebody is typing into.
+  let live = outcomes;
+
   // ---- outcomes, grouped by the session that owns them ----------------
   const groups = [
     ...blocks.map((b) => ({ ...b, list: outcomes.filter((o) => owner[o.id] === b.id) })),
@@ -154,6 +158,10 @@ export function outcomesEditor(host, {
     for (const outcome of group.list) {
       host.append(outcomeCard(outcome, {
         outcomes, competencies: entries, blocks, owner, coverage, onChange, onOwner,
+        refresh: () => {
+          const panel = host.querySelector(".progressions");
+          if (panel) drawProgressions(panel, live, owner, blocks, competencies);
+        },
       }));
     }
   }
@@ -177,17 +185,30 @@ export function outcomesEditor(host, {
           "and it is made of the outcomes that develop it."
       )
     );
-    for (const comp of progression(outcomes, owner, blocks, competencies)) {
-      host.append(progressionRow(comp));
-    }
+    const panel = el("div", "progressions");
+    host.append(panel);
+    drawProgressions(panel, outcomes, owner, blocks, competencies);
   }
 }
 
-function outcomeCard(outcome, { outcomes, competencies, blocks, owner, coverage, onChange, onOwner }) {
+/** Redraw just the progression panel, leaving the cards alone. */
+function drawProgressions(panel, outcomes, owner, blocks, competencies) {
+  panel.innerHTML = "";
+  for (const comp of progression(outcomes, owner, blocks, competencies)) {
+    panel.append(progressionRow(comp));
+  }
+}
+
+function outcomeCard(outcome, {
+  outcomes, competencies, blocks, owner, coverage, onChange, onOwner, refresh,
+}) {
   const index = outcomes.findIndex((o) => o.id === outcome.id);
   const card = el("div", "outcome");
-  const change = (patch) =>
-    onChange(outcomes.map((o, i) => (i === index ? { ...o, ...patch } : o)));
+  const change = (patch, structural = true) => {
+    const next = outcomes.map((o, i) => (i === index ? { ...o, ...patch } : o));
+    onChange(next, { structural });
+    return next;
+  };
 
   const head = el("div", "outcome-head");
   const id = el("input", "text id");
@@ -244,7 +265,11 @@ function outcomeCard(outcome, { outcomes, competencies, blocks, owner, coverage,
   statement.value = outcome.statement;
   statement.placeholder = "By the end of this session, learners will be able to…";
   statement.setAttribute("aria-label", `Outcome ${outcome.id} statement`);
-  statement.addEventListener("input", () => change({ statement: statement.value }));
+  // Not structural: rebuilding the editor on every keystroke takes the
+  // caret with it, which makes the field unusable.
+  statement.addEventListener("input", () =>
+    change({ statement: statement.value }, false)
+  );
   card.append(statement);
 
   const foot = el("div", "outcome-foot");
@@ -258,7 +283,12 @@ function outcomeCard(outcome, { outcomes, competencies, blocks, owner, coverage,
       const develops = outcome.develops.includes(cid)
         ? outcome.develops.filter((c) => c !== cid)
         : [...outcome.develops, cid];
-      change({ develops });
+      // Toggled in place and the progressions redrawn: a chip is a
+      // button, and losing the page under it on every press is jarring.
+      chip.classList.toggle("on", develops.includes(cid));
+      outcome.develops = develops;
+      refresh?.();
+      change({ develops }, false);
     });
     chips.append(chip);
   }
@@ -273,7 +303,11 @@ function outcomeCard(outcome, { outcomes, competencies, blocks, owner, coverage,
     dok.append(option);
   }
   dok.value = outcome.dok ? String(outcome.dok) : "";
-  dok.addEventListener("change", () => change({ dok: dok.value ? Number(dok.value) : null }));
+  dok.addEventListener("change", () => {
+    outcome.dok = dok.value ? Number(dok.value) : null;
+    refresh?.();
+    change({ dok: outcome.dok }, false);
+  });
   dokWrap.append(dok);
   foot.append(dokWrap);
   card.append(foot);
