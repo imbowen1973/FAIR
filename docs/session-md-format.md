@@ -39,6 +39,46 @@ not interpret them.
 
 ## Slide blocks
 
+### Slides that are filled, not typed
+
+A session's title and its learning outcomes are already written down —
+in `block.yaml` and `outcomes.yaml`. Writing them again on a slide is how
+a deck comes to disagree with the course it belongs to, so a slide can
+say what it **is** and let the library fill it:
+
+```markdown
+--- slide
+id: s-01
+layout: Title
+role: title
+---
+
+--- slide
+id: s-02
+layout: Full
+role: outcomes
+---
+```
+
+That deck opens with the session's title, its code and duration, then a
+bulleted list of the outcomes the session owns — and none of it is
+typed twice.
+
+| Role | Fills |
+|---|---|
+| `title` | `title` from the block's title; `subtitle` from its code and duration |
+| `outcomes` | `title` as "Learning outcomes"; the layout's first content region with the session's outcomes |
+
+**Anything you write wins.** A role fills what is absent, so a title
+slide with its own subtitle keeps it, and a session that needs its
+outcomes worded differently on the slide can simply say so. In the
+workbench a filled region is shown but not editable, marked *from the
+library* — typing there would make the second copy the role exists to
+avoid.
+
+An `outcomes` slide also serves those outcomes, so the competencies it
+develops are derived without anyone tagging it.
+
 A slide names the **outcomes** it serves. The competencies it develops
 follow from those outcomes, so a slide cannot claim more than they
 cover — see `library-format.md`. `develops:` still works for a
@@ -79,6 +119,7 @@ dok: 2
 | `id`       | yes      | Slide id, unique within the session                 |
 | `layout`   | yes      | Layout key; must exist in `layout-map.yaml`         |
 | `notes`    | no       | Speaker notes (plain text)                          |
+| `role`     | no       | `title` or `outcomes`: filled from the library      |
 | `outcomes` | no       | Outcome ids from `outcomes.yaml` (list)             |
 | `develops` | no       | Competency ids claimed directly (list)              |
 | `dok`      | no       | Depth-of-knowledge level (int) — for `index.json`   |

@@ -7,7 +7,13 @@ from pathlib import Path
 
 import yaml
 
-RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "outcomes", "dok"}
+RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "outcomes", "dok", "role"}
+
+# A slide with a role is filled from the library rather than typed. The
+# session title and its learning outcomes are already written down --
+# in block.yaml and outcomes.yaml -- and writing them again on a slide
+# is how a deck comes to disagree with the course it belongs to.
+SLIDE_ROLES = {"title", "outcomes"}
 CONTENT_TYPES = {"ul", "ol", "p", "image", "mermaid", "video"}
 MAX_LIST_DEPTH = 5
 
@@ -66,6 +72,8 @@ class Slide:
     develops: list[str] = field(default_factory=list)
     outcomes: list[str] = field(default_factory=list)
     dok: int | None = None
+    # "title" or "outcomes": filled from the library, not typed here.
+    role: str | None = None
 
 
 @dataclass
@@ -226,6 +234,14 @@ def _parse_slide(lineno: int, raw_yaml: str, path: Path, seen_ids: set[str]) -> 
             "outcomes.yaml. It is metadata, not a region."
         )
 
+    role = data.get("role")
+    if role is not None:
+        role = str(role)
+        if role not in SLIDE_ROLES:
+            raise SessionParseError(
+                f"{where}: unknown role {role!r}; known: {sorted(SLIDE_ROLES)}"
+            )
+
     dok = data.get("dok")
     if dok is not None and not isinstance(dok, int):
         raise SessionParseError(f"{where}: 'dok' must be an integer")
@@ -244,6 +260,7 @@ def _parse_slide(lineno: int, raw_yaml: str, path: Path, seen_ids: set[str]) -> 
         develops=[str(c) for c in develops],
         outcomes=[str(o) for o in outcomes],
         dok=dok,
+        role=role,
     )
 
 

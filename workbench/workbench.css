@@ -605,3 +605,14 @@ button.viewtab.on {
 .prog-dok { font-size: 0.72rem; color: var(--muted); }
 .prog-arrow { color: var(--muted); }
 .progression .coverage { display: block; margin-top: 6px; }
+
+/* A region filled from the library: shown because the deck will show it,
+   not editable because typing here would make a second copy of something
+   outcomes.yaml or block.yaml already holds. */
+.region.derived { cursor: default; }
+.stage.editable .region.derived::after {
+  content: "from the library";
+  position: absolute; top: 2px; right: 4px;
+  font-size: 9px; letter-spacing: 0.03em; text-transform: uppercase;
+  color: var(--muted); opacity: 0.75; pointer-events: none;
+}

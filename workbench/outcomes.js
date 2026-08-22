@@ -318,3 +318,77 @@ function progressionRow(comp) {
 }
 
 export { OUTCOMES_PATH };
+
+// ---- slides that are filled rather than typed ---------------------------
+//
+// Mirrors outcomes.fill_roles in the renderer. The canvas has to show
+// what the deck will actually say, or a role slide looks empty in the
+// editor and full in the artifact — which is exactly the kind of lie the
+// honest-preview rule exists to prevent.
+
+/** The region a body of text belongs in, for a given layout. */
+function firstContentRegion(regions) {
+  return (regions || []).find((name) => name !== "title" && name !== "subtitle") ?? null;
+}
+
+/**
+ * A slide with its role filled in, for preview.
+ *
+ * Returns the slide unchanged when it has no role, and never overwrites
+ * anything the author wrote — a role fills what is absent.
+ */
+export function fillRole(slide, { blockMeta, catalogue, layoutRegions }) {
+  const role = slide?.role;
+  if (!role) return slide;
+  const filled = { ...slide };
+  const regions = layoutRegions || [];
+  const owned = (blockMeta?.outcomes ?? []).map(String);
+
+  if (role === "title") {
+    if (filled.title === undefined && blockMeta?.title) filled.title = blockMeta.title;
+    if (filled.subtitle === undefined && regions.includes("subtitle")) {
+      const bits = [];
+      if (blockMeta?.code) bits.push(String(blockMeta.code));
+      if (blockMeta?.duration_minutes) bits.push(`${blockMeta.duration_minutes} minutes`);
+      if (bits.length) filled.subtitle = bits.join(" · ");
+    }
+    return filled;
+  }
+
+  if (role === "outcomes") {
+    if (filled.title === undefined) filled.title = "Learning outcomes";
+    const body = firstContentRegion(regions);
+    if (body && filled[body] === undefined) {
+      const items = owned
+        .map((oid) => catalogue?.[oid]?.statement)
+        .filter(Boolean);
+      if (items.length) filled[body] = { type: "ul", items };
+    }
+  }
+  return filled;
+}
+
+/** Which regions a role fills, so the editor can mark them as derived. */
+export function roleRegions(slide, layoutRegions) {
+  if (!slide?.role) return [];
+  const filled = [];
+  if (slide.title === undefined) filled.push("title");
+  if (slide.role === "title") {
+    if (slide.subtitle === undefined && (layoutRegions || []).includes("subtitle")) {
+      filled.push("subtitle");
+    }
+  } else if (slide.role === "outcomes") {
+    const body = firstContentRegion(layoutRegions);
+    if (body && slide[body] === undefined) filled.push(body);
+  }
+  return filled;
+}
+
+/** The two slides every session opens with, filled from the library. */
+export function openingSlides(firstId = "s-01") {
+  const stem = String(firstId).replace(/\d+$/, "") || "s-";
+  return [
+    { id: `${stem}01`, layout: "Title", role: "title" },
+    { id: `${stem}02`, layout: "Full", role: "outcomes" },
+  ];
+}

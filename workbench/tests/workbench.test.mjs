@@ -26,7 +26,15 @@ import {
   withoutResource,
 } from "../documents.js";
 import { markdownToHtml } from "../markdown.js";
-import { freeOutcomeId, outcomeDoc, outcomeList, progression } from "../outcomes.js";
+import {
+  fillRole,
+  freeOutcomeId,
+  openingSlides,
+  outcomeDoc,
+  outcomeList,
+  progression,
+  roleRegions,
+} from "../outcomes.js";
 import {
   hasOutcomesSection,
   refreshOutcomes,
@@ -775,4 +783,80 @@ test("an outcome with no session contributes to no progression", () => {
     { V1: "Nothing builds this" }
   );
   assert.deepEqual(rows[0].sessions, []);
+});
+
+// ---- slides filled from the library -------------------------------------
+
+const BLOCK_META = {
+  title: "Big data",
+  code: "V130",
+  duration_minutes: 90,
+  outcomes: ["O1", "O2"],
+};
+const CATALOGUE = {
+  O1: { statement: "Identify common ways big data could be misused" },
+  O2: { statement: "Evaluate the ethical and legal implications" },
+};
+
+test("a title slide is filled from the block, not typed", () => {
+  const filled = fillRole(
+    { id: "s-01", layout: "Title", role: "title" },
+    { blockMeta: BLOCK_META, catalogue: CATALOGUE, layoutRegions: ["title", "subtitle"] }
+  );
+  assert.equal(filled.title, "Big data");
+  assert.equal(filled.subtitle, "V130 · 90 minutes");
+});
+
+test("an outcomes slide is filled from the catalogue", () => {
+  const filled = fillRole(
+    { id: "s-02", layout: "Full", role: "outcomes" },
+    { blockMeta: BLOCK_META, catalogue: CATALOGUE, layoutRegions: ["title", "full"] }
+  );
+  assert.equal(filled.title, "Learning outcomes");
+  assert.deepEqual(filled.full, {
+    type: "ul",
+    items: [
+      "Identify common ways big data could be misused",
+      "Evaluate the ethical and legal implications",
+    ],
+  });
+});
+
+test("what an author writes on a role slide wins", () => {
+  // A role fills what is absent. It never overwrites.
+  const filled = fillRole(
+    { id: "s-02", layout: "Full", role: "outcomes", title: "What you will do" },
+    { blockMeta: BLOCK_META, catalogue: CATALOGUE, layoutRegions: ["title", "full"] }
+  );
+  assert.equal(filled.title, "What you will do");
+});
+
+test("a slide with no role is returned untouched", () => {
+  const slide = { id: "s-03", layout: "Full", title: "Ordinary" };
+  assert.equal(
+    fillRole(slide, { blockMeta: BLOCK_META, catalogue: CATALOGUE, layoutRegions: [] }),
+    slide
+  );
+});
+
+test("filled regions are named, so the editor can stop you typing in them", () => {
+  // Typing into a generated region would make a second copy of something
+  // the library already holds -- which is the thing roles exist to avoid.
+  assert.deepEqual(
+    roleRegions({ role: "outcomes" }, ["title", "full"]),
+    ["title", "full"]
+  );
+  // A region the author filled is theirs, and stays editable.
+  assert.deepEqual(
+    roleRegions({ role: "outcomes", title: "Mine" }, ["title", "full"]),
+    ["full"]
+  );
+});
+
+test("the opening slides carry a role and no words at all", () => {
+  const opening = openingSlides("s-01");
+  assert.deepEqual(opening.map((s) => s.role), ["title", "outcomes"]);
+  for (const slide of opening) {
+    assert.deepEqual(Object.keys(slide).sort(), ["id", "layout", "role"]);
+  }
 });

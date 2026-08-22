@@ -2059,3 +2059,117 @@ def test_a_competency_progression_shows_where_it_is_built(tmp_path):
     ).fetchall()
     assert [r[0] for r in rows] == ["01-foundations", "02-more"], "in delivery order"
     assert [r[1] for r in rows] == [1, 3], "and it builds"
+
+
+def _role_deck(root: Path) -> Path:
+    """Replace a block's deck with two role slides and nothing typed."""
+    slides = root / "blocks" / "01-foundations" / "slides.md"
+    slides.write_text(
+        "---\n"
+        "session: '01'\n"
+        "title: Foundations\n"
+        "version: 1.0.0\n"
+        "---\n\n"
+        "--- slide\n"
+        "id: s-01\n"
+        "layout: Title\n"
+        "role: title\n"
+        "---\n\n"
+        "--- slide\n"
+        "id: s-02\n"
+        "layout: Full\n"
+        "role: outcomes\n"
+        "---\n",
+        encoding="utf-8",
+    )
+    return slides
+
+
+def test_a_role_slide_is_filled_from_the_library(tmp_path):
+    """Nothing is typed twice: the deck says what a slide is, not what it says."""
+    from fair_renderer.corpus import build_corpus
+
+    root = _make_library(tmp_path / "lib")
+    _with_outcomes(
+        root,
+        {
+            "O1": {"statement": "Plan a clinical teaching session", "develops": ["CE1"]},
+            "O2": {"statement": "Debrief a learner afterwards", "develops": ["CE1"]},
+        },
+        block_outcomes=["O1", "O2"],
+    )
+    _role_deck(root)
+    meta_path = root / "blocks" / "01-foundations" / "block.yaml"
+    meta = yaml.safe_load(meta_path.read_text(encoding="utf-8"))
+    meta["code"] = "CE01"
+    meta_path.write_text(yaml.safe_dump(meta, sort_keys=False), encoding="utf-8")
+
+    out = tmp_path / "out"
+    build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda m: None,
+    )
+    catalog = json.loads((out / "catalog.json").read_text(encoding="utf-8"))
+    by_id = {s["slideId"]: s for s in catalog["slides"]}
+
+    # The title slide carries the session's title, from block.yaml.
+    assert by_id["s-01"]["title"] == "Foundations of clinical teaching"
+
+    # The outcomes slide carries the statements, from outcomes.yaml, and
+    # serves those outcomes without anyone tagging it.
+    assert by_id["s-02"]["title"] == "Learning outcomes"
+    assert by_id["s-02"]["outcomes"] == ["O1", "O2"]
+    assert by_id["s-02"]["develops"] == ["CE1"], "derived through the outcomes"
+
+    # And the words reached the rendered deck, not just the index.
+    deck = out / "sessions" / "01-foundations"
+    pptx = next(deck.glob("*.pptx"))
+    with zipfile.ZipFile(pptx) as z:
+        xml = z.read("ppt/slides/slide2.xml").decode("utf-8")
+    assert "Plan a clinical teaching session" in xml
+    assert "Debrief a learner afterwards" in xml
+
+
+def test_what_an_author_writes_on_a_role_slide_wins(tmp_path):
+    """A role fills what is absent; it never overwrites."""
+    from fair_renderer.corpus import build_corpus
+
+    root = _make_library(tmp_path / "lib")
+    _with_outcomes(
+        root, {"O1": {"statement": "The catalogue wording", "develops": ["CE1"]}},
+        block_outcomes=["O1"],
+    )
+    slides = _role_deck(root)
+    slides.write_text(
+        slides.read_text(encoding="utf-8").replace(
+            "role: outcomes", "role: outcomes\ntitle: What you will be able to do"
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=out,
+        warn=lambda m: None,
+    )
+    catalog = json.loads((out / "catalog.json").read_text(encoding="utf-8"))
+    by_id = {s["slideId"]: s for s in catalog["slides"]}
+    assert by_id["s-02"]["title"] == "What you will be able to do"
+
+
+def test_an_unknown_role_is_refused(tmp_path):
+    from fair_renderer.parser import SessionParseError, parse_session
+
+    path = tmp_path / "s.md"
+    path.write_text(
+        "---\nsession: '01'\ntitle: T\nversion: 1.0.0\n---\n\n"
+        "--- slide\nid: s1\nlayout: Full\nrole: whatever\n---\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SessionParseError, match="unknown role"):
+        parse_session(path)

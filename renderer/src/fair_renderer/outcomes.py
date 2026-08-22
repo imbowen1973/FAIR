@@ -139,3 +139,83 @@ def derive_develops(declared, outcome_ids, catalogue: dict[str, Outcome]) -> lis
         if cid not in out:
             out.append(cid)
     return out
+
+
+# ---- slides that are filled rather than typed ---------------------------
+
+
+def _first_content_region(layout_regions) -> str | None:
+    """The region a body of text belongs in, for a given layout."""
+    for name in layout_regions or []:
+        if name not in ("title", "subtitle"):
+            return name
+    return None
+
+
+def fill_roles(session, block_meta: dict, catalogue: dict, layout_regions) -> None:
+    """Fill role slides from the library, in place.
+
+    The session title and its learning outcomes are already written down
+    -- in `block.yaml` and `outcomes.yaml`. Writing them again on a slide
+    is how a deck comes to disagree with the course it belongs to, so a
+    slide says what it *is* and the content is filled here:
+
+        --- slide
+        id: s-01
+        layout: Title
+        role: title
+        ---
+
+    Anything the author does write wins. A role fills what is absent, so
+    a title slide with its own subtitle keeps it, and a session that
+    needs its outcomes worded differently on the slide can say so.
+
+    `layout_regions` maps a layout key to its region names, so the body
+    lands where that layout actually puts one.
+    """
+    from .parser import ListItem, Region
+
+    owned = [str(o) for o in (block_meta.get("outcomes") or [])]
+
+    for slide in session.slides:
+        if not slide.role:
+            continue
+        present = {region.name for region in slide.regions}
+        regions = layout_regions.get(slide.layout) or []
+
+        if slide.role == "title":
+            if "title" not in present:
+                title = block_meta.get("title")
+                if title:
+                    slide.regions.append(Region(name="title", type="text", text=str(title)))
+            if "subtitle" not in present and "subtitle" in regions:
+                # The code if the course uses one, else its duration --
+                # whichever the block actually knows.
+                bits = [str(block_meta[k]) for k in ("code",) if block_meta.get(k)]
+                minutes = block_meta.get("duration_minutes")
+                if minutes:
+                    bits.append(f"{minutes} minutes")
+                if bits:
+                    slide.regions.append(
+                        Region(name="subtitle", type="text", text=" · ".join(bits))
+                    )
+            continue
+
+        if slide.role == "outcomes":
+            if "title" not in present:
+                slide.regions.append(
+                    Region(name="title", type="text", text="Learning outcomes")
+                )
+            body = _first_content_region(regions)
+            if body and body not in present:
+                items = [
+                    ListItem(text=catalogue[oid].statement)
+                    for oid in owned
+                    if oid in catalogue and catalogue[oid].statement
+                ]
+                if items:
+                    slide.regions.append(Region(name=body, type="ul", items=items))
+            # The slide serves every outcome it lists, so the competency
+            # derivation picks them up without anyone tagging it.
+            if not slide.outcomes:
+                slide.outcomes = list(owned)

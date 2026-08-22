@@ -12,6 +12,7 @@ import { decorate } from "./icons.js";
 import {
   asListType,
   blankSlide,
+  layoutRegions,
   isLibrary,
   layoutKeys,
   libraryPaths,
@@ -51,6 +52,9 @@ import {
   outcomeDoc,
   outcomeList,
   outcomesEditor,
+  fillRole,
+  openingSlides,
+  roleRegions,
   OUTCOMES_PATH,
 } from "./outcomes.js";
 
@@ -267,6 +271,41 @@ function nextSlideId() {
   return `s-${Date.now()}`;
 }
 
+/**
+ * The two slides every session opens with.
+ *
+ * Neither carries any text: the title comes from block.yaml and the
+ * outcomes from the catalogue, so a deck cannot drift from the course it
+ * belongs to. Offered rather than forced, because a deck that already
+ * has its own opening should keep it.
+ */
+function addOpeningSlides() {
+  const list = working();
+  const layouts = layoutKeys(state.library.layoutMap);
+  const opening = openingSlides(nextSlideId()).filter((slide) =>
+    layouts.includes(slide.layout)
+  );
+  if (!opening.length) {
+    status("This template has no Title or Full layout to build them from.", "error");
+    return;
+  }
+  list.unshift(...opening.map((data) => ({ sourceIndex: null, data, dirty: true })));
+  state.slideIndex = 0;
+  renderOutline();
+  renderSlide();
+  updateActions();
+  status("Added a title slide and a learning outcomes slide.", "ok");
+}
+
+/** Whether the deck already opens with the standard two. */
+function hasOpeningSlides() {
+  const roles = working()
+    .slice(0, 3)
+    .map((entry) => entry.data?.role)
+    .filter(Boolean);
+  return roles.includes("title") && roles.includes("outcomes");
+}
+
 function addSlide() {
   const layouts = layoutKeys(state.library.layoutMap);
   const list = working();
@@ -387,13 +426,14 @@ function renderOutline() {
         drawSlide(thumb, {
           geometry: state.library.geometry,
           layoutKey: data.layout,
-          slide: data,
+          slide: previewData(data),
           compact: true,
         });
 
         const caption = document.createElement("span");
         caption.className = "thumb-caption";
-        caption.textContent = data.title ?? data.id ?? "untitled";
+        caption.textContent =
+          previewData(data).title ?? data.id ?? "untitled";
 
         pick.append(number, thumb, caption);
         pick.addEventListener("click", () => {
@@ -440,6 +480,18 @@ function renderOutline() {
       add.textContent = "+ slide";
       add.addEventListener("click", addSlide);
       group.appendChild(add);
+
+      if (!hasOpeningSlides()) {
+        const opening = document.createElement("button");
+        opening.type = "button";
+        opening.className = "add-slide";
+        opening.textContent = "+ title and outcomes";
+        opening.title =
+          "A title slide and a learning outcomes slide, both filled from " +
+          "the library rather than typed";
+        opening.addEventListener("click", addOpeningSlides);
+        group.appendChild(opening);
+      }
     }
 
     // An assessment gets the same treatment as a deck: its questions in
@@ -472,13 +524,24 @@ function commitSlide(next) {
  * from the canvas commits and leaves the DOM alone; only a structural
  * change — a new layout, a region added or cleared — redraws.
  */
+/** A slide as the deck will render it, with any role filled in. */
+function previewData(data) {
+  return fillRole(data, {
+    blockMeta: currentBlock()?.meta,
+    catalogue: catalogueDoc().outcomes || {},
+    layoutRegions: layoutRegions(state.library.layoutMap, data.layout),
+  });
+}
+
 function renderCanvas({ redraw = true } = {}) {
   const data = slideData(state.slideIndex);
+  const shown = previewData(data);
   if (redraw) {
     drawSlide($("canvas"), {
       geometry: state.library.geometry,
       layoutKey: data.layout,
-      slide: data,
+      slide: shown,
+      derived: roleRegions(data, layoutRegions(state.library.layoutMap, data.layout)),
       activeRegion,
       editable: true,
       // Leave room for the metadata and notes beneath, or they sit below

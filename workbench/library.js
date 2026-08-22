@@ -20,6 +20,7 @@ export const RESERVED_SLIDE_KEYS = new Set([
   "develops",
   "outcomes",
   "dok",
+  "role",
 ]);
 
 export const CONTENT_TYPES = ["ul", "ol", "p", "image", "mermaid", "video"];

@@ -9,6 +9,7 @@ import copy
 import json
 from pathlib import Path
 
+import yaml
 from lxml import etree
 from pptx import Presentation
 from pptx.enum.shapes import PP_PLACEHOLDER
@@ -29,7 +30,7 @@ from .layoutmap import (
     validate_against_template,
 )
 from .mermaid import resolve_mermaid
-from .outcomes import OUTCOMES_FILE, derive_develops, load_outcomes
+from .outcomes import OUTCOMES_FILE, derive_develops, fill_roles, load_outcomes
 from .parser import ListItem, Region, Session, Slide, parse_session
 from .runs import DEFAULT_CODE_TYPEFACE, plain_text, write_runs
 from .zipnorm import normalize_zip
@@ -271,6 +272,25 @@ def render_session(
         candidate = session_path.parent.parent / OUTCOMES_FILE
         outcomes_path = candidate if candidate.exists() else None
     catalogue = load_outcomes(outcomes_path) if outcomes_path else {}
+
+    # A slide with a role is filled from the library rather than typed:
+    # the session title and its outcomes are already written down, and a
+    # second copy on a slide is a second thing to keep in step. Done here,
+    # before anything reads the regions, so the deck, the index and the
+    # catalog all see the same filled slide.
+    block_meta_path = session_path.parent / "block.yaml"
+    block_meta = {}
+    if block_meta_path.is_file():
+        try:
+            block_meta = yaml.safe_load(block_meta_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            block_meta = {}
+    fill_roles(
+        session,
+        block_meta,
+        catalogue,
+        {key: list(binding.regions) for key, binding in bindings.items()},
+    )
 
     prs = Presentation(str(template_path))
     validate_against_template(bindings, prs, template_path)

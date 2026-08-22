@@ -271,6 +271,10 @@ export function drawSlide(
   {
     geometry, layoutKey, slide, activeRegion,
     editable = false, compact = false, maxHeightPx = null,
+    // Regions filled from the library rather than typed. Shown, because
+    // the deck will show them; not editable, because typing here would
+    // silently make a second copy of something the library already holds.
+    derived = [],
     onChange, onSelectRegion,
   }
 ) {
@@ -332,6 +336,14 @@ export function drawSlide(
         `${inset.b * stageWidth / aspect}px ${inset.l * stageWidth}px`;
     }
 
+    const fromLibrary = derived.includes(region);
+    if (fromLibrary) {
+      box.classList.add("derived");
+      box.title =
+        "Filled from the library — edit the session title or its outcomes " +
+        "rather than typing them here.";
+    }
+
     fillRegion(
       box,
       value,
@@ -339,10 +351,10 @@ export function drawSlide(
       theme,
       scale,
       (next) => onChange?.(region, next),
-      editable
+      editable && !fromLibrary
     );
 
-    if (editable) {
+    if (editable && !fromLibrary) {
       box.setAttribute("aria-label", `${region}: ${plainText(
         typeof value === "string" ? value : value?.text ?? ""
       ).slice(0, 60)}`);
