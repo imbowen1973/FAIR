@@ -67,6 +67,7 @@ edufair-corpus path/to/library --out /tmp/build     # build everything
 edufair-template brand.pptx --out layout-map.yaml   # bind a new deck template
 edufair-doctemplate brand.docx --styles style-map.yaml
 edufair-doc workbook.md --template brand.docx --out workbook.docx
+edufair-prompt path/to/library --out prompt.md      # instructions for a model
 ```
 
 Tests: `python -m pytest renderer/tests`, and `npm test` in `assembler/`
@@ -116,5 +117,6 @@ blocks/
 | `docs/session-md-format.md` | The slide format: layouts, regions, marks, roles |
 | `docs/word-format.md` | The document format: the style contract |
 | `docs/template-profile.md` | Bringing your own PowerPoint template |
+| `docs/gpt-prompt.md` | The authoring prompt: what to ask before writing a session |
 | `docs/authoring-and-tracking.md` | Outcomes, competencies, and what is recorded |
 | `examples/` | A template, a layout map, example sessions, the layout gallery |

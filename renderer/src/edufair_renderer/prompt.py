@@ -1,21 +1,25 @@
-"""Instructions for a model, written from a library's own vocabulary.
+"""Instructions for a model that writes eduFAIR sessions.
 
-A general prompt about "the eduFAIR grammar" produces content that
-almost works. A model told to write slides will invent a `TwoColumn`
-layout, tag a competency that does not exist, and put a `body:` region
-in a layout that offers `full:` — because nothing told it what *this*
-template has.
+Two halves, and both are needed.
 
-So the prompt is generated, not written. It carries the layouts this
-template actually offers, the regions each one has, the competency ids
-this course defines and the outcomes its sessions own. What comes back
-then validates on the first attempt rather than the third.
+The **generic** half is `docs/gpt-prompt.md`: how to interview before
+writing — the subject and the problem behind it, the audience, how long,
+what shape — then how long is how many slides, what a speaker note is
+for, and how to hand the work over. It is the same for every library and
+it is where the quality comes from.
 
-    edufair-prompt path/to/library > prompt.md
+The **specific** half is generated here: the layouts this template
+actually offers with their real regions, the competency ids this course
+defines, the outcomes its sessions own. Without it a model invents a
+`TwoColumn` layout and tags a competency that does not exist, because
+nothing told it otherwise.
 
-The result is pasted into a custom GPT's instructions. It is per-library
-by nature: a different template offers different layouts, and a prompt
-that outlived its template would be worse than none.
+    edufair-prompt path/to/library --out prompt.md   # both halves
+    edufair-prompt --generic                         # the first only
+
+The result is pasted into a custom GPT's instructions. The specific half
+is per-library by nature: a prompt that outlived its template would be
+worse than none.
 """
 
 from __future__ import annotations
@@ -79,8 +83,28 @@ def _example_slide(bindings) -> str:
     return "--- slide\nid: s-02\nlayout: Full\ntitle: …\n---"
 
 
-def build_prompt(root: Path) -> str:
-    """The custom instructions for this library."""
+GENERIC_PROMPT = Path(__file__).resolve().parents[3] / "docs" / "gpt-prompt.md"
+
+
+def generic_prompt() -> str:
+    """The half that is the same for every library.
+
+    Read from `docs/gpt-prompt.md` rather than duplicated here. It is a
+    document people edit — how to interview before writing, how long is
+    how many slides, what a speaker note is for — and a second copy in
+    code is the one that goes stale.
+    """
+    if not GENERIC_PROMPT.is_file():
+        return ""
+    text = GENERIC_PROMPT.read_text(encoding="utf-8")
+    # The file opens by saying where to paste it; the instructions
+    # themselves start after the first rule.
+    marker = "\n---\n"
+    return text.split(marker, 1)[1].lstrip() if marker in text else text
+
+
+def build_prompt(root: Path, generic: bool = True) -> str:
+    """The instructions: how to write a session, and what this one has."""
     bindings = load_layout_map(root / "layout-map.yaml")
     competencies = _framework(root)
     outcomes = load_outcomes(root / OUTCOMES_FILE, set(competencies) or None)
@@ -90,15 +114,19 @@ def build_prompt(root: Path) -> str:
     lines: list[str] = []
     add = lines.append
 
-    add(f"# Writing sessions for {title}")
+    if generic:
+        base = generic_prompt()
+        if base:
+            add(base.rstrip())
+            add("")
+            add("---")
+            add("")
+
+    add(f"# This library: {title}")
     add("")
     add(
-        "You write teaching content for this course. It is stored as markdown "
-        "in git and rendered into a branded PowerPoint template, a Word "
-        "template and Moodle XML. You never describe how anything should "
-        "look: no fonts, no colours, no sizes, no positions. The template "
-        "owns all of that. You choose **meaning** — which layout a slide "
-        "wants, what goes in each region, what the session is for."
+        "Everything above is how to write a session. What follows is what "
+        "*this* course has to write it with. Use these names and no others."
     )
     add("")
 
@@ -132,29 +160,14 @@ def build_prompt(root: Path) -> str:
     )
     add("")
 
-    # ---- the grammar ----------------------------------------------------
-    add("## How a slide is written")
+    # The grammar itself is in the generic half; this is a worked slide
+    # using a layout that exists here, which is the part that cannot be
+    # written generically.
+    add("### A slide in this template")
     add("")
     add("```markdown")
     add(_example_slide(bindings))
     add("```")
-    add("")
-    add("A region is either a plain string, or a mapping with a `type`:")
-    add("")
-    add("- `ul` / `ol` with `items:` — a list. Items may nest via `text:`/`items:`.")
-    add("- `p` with `text:` — a paragraph.")
-    add("- `image` with `src:` — a picture, and `fit:` cover, contain, width or height.")
-    add("- `video` with `url:` — hosted video, never a file.")
-    add("")
-    add("Inside any text you may use, and nothing else:")
-    add("")
-    add("`**bold**`, `*italic*`, `H~2~O`, `x^2^`, `~~struck~~`, `__underlined__`, `` `code` ``")
-    add("")
-    add(
-        "`notes:` are the speaker notes and they matter as much as the slide. "
-        "Write what the teacher says and does — the question to ask, the thing "
-        "to wait for, the mistake to expect — not a transcript of the bullets."
-    )
     add("")
 
     # ---- meaning --------------------------------------------------------
@@ -184,57 +197,6 @@ def build_prompt(root: Path) -> str:
     add("`dok:` is depth of knowledge, 1 to 4: recall, apply, analyse, create.")
     add("")
 
-    # ---- how to write ---------------------------------------------------
-    add("## Writing a session")
-    add("")
-    add(
-        "Ask who the learners are and how long the session is before you write. "
-        "If you are not told, say what you have assumed at the top of your reply."
-    )
-    add("")
-    add("Then produce, in this order:")
-    add("")
-    add(
-        "1. **The deck.** Open with a `role: title` slide and a `role: outcomes` "
-        "slide — both are filled from the library, so write neither. Then the "
-        "content. One idea per slide. A slide with more than six bullets is "
-        "two slides."
-    )
-    add(
-        "2. **The lesson plan** — a markdown document: what happens, in what "
-        "order, with timings that add up to the session length."
-    )
-    add(
-        "3. **The assessment** — questions in Moodle XML, each tagged with the "
-        "outcome it assesses."
-    )
-    add("")
-    add(
-        "Choose the layout from what the content is, not from variety. Two things "
-        "being contrasted want `Comparison`; a list of points wants `Full`. "
-        "Reaching for a layout because the last slide used a different one is "
-        "how decks become noise."
-    )
-    add("")
-    add(
-        "Return the deck as one markdown code block containing only `--- slide` "
-        "blocks, ready to paste into the workbench's import. Do not wrap it in "
-        "commentary — anything outside the blocks will be pasted too."
-    )
-    add("")
-    add("## What will be refused")
-    add("")
-    add("The import checks before anything is added, and will reject:")
-    add("")
-    add("- a layout not in the table above")
-    add("- a region that layout does not offer")
-    add("- an outcome id that does not exist")
-    add("")
-    add(
-        "If that happens you will be shown the message. It names what the "
-        "template does offer — read it and correct the slide rather than "
-        "changing approach."
-    )
     return "\n".join(lines) + "\n"
 
 
@@ -244,19 +206,28 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="edufair-prompt",
         description=(
-            "Write custom GPT instructions from a library's own layouts, "
-            "competencies and outcomes"
+            "Write custom GPT instructions: how to author a session, plus "
+            "this library's own layouts, competencies and outcomes"
         ),
     )
-    ap.add_argument("library", type=Path)
+    ap.add_argument("library", type=Path, nargs="?", default=None)
+    ap.add_argument("--generic", action="store_true",
+                    help="the library-independent half only")
     ap.add_argument("--out", type=Path, default=None, help="default: stdout")
     args = ap.parse_args(argv)
 
-    try:
-        text = build_prompt(args.library)
-    except Exception as exc:  # a missing layout map is the usual cause
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+    if args.generic or args.library is None:
+        text = generic_prompt()
+        if not text:
+            print("error: docs/gpt-prompt.md is not where it should be",
+                  file=sys.stderr)
+            return 1
+    else:
+        try:
+            text = build_prompt(args.library)
+        except Exception as exc:  # a missing layout map is the usual cause
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
 
     if args.out:
         args.out.write_text(text, encoding="utf-8")

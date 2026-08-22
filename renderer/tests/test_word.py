@@ -385,9 +385,46 @@ def test_the_prompt_carries_this_template_and_no_other(tmp_path):
     assert "`left_head`" in prompt
     # The course's own competency ids, so `develops:` comes back valid.
     assert "`CE1` — Designing clinical teaching" in prompt
+
+
+def test_the_prompt_makes_the_model_ask_before_it_writes():
+    """A topic alone tells a writer nothing about what the room needs.
+
+    Subject, audience, duration and shape are the prompt, not a
+    preamble to it.
+    """
+    from edufair_renderer.prompt import generic_prompt
+
+    prompt = generic_prompt()
+    assert prompt, "the generic half must be findable"
+    assert "Ask before you write" in prompt
+    for question in ("The subject", "The audience", "How long", "The structure"):
+        assert question in prompt, f"the intake must ask about {question.lower()}"
     # And the rules that matter most, stated as rules.
-    assert "no fonts, no colours" in prompt
-    assert "will be refused on import" in prompt
+    assert "never describe how anything looks" in prompt.lower()
+    assert "How long is how many slides" in prompt
+
+
+def test_the_library_half_sits_under_the_generic_one(tmp_path):
+    """Both halves, in that order: how to write, then what with."""
+    import shutil
+
+    from edufair_renderer.prompt import build_prompt
+
+    root = tmp_path / "lib"
+    root.mkdir()
+    shutil.copy(
+        Path(__file__).resolve().parents[2] / "examples" / "layout-map.yaml",
+        root / "layout-map.yaml",
+    )
+    prompt = build_prompt(root)
+    assert prompt.index("Ask before you write") < prompt.index("This library:")
+
+    # generic=False is the library half on its own, for appending to a
+    # prompt somebody has already edited by hand.
+    alone = build_prompt(root, generic=False)
+    assert "This library:" in alone
+    assert "Ask before you write" not in alone
 
 
 def test_the_worked_example_uses_a_layout_the_template_has(tmp_path):
