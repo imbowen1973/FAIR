@@ -43,9 +43,12 @@ function button(label, title, onDown, className = "mark") {
  *               its own DOM and commit.
  * onLayout(key) when the layout is changed.
  * onColour(slot) when a theme colour is chosen for the selection's region.
+ * onMedia()      a picture or video is wanted in the selected region.
  * onListType(kind) when the region becomes a "ul", an "ol", or null for none.
  */
-export function ribbon(host, { layouts, layout, onCommand, onLayout, onColour, onListType }) {
+export function ribbon(host, {
+  layouts, layout, onCommand, onLayout, onColour, onListType, onMedia,
+}) {
   host.innerHTML = "";
 
   const marks = document.createElement("div");
@@ -91,6 +94,16 @@ export function ribbon(host, { layouts, layout, onCommand, onLayout, onColour, o
     lists.appendChild(b);
   }
   host.appendChild(lists);
+
+  // Media acts on the selected region, like colour and list type do.
+  // Without this a picture could only go where a placeholder happened to
+  // be empty -- a region with a paragraph in it could never become one.
+  const mediaGroup = document.createElement("div");
+  mediaGroup.className = "ribbon-group";
+  mediaGroup.appendChild(
+    button("▨", "Put a picture or a video in the selected region", () => onMedia?.(), "mark")
+  );
+  host.appendChild(mediaGroup);
 
   const colours = document.createElement("div");
   colours.className = "ribbon-group";

@@ -328,6 +328,14 @@ export function drawSlide(
     return new Set(Object.keys(slide || {}));
   }
 
+  /** Show which region the ribbon will act on. */
+  const select = (box) => {
+    for (const other of stage.querySelectorAll(".region.active")) {
+      other.classList.remove("active");
+    }
+    box.classList.add("active");
+  };
+
   const stage = document.createElement("div");
   stage.className = "stage" + (editable ? " editable" : "");
   stage.style.aspectRatio = String(geometry.slide?.aspect || 1.7778);
@@ -398,7 +406,20 @@ export function drawSlide(
       box.setAttribute("aria-label", `${region}: ${plainText(
         typeof value === "string" ? value : value?.text ?? ""
       ).slice(0, 60)}`);
-      box.addEventListener("focusin", () => onSelectRegion?.(region));
+      box.addEventListener("focusin", () => {
+        // Move the selection now, not at the next redraw. The outline is
+        // the only thing telling an author which region the ribbon will
+        // act on, and one that never moves says nothing at all.
+        select(box);
+        onSelectRegion?.(region);
+      });
+      // A media region is not contenteditable, so it never takes focus.
+      // It still has to be selectable, or a picture cannot be replaced
+      // from the ribbon.
+      box.addEventListener("mousedown", () => {
+        select(box);
+        onSelectRegion?.(region);
+      });
     }
     stage.appendChild(box);
     boxes.push(box);

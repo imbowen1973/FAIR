@@ -39,6 +39,7 @@ const result = await page.evaluate(async () => {
   const { resolveMedia, videoHost, videoThumb } = await import("./media.js");
   const { prepareImage } = await import("./attach.js");
   const { attributionEditor, repoLogos } = await import("./course.js");
+  const { ribbon } = await import("./ribbon.js");
   const raw = (p) =>
     fetch(
       `https://raw.githubusercontent.com/Agrifoodskills/Andragogy-Pedagogy/HEAD/${p}`
@@ -543,10 +544,62 @@ const result = await page.evaluate(async () => {
     };
   }
 
+  // Selecting a region. The outline is the only thing telling an author
+  // which region the ribbon will act on, and it has to move on the click
+  // rather than at the next redraw -- one that never moves says nothing.
+  const selHost = document.createElement("div");
+  selHost.style.width = "900px";
+  document.body.appendChild(selHost);
+  const twoRegion = Object.keys(geometry.layouts).find(
+    (key) => Object.keys(geometry.layouts[key].regions || {}).length >= 3
+  );
+  let selection = { skipped: true };
+  if (twoRegion) {
+    const names = Object.keys(geometry.layouts[twoRegion].regions).filter(
+      (n) => n !== "title"
+    );
+    const filled = { id: "s", layout: twoRegion, title: "A slide" };
+    for (const name of names) filled[name] = "Some prose here";
+    let told = null;
+    drawSlide(selHost, {
+      geometry, layoutKey: twoRegion, slide: filled,
+      editable: true, media: {},
+      onChange: () => {}, onSelectRegion: (r) => (told = r), onMedia: () => {},
+    });
+    const boxes = names
+      .map((n) => selHost.querySelector(`.region[data-region="${n}"]`))
+      .filter(Boolean);
+    const moved = [];
+    for (const box of boxes.slice(0, 2)) {
+      box.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      moved.push([...selHost.querySelectorAll(".region.active")].map((r) => r.dataset.region));
+    }
+    selection = {
+      skipped: false,
+      moved,
+      told,
+      outline: getComputedStyle(selHost.querySelector(".region.active")).outlineWidth,
+    };
+  }
+
+  // And the ribbon has to offer media, or a region with a paragraph in
+  // it could never become a picture.
+  const ribbonHost = document.createElement("div");
+  document.body.appendChild(ribbonHost);
+  let ribbonMedia = 0;
+  ribbon(ribbonHost, {
+    layouts: ["Full"], layout: "Full", onMedia: () => (ribbonMedia += 1),
+  });
+  const mediaButton = [...ribbonHost.querySelectorAll("button")].find(
+    (b) => b.title && b.title.includes("picture")
+  );
+  mediaButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  selection.ribbonOffersMedia = Boolean(mediaButton) && ribbonMedia === 1;
+
   const vacant = host.querySelectorAll(".region.vacant").length;
   return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes,
     tabbar, mdeditor, question, alignment, derived, rich, media, assets, stamp,
-    placeholders };
+    placeholders, selection };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -601,6 +654,8 @@ console.log(`  derived from outcome: ${JSON.stringify(result.derived.fromOutcome
 console.log(`  media: ${JSON.stringify(result.media)}`);
 console.log(`  empty placeholders: ${result.placeholders.labels?.join(" | ")}`);
 console.log(`  picker opened for: ${JSON.stringify(result.placeholders.openedPicker)}`);
+console.log(`  selection follows the click: ${JSON.stringify(result.selection.moved)}`);
+console.log(`  ribbon offers media: ${result.selection.ribbonOffersMedia}`);
 console.log(`  worst-case upload: ${JSON.stringify(result.assets)}`);
 console.log(`  funder stamp: ${JSON.stringify(result.stamp)}`);
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
@@ -655,6 +710,10 @@ const failed =
   (!result.placeholders.skipped &&
     (!result.placeholders.labels.some((l) => l.includes("picture")) ||
       !result.placeholders.openedPicker.length)) ||
+  !result.selection.ribbonOffersMedia ||
+  (!result.selection.skipped &&
+    (result.selection.moved.some((m) => m.length !== 1) ||
+      result.selection.moved[0][0] === result.selection.moved[1]?.[0])) ||
   !result.stamp.drawn ||
   !result.stamp.left ||
   !result.stamp.faded ||

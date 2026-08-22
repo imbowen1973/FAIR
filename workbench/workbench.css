@@ -244,7 +244,6 @@ button.mark {
 }
 /* Focus follows the form: the region being edited is outlined, and only
    then, so the preview normally shows the slide and not our chrome. */
-.region.active { outline: 2px solid var(--focus); outline-offset: -1px; }
 .region.vacant {
   border: 1px dashed var(--border-strong); opacity: 0.5;
   align-items: flex-start; justify-content: flex-start;
@@ -847,3 +846,12 @@ button.vacant-media {
 }
 button.vacant-media:hover { color: var(--accent); border-color: var(--accent); }
 .region.vacant { position: absolute; }
+
+/* The selected region. This is the only thing telling an author which
+   region the ribbon will act on, so it has to be visible without
+   squinting and it has to move on the click, not at the next redraw. */
+.region.active {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}

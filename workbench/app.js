@@ -703,6 +703,16 @@ function renderRibbon() {
       commitSlide({ ...current, [region]: next });
       renderCanvas();
     },
+    onMedia: () => {
+      const region = activeRegion;
+      if (!region) {
+        status("Click the region you want the picture in first.", "error");
+        return;
+      }
+      const current = slideData(state.slideIndex)[region];
+      const kind = current?.type === "video" ? "video" : "image";
+      openMediaPicker(region, current ?? {}, kind);
+    },
     onListType: (kind) => {
       const region = activeRegion;
       if (!region) return;
