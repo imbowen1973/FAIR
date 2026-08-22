@@ -1,17 +1,21 @@
-// A document, edited as markdown.
+// A document, edited two ways.
 //
-// Deliberately a source editor, not a WYSIWYG one, and the reason is the
-// same reason the slide canvas *is* WYSIWYG: the template fixes how a
-// slide looks, so showing it is honest. A workbook has no template. A
-// WYSIWYG view would be inventing an appearance the artifact does not
-// have, and an author would tune a layout that nothing downstream
-// honours. So: the markdown on the left, what it means on the right.
+// **Rich text** is the default: Milkdown, a real WYSIWYG editor. An
+// educator writing a lesson plan should not have to know what a pipe
+// table looks like in source.
 //
-// The toolbar inserts markdown rather than hiding it. An author who
-// never touches it still gets a file they can read.
+// **Markdown** is the source, beside a live preview. It stays because a
+// WYSIWYG editor normalises as it writes -- hyphen bullets become
+// asterisks, table cells get padded -- and an author who needs the file
+// left exactly as it is needs somewhere to say so. It is also where you
+// land if the editor cannot be fetched, which is better than an empty
+// pane that never explains itself.
+//
+// The toolbar in Markdown view inserts markdown rather than hiding it.
 
 import { markdownToHtml } from "./markdown.js";
 import { icon } from "./icons.js";
+import { richEditor } from "./rich.js";
 
 /**
  * What each button does to the selection.
@@ -99,7 +103,7 @@ function applyLine(area, prefix) {
  * onAttach()  the attach button, when the caller can upload files
  * Returns { setText, focus, insertAtCaret } for the caller to drive.
  */
-export function markdownEditor(host, { text, onChange, onAttach }) {
+function sourceEditor(host, { text, onChange, onAttach }) {
   host.innerHTML = "";
 
   const bar = el("div", "mdbar");
@@ -196,5 +200,100 @@ export function markdownEditor(host, { text, onChange, onAttach }) {
       area.focus();
       replace(area, snippet);
     },
+  };
+}
+
+// Which view the author last chose, for this session. A preference, not
+// a document property: it should not follow the file into git.
+let preferred = "rich";
+
+/**
+ * Build the editor into `host`, with a view switcher.
+ *
+ * text        the document's markdown
+ * onChange(t) every real edit
+ * onAttach()  the attach button, when the caller can upload files
+ */
+export function markdownEditor(host, { text, onChange, onAttach }) {
+  host.innerHTML = "";
+  let current = text ?? "";
+  let live = null; // the rich editor, when it is the one on screen
+
+  const bar = el("div", "viewbar");
+  const body = el("div", "viewbody");
+  const buttons = {};
+
+  const note = el("span", "hint viewnote");
+
+  /** The latest text, wherever it is being edited. */
+  const read = () => (live ? live.markdown() : current);
+
+  const commit = (markdown) => {
+    current = markdown;
+    onChange?.(markdown);
+  };
+
+  async function show(mode) {
+    preferred = mode;
+    for (const [key, button] of Object.entries(buttons)) {
+      button.classList.toggle("on", key === mode);
+      button.setAttribute("aria-pressed", String(key === mode));
+    }
+    // Take the text from whichever view is being left, so switching
+    // never loses an edit.
+    current = read();
+    if (live) {
+      live.destroy();
+      live = null;
+    }
+    note.textContent = "";
+
+    if (mode === "source") {
+      sourceEditor(body, { text: current, onChange: commit, onAttach });
+      return;
+    }
+
+    body.innerHTML = "";
+    body.append(el("p", "hint", "Loading the editor…"));
+    try {
+      live = await richEditor(body, { text: current, onChange: commit });
+      if (live.normalised) {
+        // Said once, plainly. Discovering it in a diff instead would be
+        // the sort of surprise that makes a tool untrustworthy.
+        note.textContent =
+          "Reformatted on open (bullets, table spacing). Nothing is saved " +
+          "until you edit — use Markdown to keep the file exactly as it is.";
+      }
+    } catch (err) {
+      // Say why, and fall back rather than leaving an empty pane.
+      live = null;
+      preferred = "source";
+      buttons.source?.classList.add("on");
+      buttons.rich?.classList.remove("on");
+      sourceEditor(body, { text: current, onChange: commit, onAttach });
+      note.textContent = "The rich editor could not be loaded — editing the source.";
+      note.title = String(err.message || err);
+    }
+  }
+
+  for (const [mode, label, title] of [
+    ["rich", "Rich text", "Edit as a document"],
+    ["source", "Markdown", "Edit the file as it is written"],
+  ]) {
+    const button = el("button", "viewtab", label);
+    button.type = "button";
+    button.title = title;
+    button.addEventListener("click", () => show(mode));
+    buttons[mode] = button;
+    bar.appendChild(button);
+  }
+  bar.appendChild(note);
+
+  host.append(bar, body);
+  show(preferred);
+
+  return {
+    markdown: read,
+    destroy: () => live?.destroy(),
   };
 }

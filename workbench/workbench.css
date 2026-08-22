@@ -546,3 +546,31 @@ label.check { display: inline-flex; align-items: center; gap: 6px; font-size: 0.
 .chip.derived { cursor: default; opacity: 0.9; }
 .problem.warn { color: var(--muted); }
 .problem.warn strong { color: var(--warn-fg, #a15c00); }
+
+/* ---- document views -------------------------------------------------- */
+/* Rich text by default; the source stays a click away, because a WYSIWYG */
+/* editor normalises as it writes and an author needs somewhere to say    */
+/* "leave the file as it is".                                             */
+
+.viewbar { display: flex; align-items: center; gap: 4px; margin-bottom: 10px; }
+button.viewtab {
+  padding: 5px 12px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-sunken); color: var(--muted);
+  font: inherit; font-size: 0.82rem; cursor: pointer;
+}
+button.viewtab:hover { color: var(--fg); }
+button.viewtab.on {
+  background: var(--accent); color: var(--accent-fg); border-color: var(--accent);
+  font-weight: 600;
+}
+.viewnote { margin: 0 0 0 8px; color: var(--warn-fg, #a15c00); }
+
+/* Milkdown paints itself; this is the frame it sits in. */
+.rich {
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-raised); min-height: 58vh;
+}
+.rich .milkdown { background: transparent; }
+.rich .ProseMirror { padding: 14px 18px; min-height: 54vh; }
+.rich .ProseMirror:focus { outline: none; }
+.viewbody { min-width: 0; }

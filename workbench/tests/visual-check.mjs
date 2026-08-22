@@ -219,15 +219,36 @@ const result = await page.evaluate(async () => {
       .map((t) => t.dataset.doc),
   };
 
+  // The document editor: rich text by default, source a click away.
+  // Both must work -- the source view is the fallback when the editor
+  // cannot be fetched, and the escape hatch when it reformats something.
   const mdHost = document.createElement("div");
   document.body.appendChild(mdHost);
-  let mdText = null;
   const NL = String.fromCharCode(10);
+  let mdText = null;
+  let mdCalls = 0;
   markdownEditor(mdHost, {
     text: ["# Plan", "", "- one"].join(NL),
-    onChange: (v) => (mdText = v),
+    onChange: (v) => {
+      mdCalls += 1;
+      mdText = v;
+    },
   });
-  const area = mdHost.querySelector("textarea");
+  // Give the editor time to fetch and mount before looking at it.
+  await new Promise((done) => setTimeout(done, 4000));
+  const rich = {
+    tabs: [...mdHost.querySelectorAll(".viewtab")].map((t) => t.textContent),
+    mounted: Boolean(mdHost.querySelector(".ProseMirror")),
+    headings: mdHost.querySelectorAll(".ProseMirror h1").length,
+    items: mdHost.querySelectorAll(".ProseMirror li").length,
+    // Opening a document must not change a byte of it.
+    changesOnLoad: mdCalls,
+  };
+
+  // Now the source view, and its toolbar.
+  mdHost.querySelectorAll(".viewtab")[1].click();
+  await new Promise((done) => setTimeout(done, 200));
+  const area = mdHost.querySelector("textarea.mdsource");
   area.focus();
   area.setSelectionRange(2, 6);
   mdHost.querySelectorAll(".mdbar button")[3].dispatchEvent(
@@ -309,7 +330,7 @@ const result = await page.evaluate(async () => {
 
   const vacant = host.querySelectorAll(".region.vacant").length;
   return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes,
-    tabbar, mdeditor, question, alignment, derived };
+    tabbar, mdeditor, question, alignment, derived, rich };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -345,6 +366,10 @@ for (const [kind, r] of Object.entries(result.listTypes)) {
 }
 console.log(`  tabs: ${result.tabbar.labels.join(" | ")}`);
 console.log(`  opening a tab: ${result.tabbar.opened}`);
+console.log(`  document views: ${result.rich.tabs.join(" | ")}`);
+console.log(`  rich editor mounted: ${result.rich.mounted}` +
+  ` (${result.rich.headings} heading, ${result.rich.items} items),` +
+  ` changes on load: ${result.rich.changesOnLoad}`);
 console.log(`  markdown bold: ${JSON.stringify(result.mdeditor.bolded)}`);
 console.log(`  question edits kept: ${JSON.stringify(result.question)}`);
 console.log(`  outcome coverage: ${result.alignment.coverage.join(" / ")}`);
@@ -373,6 +398,9 @@ const failed =
   result.tabbar.closable.includes("lessonplan.md") ||
   !result.mdeditor.preview.includes("<h1>") ||
   !String(result.mdeditor.bolded).includes("**Plan**") ||
+  !result.rich.mounted ||
+  result.rich.headings !== 1 ||
+  result.rich.changesOnLoad !== 0 ||
   result.question.stem !== "<p>Rewritten</p>" ||
   !result.question.tags?.includes("AP2") ||
   !result.question.tags?.includes("AP1") ||
