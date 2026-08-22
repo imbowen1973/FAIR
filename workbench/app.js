@@ -786,18 +786,68 @@ function renderBlock() {
   renderDocument(doc);
 }
 
+/**
+ * Write a document's file, and declare it.
+ *
+ * Explicit, not a side effect of opening the tab: browsing a session
+ * should not commit files. And explicit rather than "type something and
+ * it appears", because with a WYSIWYG editor a template on screen looks
+ * exactly like a document that already exists.
+ */
+function createDocument(doc) {
+  const block = currentBlock();
+  const text =
+    doc.editor === "assessment"
+      ? starterFor("assessment", doc.title, block)
+      : starterFor(doc.type, doc.title, block);
+  state.edits.set(doc.path, text);
+  // The quiz cache holds a parse of the file as it was, which was empty.
+  state.quizzes.delete(doc.path);
+
+  // Declared as well as written, or it is not carried into the catalog.
+  // The deck is the exception: slides.md is fixed by convention.
+  if (doc.type !== "slides") {
+    setBlockResources(
+      withResource(blockMeta().data.resources, {
+        type: doc.type,
+        title: doc.title,
+        path: doc.file ?? doc.id,
+      })
+    );
+  }
+  renderOutline();
+  renderBlock();
+  updateActions();
+  status(`Created ${doc.path.split("/").pop()}.`, "ok");
+}
+
+/** The banner offering to create a document that is not there yet. */
+function createBanner(doc) {
+  const row = document.createElement("div");
+  row.className = "create-row";
+  const words = document.createElement("p");
+  words.className = "warn";
+  const name = doc.path.split("/").pop();
+  words.textContent = doc.missing
+    ? `block.yaml declares ${name}, but the file is not in the repo.`
+    : `${name} does not exist yet.`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "primary";
+  button.textContent = `Create ${doc.title.toLowerCase()}`;
+  button.addEventListener("click", () => createDocument(doc));
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent =
+    "Below is what will be written. Nothing is saved until you create it " +
+    "or start editing.";
+  row.append(words, button, hint);
+  return row;
+}
+
 function renderDocument(doc) {
   const host = $("document");
   host.innerHTML = "";
-
-  if (doc.missing) {
-    const warn = document.createElement("p");
-    warn.className = "warn";
-    warn.textContent =
-      `block.yaml declares ${doc.path.split("/").pop()}, but it is not in the repo. ` +
-      "Type below to create it, or remove the tab to drop the declaration.";
-    host.appendChild(warn);
-  }
 
   if (doc.editor === "attachment") {
     renderAttachment(host, doc);
@@ -805,23 +855,16 @@ function renderDocument(doc) {
   }
 
   if (doc.editor === "assessment") {
+    if (doc.uncreated) host.appendChild(createBanner(doc));
     renderQuestion(host, doc);
     return;
   }
 
-  // A required document that is not there yet opens on its template
-  // rather than on an empty box — the rule is then something an author
-  // can act on, not just something the validator complains about.
+  // A document that is not there yet opens on its template rather than
+  // on an empty box, so the rule is something an author can act on.
   const existing = docText(doc);
   const seeded = existing || starterFor(doc.type, doc.title, currentBlock());
-  if (!existing) {
-    const note = document.createElement("p");
-    note.className = "hint";
-    note.textContent =
-      `${doc.path.split("/").pop()} does not exist yet. This is a starting ` +
-      "point — it is written to the repo once you edit it.";
-    host.appendChild(note);
-  }
+  if (!existing) host.appendChild(createBanner(doc));
 
   // The outcomes section is generated from the catalogue, so it can be
   // brought back into step without touching a word of the prose around

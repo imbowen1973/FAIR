@@ -860,3 +860,31 @@ test("the opening slides carry a role and no words at all", () => {
     assert.deepEqual(Object.keys(slide).sort(), ["id", "layout", "role"]);
   }
 });
+
+test("a lesson plan nobody has written is uncreated, not missing", () => {
+  // Two different absences. The lesson plan always has a tab because
+  // every block needs one, so a block that has not written its plan is
+  // incomplete, not broken.
+  const block = { id: "b", meta: { resources: [{ type: "workbook", path: "workbook.md" }] } };
+  const docs = blockDocuments(block, new Map([["blocks/b/slides.md", "x"]]));
+  const plan = docs.find((d) => d.type === "lessonplan");
+  assert.equal(plan.uncreated, true);
+  assert.equal(plan.missing, false, "nothing declares it, so nothing is broken");
+
+  // A resource block.yaml declares and the repo does not hold is broken.
+  const workbook = docs.find((d) => d.id === "workbook.md");
+  assert.equal(workbook.uncreated, true);
+  assert.equal(workbook.missing, true);
+});
+
+test("a pending edit counts as created", () => {
+  // blockDocuments reads the pending file map, so a document written but
+  // not yet committed is not offered for creation a second time.
+  const block = { id: "b", meta: {} };
+  const pending = new Map([
+    ["blocks/b/slides.md", "x"],
+    ["blocks/b/lessonplan.md", "# Summary"],
+  ]);
+  const plan = blockDocuments(block, pending).find((d) => d.type === "lessonplan");
+  assert.equal(plan.uncreated, false);
+});

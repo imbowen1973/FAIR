@@ -210,6 +210,18 @@ const result = await page.evaluate(async () => {
     onRemove: () => {},
   });
   tabHost.querySelectorAll(".tab")[2].click();
+  // A block whose lesson plan has never been written: the strip has to
+  // say so, or "there is no lesson plan" is invisible until you open it.
+  const bareHost = document.createElement("div");
+  document.body.appendChild(bareHost);
+  tabs(bareHost, {
+    documents: blockDocuments(block, new Map([["blocks/01-x/slides.md", ""]])),
+    active: "slides",
+    onOpen: () => {},
+    onAdd: () => {},
+    onRemove: () => {},
+  });
+
   const tabbar = {
     labels: [...tabHost.querySelectorAll(".tab-label")].map((t) => t.textContent),
     opened: openedTab,
@@ -217,6 +229,16 @@ const result = await page.evaluate(async () => {
     closable: [...tabHost.querySelectorAll(".tab")]
       .filter((t) => t.querySelector(".tab-close"))
       .map((t) => t.dataset.doc),
+    // Adding a resource is how every document after the first gets made,
+    // so the button carries a word, not just a glyph.
+    addLabel: bareHost.querySelector(".tab.addbtn")?.textContent.trim(),
+    addOffers: (() => {
+      bareHost.querySelector(".tab.addbtn").click();
+      return [...bareHost.querySelectorAll(".menu-item")].map((m) => m.textContent);
+    })(),
+    uncreated: [...bareHost.querySelectorAll(".tab.uncreated .tab-label")].map(
+      (t) => t.textContent
+    ),
   };
 
   // The document editor: rich text by default, source a click away.
@@ -377,6 +399,9 @@ for (const [kind, r] of Object.entries(result.listTypes)) {
 }
 console.log(`  tabs: ${result.tabbar.labels.join(" | ")}`);
 console.log(`  opening a tab: ${result.tabbar.opened}`);
+console.log(`  not created yet: ${result.tabbar.uncreated.join(", ") || "none"}`);
+console.log(`  add button: "${result.tabbar.addLabel}" offering ` +
+  `${result.tabbar.addOffers.length} kinds`);
 console.log(`  document views: ${result.rich.tabs.join(" | ")}`);
 console.log(`  rich editor mounted: ${result.rich.mounted}` +
   ` (${result.rich.headings} heading, ${result.rich.items} items),` +
@@ -409,6 +434,9 @@ const failed =
   result.tabbar.opened !== "workbook.md" ||
   result.tabbar.closable.includes("slides") ||
   result.tabbar.closable.includes("lessonplan.md") ||
+  result.tabbar.addLabel !== "Add" ||
+  result.tabbar.addOffers.length < 5 ||
+  !result.tabbar.uncreated.includes("Lesson plan") ||
   !result.mdeditor.preview.includes("<h1>") ||
   !String(result.mdeditor.bolded).includes("**Plan**") ||
   !result.rich.mounted ||

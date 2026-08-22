@@ -56,10 +56,17 @@ function titleFrom(path) {
  * Every document in a block, in tab order: the deck first, the lesson
  * plan next, then whatever `resources:` declares.
  *
- * Each is `{id, title, type, path, editor, missing}`. `path` is repo
- * relative so it can be handed straight to the file map. `missing` marks
- * a document the manifest declares but the repo does not hold — shown
- * rather than hidden, because a broken link is worth seeing.
+ * Each is `{id, title, type, path, file, editor, uncreated, missing}`.
+ * `path` is repo relative so it can be handed straight to the file map.
+ *
+ * Two different absences, and conflating them misleads:
+ *
+ *   `uncreated` — no file behind this tab yet. The lesson plan always
+ *   has a tab because every block needs one, so a block that has not
+ *   written its plan is here, not broken.
+ *
+ *   `missing` — `block.yaml` declares it and the repo does not hold it.
+ *   That is a broken declaration, and worth seeing rather than hiding.
  */
 export function blockDocuments(block, files) {
   if (!block) return [];
@@ -69,6 +76,7 @@ export function blockDocuments(block, files) {
       id: "slides",
       title: "Slides",
       type: "slides",
+      uncreated: files ? !files.has(`${dir}/${SLIDES_FILE}`) : false,
       // The name to link by, relative to the block. For everything else
       // the id already is that; the deck is the one whose id is a label.
       file: SLIDES_FILE,
@@ -98,7 +106,10 @@ export function blockDocuments(block, files) {
       file: rel,
       path,
       editor: editorFor(type, rel),
-      missing: files ? !files.has(path) : false,
+      uncreated: files ? !files.has(path) : false,
+      // Declared but absent. An undeclared lesson plan that has simply
+      // not been written yet is uncreated, not missing.
+      missing: files ? declared.some((r) => r?.path === rel) && !files.has(path) : false,
     });
   }
   return out;

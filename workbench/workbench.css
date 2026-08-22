@@ -616,3 +616,16 @@ button.viewtab.on {
   font-size: 9px; letter-spacing: 0.03em; text-transform: uppercase;
   color: var(--muted); opacity: 0.75; pointer-events: none;
 }
+
+/* A document that is only a tab so far: no file behind it yet. */
+button.tab.uncreated .tab-label { opacity: 0.7; font-style: italic; }
+button.tab.uncreated::before { content: "+"; font-weight: 700; opacity: 0.7; }
+button.tab.addbtn { gap: 5px; }
+
+.create-row {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 14px; background: var(--bg-sunken);
+  max-width: 54rem;
+}
+.create-row p { margin: 0 0 8px; }
+.create-row .hint { margin: 8px 0 0; }

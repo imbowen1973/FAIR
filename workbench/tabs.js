@@ -53,6 +53,9 @@ export function tabs(host, { documents, active, onOpen, onAdd, onRemove }) {
       // Shown rather than hidden: a manifest pointing at a file that is
       // not there is exactly the thing an author needs to see.
       tab.title = `${doc.path} is declared in block.yaml but is not in the repo`;
+    } else if (doc.uncreated) {
+      tab.classList.add("uncreated");
+      tab.title = `${doc.path} has not been created yet`;
     }
     tab.append(el("span", "tab-label", doc.title));
 
@@ -81,7 +84,9 @@ export function tabs(host, { documents, active, onOpen, onAdd, onRemove }) {
   button.title = "Add a document to this block";
   button.setAttribute("aria-label", "Add a document");
   button.setAttribute("aria-expanded", "false");
-  button.append(icon("add"));
+  // Labelled, not just an icon: this is how every resource after the
+  // first gets made, and an unlabelled + is easy to miss entirely.
+  button.append(icon("add"), document.createTextNode("Add"));
   const menu = el("div", "tab-menu");
   menu.hidden = true;
 
