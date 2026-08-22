@@ -352,3 +352,62 @@ def test_code_is_verbatim(tmp_path):
     # command with an asterisk would come out bold.
     document, _, _ = _render(tmp_path, "```sh\nrm *.tmp && echo **done**\n```\n")
     assert any("rm *.tmp && echo **done**" in p.text for p in document.paragraphs)
+
+
+# ---- instructions written from a library --------------------------------
+
+
+def test_the_prompt_carries_this_template_and_no_other(tmp_path):
+    """A model told only about "the grammar" invents a TwoColumn layout.
+
+    The prompt is generated so it names what this template actually has.
+    """
+    import shutil
+
+    from edufair_renderer.prompt import build_prompt
+
+    root = tmp_path / "lib"
+    (root / "competencies").mkdir(parents=True)
+    shutil.copy(
+        Path(__file__).resolve().parents[2] / "examples" / "layout-map.yaml",
+        root / "layout-map.yaml",
+    )
+    (root / "competencies" / "framework.yaml").write_text(
+        "competencies:\n  CE1:\n    label: Designing clinical teaching\n",
+        encoding="utf-8",
+    )
+    (root / "course.yaml").write_text("id: c\ntitle: A course\n", encoding="utf-8")
+
+    prompt = build_prompt(root)
+
+    # Every layout the template has, with its own regions.
+    assert "`Comparison`" in prompt
+    assert "`left_head`" in prompt
+    # The course's own competency ids, so `develops:` comes back valid.
+    assert "`CE1` — Designing clinical teaching" in prompt
+    # And the rules that matter most, stated as rules.
+    assert "no fonts, no colours" in prompt
+    assert "will be refused on import" in prompt
+
+
+def test_the_worked_example_uses_a_layout_the_template_has(tmp_path):
+    """An example naming a layout that does not exist teaches the wrong thing."""
+    import re
+    import shutil
+
+    from edufair_renderer.layoutmap import load_layout_map
+    from edufair_renderer.prompt import build_prompt
+
+    root = tmp_path / "lib"
+    root.mkdir()
+    shutil.copy(
+        Path(__file__).resolve().parents[2] / "examples" / "layout-map.yaml",
+        root / "layout-map.yaml",
+    )
+    prompt = build_prompt(root)
+    layouts = set(load_layout_map(root / "layout-map.yaml"))
+
+    used = re.findall(r"^layout: (\w+)$", prompt, re.MULTILINE)
+    assert used, "the prompt must show a worked slide"
+    for name in used:
+        assert name in layouts, f"the example uses {name}, which this template lacks"
