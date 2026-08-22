@@ -507,9 +507,46 @@ const result = await page.evaluate(async () => {
     expectedPx: Math.round(900 / slideCm),
   };
 
+  // An empty placeholder has to say what it can hold. A picture
+  // placeholder that offers to add text is why there was no way to put
+  // an image on a slide that did not already have one.
+  const emptyHost = document.createElement("div");
+  emptyHost.style.width = "900px";
+  document.body.appendChild(emptyHost);
+  const pictureLayoutKey = Object.keys(geometry.layouts).find((key) =>
+    Object.values(geometry.layouts[key].regions || {}).some((r) => r.type === "picture")
+  );
+  let placeholders = { skipped: true };
+  if (pictureLayoutKey) {
+    const openedPicker = [];
+    const madeText = [];
+    drawSlide(emptyHost, {
+      geometry,
+      layoutKey: pictureLayoutKey,
+      slide: { id: "empty", layout: pictureLayoutKey },
+      editable: true,
+      media: {},
+      onChange: (region) => madeText.push(region),
+      onMedia: (region, value, kind) => openedPicker.push({ region, kind }),
+    });
+    const boxes = [...emptyHost.querySelectorAll(".region.vacant")];
+    for (const box of boxes) {
+      const picture = box.querySelector(".vacant-media");
+      if (picture) picture.click();
+      else box.click();
+    }
+    placeholders = {
+      skipped: false,
+      labels: boxes.map((b) => b.querySelector(".region-name").textContent),
+      openedPicker,
+      madeText,
+    };
+  }
+
   const vacant = host.querySelectorAll(".region.vacant").length;
   return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes,
-    tabbar, mdeditor, question, alignment, derived, rich, media, assets, stamp };
+    tabbar, mdeditor, question, alignment, derived, rich, media, assets, stamp,
+    placeholders };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -562,6 +599,8 @@ console.log(`  grouped by session: ${result.alignment.groups.join(" | ")}`);
 console.log(`  competencies confined to one session: ${result.alignment.confined.join(", ") || "none"}`);
 console.log(`  derived from outcome: ${JSON.stringify(result.derived.fromOutcome)}`);
 console.log(`  media: ${JSON.stringify(result.media)}`);
+console.log(`  empty placeholders: ${result.placeholders.labels?.join(" | ")}`);
+console.log(`  picker opened for: ${JSON.stringify(result.placeholders.openedPicker)}`);
 console.log(`  worst-case upload: ${JSON.stringify(result.assets)}`);
 console.log(`  funder stamp: ${JSON.stringify(result.stamp)}`);
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
@@ -613,6 +652,9 @@ const failed =
   !result.derived.lit.includes("O1") ||
   !result.derived.lit.includes("AP9") ||
   (!result.assets.skipped && !(result.assets.kb <= 500)) ||
+  (!result.placeholders.skipped &&
+    (!result.placeholders.labels.some((l) => l.includes("picture")) ||
+      !result.placeholders.openedPicker.length)) ||
   !result.stamp.drawn ||
   !result.stamp.left ||
   !result.stamp.faded ||

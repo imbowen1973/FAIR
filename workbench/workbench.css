@@ -835,3 +835,15 @@ button.media-thumb span {
 .attr-logo input[type="file"] { display: none; }
 .attr-numbers { display: flex; gap: 18px; flex-wrap: wrap; }
 .attr-numbers .q-field { max-width: 12rem; }
+
+/* A content placeholder takes text or a picture. Text is the click,
+   because it is the common case; the picture is offered beside it. */
+button.vacant-media {
+  position: absolute; right: 4px; bottom: 3px;
+  padding: 1px 6px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-raised); color: var(--muted);
+  font-size: 11px; line-height: 1.4;
+}
+button.vacant-media:hover { color: var(--accent); border-color: var(--accent); }
+.region.vacant { position: absolute; }

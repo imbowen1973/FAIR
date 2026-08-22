@@ -414,13 +414,42 @@ export function drawSlide(
     box.style.top = `${rect.y * 100}%`;
     box.style.width = `${rect.w * 100}%`;
     box.style.height = `${rect.h * 100}%`;
+    // What this placeholder is for, from the template itself. A picture
+    // placeholder that offers to add text is the reason there was no way
+    // to put an image on a slide that did not already have one.
+    const holds = rect.type === "picture" ? "picture" : rect.type === "object" ? "either" : "text";
+
     const name = document.createElement("span");
     name.className = "region-name";
-    name.textContent = editable ? `+ ${region}` : region;
+    name.textContent = editable
+      ? holds === "picture" ? "+ picture or video" : `+ ${region}`
+      : region;
     box.appendChild(name);
+
     if (editable) {
-      box.title = `Add ${region}`;
-      box.addEventListener("click", () => onChange?.(region, ""));
+      if (holds === "picture") {
+        box.title = `Add a picture or a video to ${region}`;
+        box.addEventListener("click", () => onMedia?.(region, {}, "image"));
+      } else {
+        box.title = `Add ${region}`;
+        box.addEventListener("click", () => onChange?.(region, ""));
+      }
+
+      // A content placeholder takes either, and text is the common case
+      // -- so text is the click and the picture is offered beside it.
+      if (holds === "either") {
+        const media = document.createElement("button");
+        media.type = "button";
+        media.className = "vacant-media";
+        media.textContent = "▨";
+        media.title = `Put a picture or a video in ${region} instead`;
+        media.setAttribute("aria-label", `Add a picture to ${region}`);
+        media.addEventListener("click", (event) => {
+          event.stopPropagation(); // or the text handler fires as well
+          onMedia?.(region, {}, "image");
+        });
+        box.appendChild(media);
+      }
     }
     stage.appendChild(box);
   }
