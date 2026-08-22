@@ -669,3 +669,26 @@ button.tab.addbtn { gap: 5px; }
   textarea.mdsource, .mdpreview, .rich { min-height: 44vh; }
   .rich .ProseMirror { min-height: 40vh; padding: 12px 14px; }
 }
+
+/* The recipe's own levels in the rail: a lesson sits inside its module,
+   and saying so is the difference between "the plan belongs to the
+   module" and "the plan belongs to the lesson". */
+.structure-row {
+  display: flex; align-items: baseline; gap: 6px;
+  margin: 12px 0 4px; font-size: 0.82rem; font-weight: 600;
+}
+.structure-kind {
+  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); font-weight: 700;
+}
+
+/* What belongs to the repo and what belongs to a session are different
+   things, and the rail says which is which. */
+.rail-heading {
+  display: flex; flex-direction: column; gap: 1px;
+  margin: 14px 0 6px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.rail-heading:first-child { margin-top: 0; }
+.rail-heading strong { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.rail-heading span { font-size: 0.72rem; color: var(--muted); }

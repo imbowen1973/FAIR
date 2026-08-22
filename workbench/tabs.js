@@ -61,7 +61,7 @@ export function tabs(host, { documents, active, onOpen, onAdd, onRemove }) {
 
     // The deck and the lesson plan are required, so neither offers a
     // close button -- an author cannot remove them by accident.
-    if (doc.type !== "slides" && doc.type !== "lessonplan") {
+    if (!["slides", "lessonplan", "outcomes", "course", "back"].includes(doc.type)) {
       const close = el("button", "tab-close");
       close.type = "button";
       close.title = `Remove ${doc.title} from this block`;

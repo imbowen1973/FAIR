@@ -426,3 +426,145 @@ export function openingSlides(firstId = "s-01") {
     { id: `${stem}02`, layout: "Full", role: "outcomes" },
   ];
 }
+
+/**
+ * A session's own learning outcomes, edited in the session.
+ *
+ * Outcomes are written where they belong: a learning outcome is what
+ * THIS session is for, so it is authored here rather than in a
+ * course-wide list with a session picker. They are still stored in one
+ * catalogue at the repo root, because slides and questions reference
+ * them by id and ids have to be unique — but that is storage, and it is
+ * not where an author should have to go to write one.
+ *
+ * The repo is the module: it holds the description and the competency
+ * framework. A session holds outcomes. Keeping the two apart is the
+ * whole point of the split.
+ *
+ * outcomes      this session's, as [{id, statement, develops, dok}]
+ * competencies  {id: label} from the framework — repo level, not edited here
+ * coverage      {outcomeId: {slides, questions}}
+ * onChange(list, {structural})  an outcome was edited
+ * onAdd()       a new outcome for this session
+ * onRemove(id)  drop one
+ */
+export function sessionOutcomes(host, {
+  outcomes, competencies, coverage, sessionTitle, onChange, onAdd, onRemove,
+}) {
+  host.innerHTML = "";
+
+  host.append(
+    el(
+      "p",
+      "hint",
+      `What a learner will be able to do by the end of ${sessionTitle || "this session"}. ` +
+        "Slides and questions point at these, and the competencies they " +
+        "develop follow from them. Competencies are course-wide and live " +
+        "with the course, not here."
+    )
+  );
+
+  const entries = Object.entries(competencies || {});
+  if (!entries.length) {
+    host.append(
+      el("p", "warn", "This course has no competency framework yet, so outcomes have nothing to develop.")
+    );
+  }
+
+  if (!outcomes.length) {
+    host.append(
+      el("p", "warn", "This session has no learning outcomes yet.")
+    );
+  }
+
+  for (const [index, outcome] of outcomes.entries()) {
+    const card = el("div", "outcome");
+    const change = (patch, structural = true) =>
+      onChange(
+        outcomes.map((o, i) => (i === index ? { ...o, ...patch } : o)),
+        { structural }
+      );
+
+    const head = el("div", "outcome-head");
+    const id = el("span", "prog-id", outcome.id);
+    id.title = "The id slides and questions reference.";
+
+    const where = coverage?.[outcome.id];
+    const cover = el("span", "coverage");
+    if (!where || !where.slides) {
+      cover.classList.add("none");
+      cover.textContent = "no slide serves it yet";
+    } else {
+      cover.textContent =
+        `${where.slides} slide${where.slides === 1 ? "" : "s"}` +
+        (where.questions ? `, ${where.questions} question${where.questions === 1 ? "" : "s"}` : "");
+    }
+
+    const remove = el("button", "tool", "×");
+    remove.type = "button";
+    remove.title = `Remove ${outcome.id}`;
+    remove.setAttribute("aria-label", `Remove outcome ${outcome.id}`);
+    remove.addEventListener("click", () => {
+      if (where?.slides && !window.confirm(
+        `${outcome.id} is used by ${where.slides} slide(s). Remove it anyway?`
+      )) return;
+      onRemove?.(outcome.id);
+    });
+
+    head.append(id, cover, remove);
+    card.append(head);
+
+    const statement = el("textarea", "q-text");
+    statement.rows = 2;
+    statement.value = outcome.statement;
+    statement.placeholder = "By the end of this session, participants will be able to…";
+    statement.setAttribute("aria-label", `Outcome ${outcome.id}`);
+    // Not structural: rebuilding on every keystroke takes the caret.
+    statement.addEventListener("input", () =>
+      change({ statement: statement.value }, false)
+    );
+    card.append(statement);
+
+    const foot = el("div", "outcome-foot");
+    const chips = el("div", "chips");
+    for (const [cid, label] of entries) {
+      const chip = el("button", "chip", cid);
+      chip.type = "button";
+      chip.title = label;
+      if (outcome.develops.includes(cid)) chip.classList.add("on");
+      chip.addEventListener("click", () => {
+        const develops = outcome.develops.includes(cid)
+          ? outcome.develops.filter((c) => c !== cid)
+          : [...outcome.develops, cid];
+        chip.classList.toggle("on", develops.includes(cid));
+        outcome.develops = develops;
+        change({ develops }, false);
+      });
+      chips.append(chip);
+    }
+    foot.append(chips);
+
+    const dokWrap = el("label", "check");
+    dokWrap.append(el("span", null, "Level"));
+    const dok = el("select", "dok");
+    for (const level of ["", "1", "2", "3", "4"]) {
+      const option = el("option", null, level || "not set");
+      option.value = level;
+      dok.append(option);
+    }
+    dok.value = outcome.dok ? String(outcome.dok) : "";
+    dok.addEventListener("change", () => {
+      outcome.dok = dok.value ? Number(dok.value) : null;
+      change({ dok: outcome.dok }, false);
+    });
+    dokWrap.append(dok);
+    foot.append(dokWrap);
+    card.append(foot);
+    host.append(card);
+  }
+
+  const add = el("button", "add-slide", "+ learning outcome");
+  add.type = "button";
+  add.addEventListener("click", () => onAdd?.());
+  host.append(add);
+}

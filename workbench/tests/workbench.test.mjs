@@ -473,15 +473,17 @@ test("a block's tabs are the deck, the lesson plan, then the manifest", () => {
     ["blocks/01-x/files/data.xlsx", ""],
   ]);
   const docs = blockDocuments(block, files);
+  // Outcomes are a session's own, so they get a tab beside its plan.
   assert.deepEqual(
     docs.map((d) => d.id),
-    ["slides", "lessonplan.md", "workbook.md", "files/data.xlsx"]
+    ["slides", "outcomes", "lessonplan.md", "workbook.md", "files/data.xlsx"]
   );
   // The lesson plan gets a tab whether or not the manifest lists it,
   // because every block has one.
-  assert.equal(docs[1].title, "Lesson plan");
-  assert.equal(docs[2].editor, "markdown");
-  assert.equal(docs[3].editor, "attachment");
+  assert.equal(docs[1].editor, "outcomes");
+  assert.equal(docs[2].title, "Lesson plan");
+  assert.equal(docs[3].editor, "markdown");
+  assert.equal(docs[4].editor, "attachment");
 });
 
 test("a document the manifest declares but the repo lacks is marked, not hidden", () => {

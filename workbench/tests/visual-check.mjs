@@ -209,7 +209,9 @@ const result = await page.evaluate(async () => {
     onAdd: () => {},
     onRemove: () => {},
   });
-  tabHost.querySelectorAll(".tab")[2].click();
+  // By name, not by position: the strip gains tabs over time and an
+  // index-based click quietly starts testing a different one.
+  tabHost.querySelector('.tab[data-doc="workbook.md"]').click();
   // A block whose lesson plan has never been written: the strip has to
   // say so, or "there is no lesson plan" is invisible until you open it.
   const bareHost = document.createElement("div");

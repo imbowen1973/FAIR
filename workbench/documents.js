@@ -86,6 +86,20 @@ export function blockDocuments(block, files) {
     },
   ];
 
+  // A session's learning outcomes are a thing you edit, so they get a
+  // tab. They are stored in the repo-wide catalogue because slides and
+  // questions reference them by id -- but storage is not where an author
+  // should have to go to write one.
+  out.push({
+    id: "outcomes",
+    title: "Outcomes",
+    type: "outcomes",
+    editor: "outcomes",
+    path: "outcomes.yaml",
+    uncreated: false,
+    missing: false,
+  });
+
   const seen = new Set([SLIDES_FILE]);
   const declared = Array.isArray(block.meta?.resources) ? block.meta.resources : [];
 

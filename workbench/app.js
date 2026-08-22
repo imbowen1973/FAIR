@@ -12,6 +12,7 @@ import { decorate } from "./icons.js";
 import {
   asListType,
   blankSlide,
+  flattenStructure,
   layoutRegions,
   isLibrary,
   layoutKeys,
@@ -51,7 +52,9 @@ import { questionForm } from "./assessmentui.js";
 import {
   outcomeDoc,
   outcomeList,
+  freeOutcomeId,
   outcomesEditor,
+  sessionOutcomes,
   fillRole,
   openingSlides,
   roleRegions,
@@ -351,6 +354,26 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+/**
+ * A heading in the rail, so what belongs to the repo and what belongs to
+ * a session are visibly different things.
+ *
+ * The course holds the description and the competency framework. A
+ * session holds its learning outcomes, its plan and its deck. Flat, that
+ * distinction was invisible, and a plan looked as though it hung off the
+ * course.
+ */
+function railHeading(title, note) {
+  const row = document.createElement("div");
+  row.className = "rail-heading";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  const small = document.createElement("span");
+  small.textContent = note;
+  row.append(strong, small);
+  return row;
+}
+
 function renderOutline() {
   paintRailToggle();
   const host = $("outline");
@@ -361,6 +384,7 @@ function renderOutline() {
   // belong to the course rather than to any one session.
   const courseGroup = document.createElement("div");
   courseGroup.className = "block course-entry";
+  courseGroup.appendChild(railHeading("This course", "the whole repo"));
   const courseHead = document.createElement("button");
   courseHead.type = "button";
   courseHead.className = "block-head";
@@ -375,15 +399,37 @@ function renderOutline() {
   courseGroup.appendChild(courseHead);
   host.appendChild(courseGroup);
 
-  const ordered = placedBlocks(library.course.structure);
-  const ids = [...library.blocks.keys()];
-  const sequence = [...ordered.filter((id) => library.blocks.has(id)),
-                    ...ids.filter((id) => !ordered.includes(id))];
+  host.appendChild(railHeading("Sessions", "each has its own outcomes and plan"));
 
-  for (const id of sequence) {
+  // The recipe's own shape, so a lesson visibly sits inside its module.
+  // Flat, the levels were invisible and a lesson plan looked as though
+  // it hung off the module rather than the lesson.
+  const placed = placedBlocks(library.course.structure);
+  const rows = flattenStructure(library.course.structure).filter(
+    (row) => row.kind !== "block" || library.blocks.has(row.block)
+  );
+  for (const id of library.blocks.keys()) {
+    if (!placed.includes(id)) rows.push({ kind: "block", block: id, depth: 0 });
+  }
+
+  for (const row of rows) {
+    if (row.kind !== "block") {
+      const heading = document.createElement("div");
+      heading.className = "structure-row";
+      heading.style.paddingLeft = `${row.depth * 10}px`;
+      const kind = document.createElement("span");
+      kind.className = "structure-kind";
+      kind.textContent = row.kind;
+      heading.append(kind, document.createTextNode(row.title));
+      host.appendChild(heading);
+      continue;
+    }
+
+    const id = row.block;
     const block = library.blocks.get(id);
     const group = document.createElement("div");
     group.className = "block";
+    group.style.marginLeft = `${row.depth * 10}px`;
 
     const head = document.createElement("button");
     head.type = "button";
@@ -643,6 +689,109 @@ function renderRibbon() {
   paintListType($("ribbon"), regionType(activeRegion));
 }
 
+// ---- new lessons and modules -------------------------------------------
+//
+// A lesson is a block: its own folder, its own plan, its own deck. A
+// module is a container in course.yaml holding lessons. Both are made
+// here, because a course that cannot grow in the tool is a course that
+// gets edited somewhere else.
+
+/** A folder name from a title: lowercase, hyphens, no surprises. */
+function slugFor(title, taken) {
+  const base =
+    String(title || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "lesson";
+  const numbered = `${String(taken.size + 1).padStart(2, "0")}-${base}`;
+  if (!taken.has(numbered)) return numbered;
+  for (let n = 2; n < 99; n += 1) {
+    if (!taken.has(`${numbered}-${n}`)) return `${numbered}-${n}`;
+  }
+  return `${numbered}-${Date.now()}`;
+}
+
+/** course.yaml as data, edits included. */
+function courseDoc() {
+  const text = state.edits.get("course.yaml") ?? state.files.get("course.yaml") ?? "";
+  return parseYaml(text) || {};
+}
+
+function writeCourse(next) {
+  state.edits.set("course.yaml", stringifyYaml(next));
+  state.library.course = next;
+}
+
+/** Append a node to the container at `trail`, or to the root. */
+function addToStructure(structure, trail, node) {
+  if (!trail.length) return [...(structure || []), node];
+  const [head, ...rest] = trail;
+  return (structure || []).map((entry, index) =>
+    index === head
+      ? { ...entry, children: addToStructure(entry.children, rest, node) }
+      : entry
+  );
+}
+
+/** Every container in the recipe, as {title, trail} for a picker. */
+function containers(structure, trail = [], out = []) {
+  (structure || []).forEach((node, index) => {
+    if (node.block) return;
+    out.push({ title: node.title || node.kind || "group", trail: [...trail, index] });
+    containers(node.children, [...trail, index], out);
+  });
+  return out;
+}
+
+/**
+ * A new lesson: a block folder with a manifest, placed in the recipe.
+ *
+ * Only block.yaml is written. A lesson with no plan and no deck is
+ * exactly what a new lesson is, and the tabs then offer to create both.
+ */
+function addLesson(trail) {
+  const title = window.prompt("What is this lesson called?");
+  if (title === null) return;
+  const id = slugFor(title, new Set(state.library.blocks.keys()));
+  const path = `blocks/${id}/block.yaml`;
+  const meta = { title: title.trim() || id };
+  state.edits.set(path, stringifyYaml(meta));
+
+  const course = courseDoc();
+  writeCourse({
+    ...course,
+    structure: addToStructure(course.structure, trail ?? [], { block: id }),
+  });
+
+  state.library.blocks.set(id, { id, meta, slidesPath: null, parsed: null });
+  state.blockId = id;
+  state.slideIndex = 0;
+  state.courseOpen = false;
+  state.docByBlock.delete(id);
+  renderOutline();
+  renderSlide();
+  updateActions();
+  status(`Added ${title}. Its lesson plan and deck are waiting on the tabs.`, "ok");
+}
+
+/** A new module: a container in the recipe, holding lessons. */
+function addModule() {
+  const title = window.prompt("What is this module called?");
+  if (title === null) return;
+  const course = courseDoc();
+  writeCourse({
+    ...course,
+    structure: addToStructure(course.structure, [], {
+      kind: "module",
+      title: title.trim() || "Module",
+      children: [],
+    }),
+  });
+  renderOutline();
+  updateActions();
+  status(`Added the module ${title}. Add lessons to it from the rail.`, "ok");
+}
+
 // ---- the session drawer ------------------------------------------------
 //
 // On a phone the session list stacks above the editor, and a course's
@@ -793,10 +942,27 @@ function removeDocument(id) {
 
 function renderTabs() {
   if (state.courseOpen) {
-    // The course is not a block, so it has no document tabs. Clearing
-    // the strip is honest; leaving the last block's tabs there would
-    // suggest they apply to what is on screen.
-    $("tabs").innerHTML = "";
+    // The course has its own tabs, not the last block's -- and a way
+    // back, because an empty strip was a dead end.
+    const back = currentBlock();
+    tabs($("tabs"), {
+      documents: [
+        { id: "course-outcomes", title: "Outcomes and competencies", type: "course" },
+        ...(back
+          ? [{ id: "back", title: `← ${back.meta?.title || back.id}`, type: "back" }]
+          : []),
+      ],
+      active: "course-outcomes",
+      onOpen: (id) => {
+        if (id !== "back") return;
+        state.courseOpen = false;
+        renderOutline();
+        renderSlide();
+        revealEditor();
+      },
+      onAdd: () => {},
+      onRemove: () => {},
+    });
     return;
   }
   const doc = activeDoc();
@@ -900,6 +1066,11 @@ function renderDocument(doc) {
   if (doc.editor === "assessment") {
     if (doc.uncreated) host.appendChild(createBanner(doc));
     renderQuestion(host, doc);
+    return;
+  }
+
+  if (doc.editor === "outcomes") {
+    renderSessionOutcomes(host);
     return;
   }
 
@@ -1026,7 +1197,7 @@ function blockOutcomes(blockId) {
 }
 
 /** Move an outcome to a session — or to none. */
-function setOutcomeOwner(outcomeId, blockId) {
+function setOutcomeOwner(outcomeId, blockId, { stay = false } = {}) {
   for (const [id] of state.library.blocks) {
     const path = `blocks/${id}/block.yaml`;
     const text = state.edits.get(path) ?? state.files.get(path) ?? "";
@@ -1043,7 +1214,7 @@ function setOutcomeOwner(outcomeId, blockId) {
     state.library.blocks.get(id).meta = nextMeta;
   }
   updateActions();
-  renderCourse();
+  if (!stay) renderCourse();
 }
 
 function renderCourse() {
@@ -1305,6 +1476,61 @@ function renderQuestion(host, doc) {
 function renderQuestionList() {
   const doc = activeDoc();
   if (doc?.editor === "assessment") renderOutline();
+}
+
+/**
+ * This session's learning outcomes.
+ *
+ * Written to the repo-wide catalogue and claimed by this block, so the
+ * author edits them where they belong while the ids stay unique across
+ * the course.
+ */
+function renderSessionOutcomes(host) {
+  const block = currentBlock();
+  const draw = () => {
+    const owned = new Set(blockOutcomes(block.id));
+    sessionOutcomes(host, {
+      outcomes: outcomeList(catalogueDoc()).filter((o) => owned.has(o.id)),
+      competencies: state.library.competencies,
+      coverage: outcomeCoverage(),
+      sessionTitle: block.meta?.title || block.id,
+      onChange: (list, opts) => {
+        // Only this session's outcomes were on screen, so the rest of
+        // the catalogue is carried through untouched.
+        const others = outcomeList(catalogueDoc()).filter(
+          (o) => !list.some((mine) => mine.id === o.id)
+        );
+        const merged = outcomeDoc([...others, ...list]);
+        state.edits.set(OUTCOMES_PATH, stringifyYaml(merged));
+        state.library.outcomes = merged;
+        updateActions();
+        if (opts?.structural !== false) draw();
+      },
+      onAdd: () => {
+        const all = outcomeList(catalogueDoc());
+        const id = freeOutcomeId(new Set(all.map((o) => o.id)));
+        const merged = outcomeDoc([
+          ...all,
+          { id, statement: "", develops: [], dok: null },
+        ]);
+        state.edits.set(OUTCOMES_PATH, stringifyYaml(merged));
+        state.library.outcomes = merged;
+        setOutcomeOwner(id, block.id, { stay: true });
+        draw();
+        updateActions();
+      },
+      onRemove: (id) => {
+        const kept = outcomeList(catalogueDoc()).filter((o) => o.id !== id);
+        const merged = outcomeDoc(kept);
+        state.edits.set(OUTCOMES_PATH, stringifyYaml(merged));
+        state.library.outcomes = merged;
+        setOutcomeOwner(id, null, { stay: true });
+        draw();
+        updateActions();
+      },
+    });
+  };
+  draw();
 }
 
 /** A file we carry but do not edit: say what it is and where it lives. */
