@@ -144,3 +144,113 @@ export function summaryTemplate({ block, outcomes = [], documents = [] }) {
     .filter((line) => line !== null)
     .join("\n");
 }
+
+// ---- the other documents ------------------------------------------------
+//
+// A workbook, an assignment and a teacher's resources are the same kind
+// of thing as the lesson plan: a markdown document with named sections
+// in a fixed order. They differ only in which sections, and in who is
+// meant to read them.
+//
+// Each starts from a shape rather than an empty page, because an empty
+// page is where a document that never gets written begins. The headings
+// are a checklist an author can delete from.
+
+/** An assignment: what a learner does, hands in, and is judged on. */
+function assignmentTemplate({ block, outcomes }) {
+  return [
+    `# Assignment — ${block.title || block.id}`,
+    "",
+    "## The task",
+    "",
+    "*What the learner has to do, in a sentence or two.*",
+    "",
+    "## What this assesses",
+    "",
+    MARK_START,
+    "",
+    outcomesSection(outcomes),
+    "",
+    MARK_END,
+    "",
+    "## What to hand in",
+    "",
+    "*The form, the length, and where it goes.*",
+    "",
+    "## How it is marked",
+    "",
+    "| Criterion | What good looks like |",
+    "|---|---|",
+    "|  |  |",
+    "",
+  ].join("\n");
+}
+
+/** A workbook: the learner's own pages. */
+function workbookTemplate({ block, outcomes }) {
+  return [
+    `# Workbook — ${block.title || block.id}`,
+    "",
+    "*For the learner to work through, during or after the session.*",
+    "",
+    "## What you will be able to do",
+    "",
+    MARK_START,
+    "",
+    outcomesSection(outcomes),
+    "",
+    MARK_END,
+    "",
+    "## Activity 1",
+    "",
+    "*What to do, and space to record the answer.*",
+    "",
+    "## Notes",
+    "",
+  ].join("\n");
+}
+
+/** Teacher resources: what the person running it needs to hand. */
+function teacherTemplate({ block }) {
+  return [
+    `# Teacher resources — ${block.title || block.id}`,
+    "",
+    "## Before the session",
+    "",
+    "*What to prepare, print, book or test.*",
+    "",
+    "## Materials",
+    "",
+    "*Equipment, handouts, anything that has to be in the room.*",
+    "",
+    "## Running it",
+    "",
+    "*Timings, groupings, and the bits that usually go wrong.*",
+    "",
+    "## Further reading",
+    "",
+  ].join("\n");
+}
+
+/** A plain document, for a kind with no template of its own. */
+function plainTemplate({ kind, title, block }) {
+  return [`# ${title || kind} — ${block.title || block.id}`, "", ""].join("\n");
+}
+
+/**
+ * The starting text for a document of `kind`.
+ *
+ * The lesson plan is the session summary; the rest are the shapes above.
+ * Everything markdown goes through here, so a new kind gets a template
+ * by being added in one place rather than by being special-cased at the
+ * call site.
+ */
+export function documentTemplate({ kind, title, block, outcomes = [], documents = [] }) {
+  if (kind === "lessonplan") return summaryTemplate({ block, outcomes, documents });
+  if (kind === "assignment") return assignmentTemplate({ block, outcomes });
+  if (kind === "workbook") return workbookTemplate({ block, outcomes });
+  if (kind === "teacherresources" || kind === "instructorguide") {
+    return teacherTemplate({ block });
+  }
+  return plainTemplate({ kind, title, block });
+}

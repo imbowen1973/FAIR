@@ -95,14 +95,38 @@ console.log("create lesson plan:", JSON.stringify({ beforePlan, afterPlan }));
 
 // ---- an assessment, from the Add menu ----------------------------------
 await page.click(".tab.addbtn");
-await page.click(".tab-menu .menu-item:has-text('Add assessment')");
+await page.waitForTimeout(200);
+const picker = {
+  kinds: await page.$$eval(".kind-option .kind-label", (n) => n.map((x) => x.textContent)),
+  // The assessment is the one that is not a markdown document, and the
+  // pane has to say so before an author wonders why it looks different.
+  saysXml: (await page.textContent(".tab-menu")).includes("Moodle XML"),
+};
+await page.click(".kind-option[data-kind='assessment']");
+await page.click(".menu-actions .primary");
 await page.waitForTimeout(600);
 const afterAssessment = {
   changed: await changed(),
   tabs: await page.$$eval(".tabstrip .tab-label", (n) => n.map((x) => x.textContent)),
   onAssessment: await page.isVisible(".add-question"),
 };
+console.log("picker:", JSON.stringify(picker));
 console.log("add assessment:", JSON.stringify(afterAssessment));
+
+// ---- a named markdown document, which is the common case ---------------
+await page.click(".tab.addbtn");
+await page.waitForTimeout(200);
+await page.click(".kind-option[data-kind='workbook']");
+await page.fill("#add-doc-name", "Case study pack");
+await page.click(".menu-actions .primary");
+await page.waitForTimeout(800);
+const afterWorkbook = {
+  changed: await changed(),
+  tabs: await page.$$eval(".tabstrip .tab-label", (n) => n.map((x) => x.textContent)),
+  // Named by the author, so the file is named after it too.
+  editing: await page.isVisible(".viewbar"),
+};
+console.log("add workbook:", JSON.stringify(afterWorkbook));
 
 // ---- what would actually be committed ----------------------------------
 // The proof: the files a Save would send, read off the app's own state
@@ -123,7 +147,11 @@ const failed =
   !afterPlan.saveEnabled ||
   !afterAssessment.onAssessment ||
   !afterAssessment.tabs.includes("Assessment") ||
-  !/[34] files changed/.test(afterAssessment.changed ?? "");
+  !/[34] files changed/.test(afterAssessment.changed ?? "") ||
+  picker.kinds.length !== 5 ||
+  !picker.saysXml ||
+  !afterWorkbook.tabs.includes("Case study pack") ||
+  !afterWorkbook.editing;
 
 console.log(failed ? "\nFAIL" : "\nPASS");
 await browser.close();

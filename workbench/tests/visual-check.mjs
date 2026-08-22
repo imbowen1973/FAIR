@@ -236,7 +236,9 @@ const result = await page.evaluate(async () => {
     addLabel: bareHost.querySelector(".tab.addbtn")?.textContent.trim(),
     addOffers: (() => {
       bareHost.querySelector(".tab.addbtn").click();
-      return [...bareHost.querySelectorAll(".menu-item")].map((m) => m.textContent);
+      return [...bareHost.querySelectorAll(".kind-option .kind-label")].map(
+        (m) => m.textContent
+      );
     })(),
     uncreated: [...bareHost.querySelectorAll(".tab.uncreated .tab-label")].map(
       (t) => t.textContent
@@ -437,7 +439,9 @@ const failed =
   result.tabbar.closable.includes("slides") ||
   result.tabbar.closable.includes("lessonplan.md") ||
   result.tabbar.addLabel !== "Add" ||
-  result.tabbar.addOffers.length < 5 ||
+  result.tabbar.addOffers.length < 4 ||
+  !result.tabbar.addOffers.includes("Assessment") ||
+  !result.tabbar.addOffers.includes("Teacher resources") ||
   !result.tabbar.uncreated.includes("Lesson plan") ||
   !result.mdeditor.preview.includes("<h1>") ||
   !String(result.mdeditor.bolded).includes("**Plan**") ||

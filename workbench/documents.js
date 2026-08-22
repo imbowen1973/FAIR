@@ -20,8 +20,15 @@ export const KINDS = {
   assessment: { label: "Assessment", file: "assessment.xml", editor: "assessment" },
   assignment: { label: "Assignment", file: "assignment.md", editor: "markdown" },
   workbook: { label: "Workbook", file: "workbook.md", editor: "markdown" },
+  teacherresources: {
+    label: "Teacher resources",
+    file: "teacher-resources.md",
+    editor: "markdown",
+  },
+  // The old name for the same thing. Recognised so existing content
+  // keeps working; not offered, so new content uses one word for it.
   instructorguide: {
-    label: "Instructor guide",
+    label: "Teacher resources",
     file: "instructorguide.md",
     editor: "markdown",
   },
@@ -160,8 +167,8 @@ export function withoutResource(resources, path) {
  * A free path for a new document of `kind`, so adding a second workbook
  * does not silently overwrite the first.
  */
-export function freePath(kind, taken) {
-  const file = KINDS[kind]?.file ?? `${kind}.md`;
+export function freePath(kind, taken, preferred) {
+  const file = preferred || KINDS[kind]?.file || `${kind}.md`;
   if (!taken.has(file)) return file;
   const stem = file.replace(/\.[^.]+$/, "");
   const ext = file.slice(stem.length);

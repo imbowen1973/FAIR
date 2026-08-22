@@ -61,9 +61,9 @@ import {
   OUTCOMES_PATH,
 } from "./outcomes.js";
 import {
+  documentTemplate,
   hasOutcomesSection,
   refreshOutcomes,
-  summaryTemplate,
 } from "./summary.js";
 import { competencyEditor, courseHome, freeCompetencyId } from "./course.js";
 
@@ -885,11 +885,26 @@ function setBlockResources(resources) {
 }
 
 /** Add a document of `kind` to this block, file and manifest together. */
-function addDocument(kind) {
+/** A file name from what the author called it. */
+function fileNameFor(title, kind) {
+  const stem =
+    String(title)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || kind;
+  const ext = (KINDS[kind]?.file ?? `${kind}.md`).replace(/^[^.]*/, "");
+  return `${stem}${ext}`;
+}
+
+function addDocument(kind, { title: given } = {}) {
   const block = currentBlock();
   const taken = new Set(documents().map((d) => d.id));
-  const file = freePath(kind, taken);
-  const title = KINDS[kind]?.label ?? kind;
+  // Named by the author, so two workbooks are told apart in the strip
+  // and in block.yaml rather than being "Workbook" and "Workbook 2".
+  const title = (given || "").trim() || KINDS[kind]?.label || kind;
+  const file = given
+    ? freePath(kind, taken, fileNameFor(given, kind))
+    : freePath(kind, taken);
   const path = `blocks/${block.id}/${file}`;
 
   // The file and its manifest entry in one step: a document that exists
@@ -915,20 +930,21 @@ function starterFor(kind, title, block) {
       "",
     ].join("\n");
   }
-  const heading = `# ${title}: ${block.meta.title || block.id}`;
-  if (kind === "lessonplan") {
-    return summaryTemplate({
-      block: {
-        id: block.id,
-        title: block.meta.title,
-        code: block.meta.code,
-        duration: block.meta.duration_minutes,
-      },
-      outcomes: ownedOutcomes(block.id),
-      documents: documents().filter((d) => d.type !== "lessonplan"),
-    });
-  }
-  return [heading, "", ""].join("\n");
+  // Every markdown kind goes through one template function, so a new
+  // kind gets a shape by being added there rather than special-cased
+  // here.
+  return documentTemplate({
+    kind,
+    title,
+    block: {
+      id: block.id,
+      title: block.meta.title,
+      code: block.meta.code,
+      duration: block.meta.duration_minutes,
+    },
+    outcomes: ownedOutcomes(block.id),
+    documents: documents().filter((d) => d.type !== kind),
+  });
 }
 
 function removeDocument(id) {
@@ -983,7 +999,8 @@ function renderTabs() {
     documents: documents(),
     active: doc?.id,
     onOpen: openDoc,
-    onAdd: (kind) => (kind === "attachment" ? attachFile() : addDocument(kind)),
+    onAdd: (kind, opts) =>
+      kind === "attachment" ? attachFile() : addDocument(kind, opts),
     onRemove: removeDocument,
   });
 }

@@ -36,6 +36,7 @@ import {
   roleRegions,
 } from "../outcomes.js";
 import {
+  documentTemplate,
   hasOutcomesSection,
   refreshOutcomes,
   summaryTemplate,
@@ -889,4 +890,60 @@ test("a pending edit counts as created", () => {
   ]);
   const plan = blockDocuments(block, pending).find((d) => d.type === "lessonplan");
   assert.equal(plan.uncreated, false);
+});
+
+// ---- the other document kinds ------------------------------------------
+
+test("a workbook, an assignment and teacher resources each get a shape", () => {
+  // An empty page is where a document that never gets written begins.
+  const block = { id: "b", title: "Big data" };
+  const outcomes = [{ id: "O1", statement: "Identify misuse" }];
+
+  const assignment = documentTemplate({ kind: "assignment", block, outcomes });
+  assert.ok(assignment.includes("## The task"));
+  assert.ok(assignment.includes("## What to hand in"));
+  assert.ok(assignment.includes("## How it is marked"));
+  // An assignment is assessed against the session's outcomes, so they
+  // are generated into it the same way the lesson plan gets them.
+  assert.ok(assignment.includes("- Identify misuse"));
+  assert.equal(hasOutcomesSection(assignment), true);
+
+  const workbook = documentTemplate({ kind: "workbook", block, outcomes });
+  assert.ok(workbook.includes("## What you will be able to do"));
+  assert.ok(workbook.includes("## Activity 1"));
+
+  const teacher = documentTemplate({ kind: "teacherresources", block, outcomes });
+  assert.ok(teacher.includes("## Before the session"));
+  assert.ok(teacher.includes("## Materials"));
+  // Not the learner's outcomes: this document is for whoever runs it.
+  assert.equal(hasOutcomesSection(teacher), false);
+});
+
+test("the old instructor guide name still resolves", () => {
+  const out = documentTemplate({
+    kind: "instructorguide",
+    block: { id: "b", title: "Big data" },
+  });
+  assert.ok(out.includes("# Teacher resources"));
+});
+
+test("a kind with no shape of its own still gets a heading", () => {
+  const out = documentTemplate({
+    kind: "handout",
+    title: "Reading list",
+    block: { id: "b", title: "Big data" },
+  });
+  assert.ok(out.startsWith("# Reading list — Big data"));
+});
+
+test("a document named by the author takes that name as its file", () => {
+  // Two workbooks should be told apart in the strip and in block.yaml,
+  // not be "Workbook" and "Workbook 2".
+  assert.equal(freePath("workbook", new Set(), "case-study-pack.md"), "case-study-pack.md");
+  assert.equal(
+    freePath("workbook", new Set(["case-study-pack.md"]), "case-study-pack.md"),
+    "case-study-pack-2.md"
+  );
+  // And with no name given, the kind's own file.
+  assert.equal(freePath("workbook", new Set()), "workbook.md");
 });

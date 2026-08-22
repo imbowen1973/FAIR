@@ -11,13 +11,21 @@
 import { icon } from "./icons.js";
 import { KINDS } from "./documents.js";
 
-/** What the + menu offers, in the order an author usually needs them. */
+/**
+ * What a session can hold, in the order an author usually needs it.
+ *
+ * Three of the four are the same kind of thing -- a markdown document
+ * with named sections, like the lesson plan. The assessment is the one
+ * that is not: it is Moodle XML, and it gets a question editor rather
+ * than a text one. The picker says so, because "why does this one look
+ * different" is a question worth answering before it is asked.
+ */
 const ADD = [
-  ["assessment", "Add assessment"],
-  ["assignment", "Add assignment"],
-  ["workbook", "Add workbook"],
-  ["instructorguide", "Add instructor guide"],
-  ["handout", "Add resource"],
+  ["assignment", "Assignment", "What a learner does, hands in, and is marked on."],
+  ["workbook", "Workbook", "The learner's own pages: activities and space to answer."],
+  ["teacherresources", "Teacher resources", "What the person running the session needs to hand."],
+  ["handout", "Other document", "Anything else, as markdown."],
+  ["assessment", "Assessment", "Questions, as Moodle XML. Edited as a form, not as text."],
 ];
 
 function el(tag, className, text) {
@@ -87,22 +95,55 @@ export function tabs(host, { documents, active, onOpen, onAdd, onRemove }) {
   // Labelled, not just an icon: this is how every resource after the
   // first gets made, and an unlabelled + is easy to miss entirely.
   button.append(icon("add"), document.createTextNode("Add"));
-  const menu = el("div", "tab-menu");
+  const menu = el("div", "tab-menu wide");
   menu.hidden = true;
+  menu.append(el("p", "menu-title", "Add to this session"));
 
-  for (const [kind, label] of ADD) {
-    const item = el("button", "menu-item", label);
+  let chosen = ADD[0][0];
+  const options = [];
+  for (const [kind, label, note] of ADD) {
+    const item = el("button", "kind-option");
     item.type = "button";
+    item.dataset.kind = kind;
+    item.append(el("span", "kind-label", label), el("span", "kind-note", note));
     item.addEventListener("click", () => {
-      close();
-      onAdd?.(kind);
+      chosen = kind;
+      for (const other of options) {
+        other.classList.toggle("on", other.dataset.kind === kind);
+      }
+      name.placeholder = label;
     });
+    options.push(item);
     menu.appendChild(item);
   }
+  options[0].classList.add("on");
+
+  const nameRow = el("div", "menu-name");
+  const nameLabel = el("label", null, "Called");
+  const name = el("input", "text grow");
+  name.type = "text";
+  name.id = "add-doc-name";
+  name.placeholder = ADD[0][1];
+  nameLabel.htmlFor = name.id;
+  nameRow.append(nameLabel, name);
+  menu.appendChild(nameRow);
+
+  const confirm = el("button", "primary", "Add");
+  confirm.type = "button";
+  confirm.addEventListener("click", () => {
+    const title = name.value.trim();
+    close();
+    name.value = "";
+    onAdd?.(chosen, { title });
+  });
+  const actions = el("div", "menu-actions");
+  actions.append(confirm);
+  menu.appendChild(actions);
+
   menu.appendChild(el("div", "menu-rule"));
-  const attach = el("button", "menu-item", "Attach a file…");
+  const attach = el("button", "menu-item", "Attach a file instead…");
   attach.type = "button";
-  attach.title = "A spreadsheet, a PDF, an image: carried with the block and linked";
+  attach.title = "A spreadsheet, a PDF, an image: carried with the session and linked";
   attach.addEventListener("click", () => {
     close();
     onAdd?.("attachment");
