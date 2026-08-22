@@ -28,6 +28,7 @@ import {
 import { markdownToHtml } from "../markdown.js";
 import { repoImages, resolveMedia, videoHost, videoThumb } from "../media.js";
 import { repoLogos } from "../course.js";
+import { readImport, renumber } from "../import.js";
 import {
   fillRole,
   freeOutcomeId,
@@ -1099,4 +1100,111 @@ test("emblems are found in branding, and only there", () => {
     ]),
     ["branding/eu.png", "branding/university.svg"]
   );
+});
+
+// ---- importing slides ---------------------------------------------------
+
+const NEWLINE = String.fromCharCode(10);
+
+const LAYOUTS = {
+  Title: { regions: { title: 0, subtitle: 1 } },
+  Full: { regions: { title: 0, full: 1 } },
+  Split: { regions: { title: 0, left: 1, right: 2 } },
+};
+
+test("slides in the grammar are read as slides", () => {
+  const result = readImport(
+    [
+      "--- slide", "id: s-01", "layout: Full", "title: Big data",
+      "full:", "  type: ul", "  items:", "    - One", "---",
+    ].join("\n"),
+    { layoutMap: LAYOUTS }
+  );
+  assert.equal(result.kind, "grammar");
+  assert.equal(result.slides.length, 1);
+  assert.deepEqual(result.problems, []);
+});
+
+test("a layout the template does not have stops the import", () => {
+  // Slides that look fine in a list and fail at render are worse than an
+  // import that refuses, because by then nobody remembers where they
+  // came from.
+  const result = readImport(
+    "--- slide\nid: s-01\nlayout: Nope\ntitle: x\n---\n",
+    { layoutMap: LAYOUTS }
+  );
+  const fatal = result.problems.filter((p) => p.fatal);
+  assert.equal(fatal.length, 1);
+  assert.match(fatal[0].message, /unknown layout Nope/);
+  assert.match(fatal[0].message, /Title, Full, Split/, "say what is on offer");
+});
+
+test("a region the layout does not offer stops the import", () => {
+  const result = readImport(
+    "--- slide\nid: s-01\nlayout: Full\nleft: hello\n---\n",
+    { layoutMap: LAYOUTS }
+  );
+  const fatal = result.problems.filter((p) => p.fatal);
+  assert.match(fatal[0].message, /Full has no region called left/);
+});
+
+test("a duplicate id is said, and renumbered rather than refused", () => {
+  // Ids are ours to manage, so a clash is worth saying and not worth
+  // stopping for. Blocking on one would refuse an import that is fine.
+  const result = readImport(
+    ["--- slide", "id: s-01", "layout: Full", "title: x", "---", ""].join(NEWLINE),
+    { layoutMap: LAYOUTS, existingIds: ["s-01"] }
+  );
+  assert.match(result.problems[0].message, /already in this deck/);
+  assert.equal(result.problems[0].fatal, false);
+  assert.equal(result.problems.filter((p) => p.fatal).length, 0, "nothing fatal");
+});
+
+test("an empty slide is noted, not refused", () => {
+  // Adding one and filling it in later is a legitimate thing to do.
+  const result = readImport(
+    "--- slide\nid: s-01\nlayout: Full\n---\n",
+    { layoutMap: LAYOUTS }
+  );
+  assert.equal(result.problems.filter((p) => p.fatal).length, 0);
+  assert.equal(result.problems[0].fatal, false);
+});
+
+test("plain markdown becomes slides, headings first", () => {
+  // Content arrives as prose far more often than as this grammar, and a
+  // model asked for slides will sometimes hand back a document.
+  const result = readImport(
+    [
+      "# Big data and ethics", "",
+      "## What could go wrong", "",
+      "- Re-identification", "- Bias in a model", "",
+      "## Legal duties", "", "GDPR applies here too.",
+    ].join("\n"),
+    { layoutMap: LAYOUTS }
+  );
+  assert.equal(result.kind, "markdown");
+  assert.deepEqual(result.slides.map((s) => s.layout), ["Title", "Full", "Full"]);
+  assert.deepEqual(result.slides[1].full, {
+    type: "ul",
+    items: ["Re-identification", "Bias in a model"],
+  });
+  // Prose with no bullets becomes the body text rather than a one-item list.
+  assert.equal(result.slides[2].full, "GDPR applies here too.");
+  assert.deepEqual(result.problems, []);
+});
+
+test("a heading that collects content gets a layout with room for it", () => {
+  const result = readImport("# Only a title\n\n- and a bullet\n", { layoutMap: LAYOUTS });
+  assert.equal(result.slides[0].layout, "Full", "Title has nowhere to put a list");
+});
+
+test("imported ids are renumbered around what is already there", () => {
+  // Pasting s-01 into a deck that has one is the commonest way this goes
+  // wrong, and the ids are ours rather than the author's.
+  assert.deepEqual(
+    renumber([{ id: "s-01" }, { id: "s-02" }], ["s-01", "s-02", "s-03"]).map((s) => s.id),
+    ["s-04", "s-05"]
+  );
+  // Nothing to avoid, nothing changes.
+  assert.deepEqual(renumber([{ id: "intro" }], []).map((s) => s.id), ["intro"]);
 });

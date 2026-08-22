@@ -56,6 +56,7 @@ import {
   workingQuestions,
 } from "./assessment.js";
 import { questionForm } from "./assessmentui.js";
+import { importPanel } from "./import.js";
 import {
   outcomeDoc,
   outcomeList,
@@ -334,6 +335,58 @@ function hasOpeningSlides() {
   return roles.includes("title") && roles.includes("outcomes");
 }
 
+/**
+ * Bring slides in from outside.
+ *
+ * Content written elsewhere -- by a colleague, by an older course, by a
+ * model asked to draft a session -- has one door into a library, and
+ * that door checks against this template before anything is added.
+ */
+function openImport() {
+  const host = $("meta");
+  const panel = document.createElement("div");
+  host.prepend(panel);
+  panel.scrollIntoView({ block: "nearest" });
+
+  const place = (slides, replace) => {
+    const list = working();
+    const entries = slides.map((data) => ({ sourceIndex: null, data, dirty: true }));
+    if (replace) {
+      list.splice(0, list.length, ...entries);
+      state.slideIndex = 0;
+    } else {
+      const at = Math.min(list.length, state.slideIndex + 1);
+      list.splice(at, 0, ...entries);
+      state.slideIndex = at;
+    }
+    panel.remove();
+    renderOutline();
+    renderSlide();
+    updateActions();
+    status(
+      `${slides.length} slide${slides.length === 1 ? "" : "s"} ` +
+        (replace ? "replaced the deck." : "added."),
+      "ok"
+    );
+  };
+
+  importPanel(panel, {
+    layoutMap: state.library.layoutMap,
+    existingIds: working().map((entry) => entry.data?.id).filter(Boolean),
+    onAdd: (slides) => place(slides, false),
+    onReplace: (slides) => {
+      if (
+        working().length &&
+        !window.confirm(
+          `Replace all ${working().length} slides in this deck with ${slides.length}?`
+        )
+      ) return;
+      place(slides, true);
+    },
+    onClose: () => panel.remove(),
+  });
+}
+
 function addSlide() {
   const layouts = layoutKeys(state.library.layoutMap);
   const list = working();
@@ -555,6 +608,14 @@ function renderOutline() {
       add.textContent = "+ slide";
       add.addEventListener("click", addSlide);
       group.appendChild(add);
+
+      const bring = document.createElement("button");
+      bring.type = "button";
+      bring.className = "add-slide";
+      bring.textContent = "import";
+      bring.title = "Paste or open slides written elsewhere";
+      bring.addEventListener("click", openImport);
+      group.appendChild(bring);
 
       if (!hasOpeningSlides()) {
         const opening = document.createElement("button");

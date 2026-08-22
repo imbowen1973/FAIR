@@ -862,3 +862,21 @@ button.vacant-media:hover { color: var(--accent); border-color: var(--accent); }
 .media-fit { margin: 14px 0; }
 .media-fit h4 { margin: 0 0 6px; font-size: 0.82rem; }
 .media-fit .kind-option { max-width: 26rem; }
+
+/* Importing slides. The summary is the point: what would arrive, read
+   which way, and everything wrong with it — before anything is added. */
+.import-panel {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px; margin-bottom: 14px; background: var(--bg-raised);
+  max-width: 54rem;
+}
+.import-panel h4 { margin: 0 0 6px; font-size: 0.86rem; }
+.import-panel input[type="file"] { display: none; }
+textarea.import-source { min-height: 14rem; margin-top: 10px; }
+.import-summary { margin: 10px 0; }
+.import-summary p { margin: 0 0 4px; font-size: 0.82rem; }
+.import-summary .ok { color: var(--ok-fg, #1a7f37); font-weight: 600; }
+ul.import-list {
+  margin: 6px 0 0; padding-left: 1.2em; font-size: 0.8rem; color: var(--muted);
+  max-height: 12rem; overflow-y: auto;
+}
