@@ -19,7 +19,9 @@ import {
   libraryPaths,
   placedBlocks,
   readLibrary,
+  mintSlideIds,
   renderSlidesFile,
+  slideMark,
   workingSlides,
 } from "./library.js";
 import { drawSlide } from "./canvas.js";
@@ -290,14 +292,25 @@ function slideData(index) {
   return working()[index]?.data ?? {};
 }
 
+/**
+ * Ids for `count` new slides in the current deck.
+ *
+ * Above everything the deck has ever handed out, not the lowest number
+ * going spare: an id is burnt into every rendered copy of the slide, so
+ * reissuing a deleted one points old artifacts at new content.
+ */
+function newSlideIds(count = 1) {
+  const list = working();
+  const block = state.library.blocks.get(state.blockId);
+  return mintSlideIds(
+    count,
+    list.map((w) => w.data.id).filter(Boolean),
+    slideMark(block?.parsed, list)
+  ).ids;
+}
+
 function nextSlideId() {
-  const used = new Set(working().map((w) => w.data.id).filter(Boolean));
-  const prefix = (working()[0]?.data.id || "s-01").replace(/\d+$/, "");
-  for (let n = 1; n < 999; n += 1) {
-    const candidate = `${prefix}${String(n).padStart(2, "0")}`;
-    if (!used.has(candidate)) return candidate;
-  }
-  return `s-${Date.now()}`;
+  return newSlideIds(1)[0];
 }
 
 /**
@@ -311,7 +324,7 @@ function nextSlideId() {
 function addOpeningSlides() {
   const list = working();
   const layouts = layoutKeys(state.library.layoutMap);
-  const opening = openingSlides(nextSlideId()).filter((slide) =>
+  const opening = openingSlides(newSlideIds(2)).filter((slide) =>
     layouts.includes(slide.layout)
   );
   if (!opening.length) {
@@ -323,6 +336,7 @@ function addOpeningSlides() {
   renderOutline();
   renderSlide();
   updateActions();
+  revealEditor();
   status("Added a title slide and a learning outcomes slide.", "ok");
 }
 
@@ -343,6 +357,7 @@ function hasOpeningSlides() {
  * that door checks against this template before anything is added.
  */
 function openImport() {
+  revealEditor();
   const host = $("meta");
   const panel = document.createElement("div");
   host.prepend(panel);
@@ -373,6 +388,7 @@ function openImport() {
   importPanel(panel, {
     layoutMap: state.library.layoutMap,
     existingIds: working().map((entry) => entry.data?.id).filter(Boolean),
+    mark: slideMark(state.library.blocks.get(state.blockId)?.parsed, working()),
     onAdd: (slides) => place(slides, false),
     onReplace: (slides) => {
       if (
@@ -397,6 +413,7 @@ function addSlide() {
   renderOutline();
   renderSlide();
   updateActions();
+  revealEditor();
 }
 
 function deleteSlide(index) {
@@ -527,10 +544,43 @@ function renderOutline() {
     // The slide strip belongs to the deck. On a workbook tab it would be
     // a list of things the pane on the right is not showing.
     if (id === state.blockId && activeDoc()?.editor === "slides") {
+      // Above the slides, not below them. At the foot of a real deck
+      // these sat hundreds of pixels below the fold, and on a phone
+      // inside a drawer that starts closed.
+      const deckActions = document.createElement("div");
+      deckActions.className = "deck-actions";
+      for (const [label, title, fn] of [
+        ["+ slide", "Add an empty slide after this one", addSlide],
+        ["import", "Paste or open slides written elsewhere", openImport],
+      ]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "add-slide";
+        button.textContent = label;
+        button.title = title;
+        button.addEventListener("click", fn);
+        deckActions.appendChild(button);
+      }
+      if (!hasOpeningSlides()) {
+        const opening = document.createElement("button");
+        opening.type = "button";
+        opening.className = "add-slide";
+        opening.textContent = "+ title and outcomes";
+        opening.title =
+          "A title slide and a learning outcomes slide, both filled from " +
+          "the library rather than typed";
+        opening.addEventListener("click", addOpeningSlides);
+        deckActions.appendChild(opening);
+      }
+      group.appendChild(deckActions);
+
       working(id).forEach((entry, index) => {
         const data = entry.data;
         const row = document.createElement("div");
         row.className = "slide-row";
+        // The id, not the position: what addresses this slide in
+        // slide-id-map.json and in every deck already rendered from it.
+        if (data.id) row.dataset.slideId = data.id;
         if (index === state.slideIndex) row.classList.add("on");
 
         const pick = document.createElement("button");
@@ -601,33 +651,6 @@ function renderOutline() {
         row.appendChild(tools);
         group.appendChild(row);
       });
-
-      const add = document.createElement("button");
-      add.type = "button";
-      add.className = "add-slide";
-      add.textContent = "+ slide";
-      add.addEventListener("click", addSlide);
-      group.appendChild(add);
-
-      const bring = document.createElement("button");
-      bring.type = "button";
-      bring.className = "add-slide";
-      bring.textContent = "import";
-      bring.title = "Paste or open slides written elsewhere";
-      bring.addEventListener("click", openImport);
-      group.appendChild(bring);
-
-      if (!hasOpeningSlides()) {
-        const opening = document.createElement("button");
-        opening.type = "button";
-        opening.className = "add-slide";
-        opening.textContent = "+ title and outcomes";
-        opening.title =
-          "A title slide and a learning outcomes slide, both filled from " +
-          "the library rather than typed";
-        opening.addEventListener("click", addOpeningSlides);
-        group.appendChild(opening);
-      }
     }
 
     // An assessment gets the same treatment as a deck: its questions in

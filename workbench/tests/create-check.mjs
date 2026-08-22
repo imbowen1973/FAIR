@@ -8,9 +8,15 @@
 //
 //   node tests/create-check.mjs
 //
-// Needs a site-shaped build to serve: preview.js imports
-// ../wasm-renderer.js, which only exists at the site root, and without it
-// app.js does not load at all.
+// Needs a site-shaped build to serve, not the workbench folder alone:
+//
+//   mkdir -p /tmp/site && cp -r workbench /tmp/site/
+//   cp assembler/web/wasm-renderer.js /tmp/site/
+//   cp -r assembler/web/assets /tmp/site/
+//   (cd /tmp/site && python -m http.server 8890)
+//
+// preview.js imports ../wasm-renderer.js and index.html reads
+// ../assets/, both of which only exist at the site root.
 
 import { chromium } from "playwright-core";
 
@@ -36,6 +42,15 @@ page.on("pageerror", (e) => errors.push(String(e.message)));
 page.on("console", (m) => {
   const text = m.text();
   if (m.type() === "error" && !text.includes("favicon")) errors.push(text);
+});
+// A 404 is a fact about the fixture, not about the app -- say which URL,
+// or "Failed to load resource" is unactionable.
+// A 404 from our own origin is a fault; one from a CDN is this machine
+// being offline, and failing the run for it would teach nobody anything.
+page.on("response", (r) => {
+  if (r.status() === 404 && r.url().startsWith(new URL(BASE).origin)) {
+    errors.push(`404: ${r.url()}`);
+  }
 });
 
 await page.route("https://api.github.com/**", async (route) => {
@@ -128,6 +143,113 @@ const afterWorkbook = {
 };
 console.log("add workbook:", JSON.stringify(afterWorkbook));
 
+// ---- import, on a deck long enough to hide it --------------------------
+//
+// The fault this pins: the deck's actions were appended after the slide
+// rows, so on a twelve-slide deck they sat hundreds of pixels below the
+// fold of the rail. Existence in the DOM proved nothing -- an author
+// looked for import and asked where it was. So hit-test: is the button
+// the thing under its own centre point, and is that point on screen.
+await page.click(".tabstrip .tab:has(.tab-label:text-is('Slides'))");
+await page.waitForTimeout(400);
+for (let i = 0; i < 11; i += 1) {
+  await page.click(".deck-actions .add-slide:nth-child(1)");
+}
+await page.waitForTimeout(400);
+
+const reach = await page.evaluate(() => {
+  const button = [...document.querySelectorAll(".add-slide")].find(
+    (b) => b.textContent === "import"
+  );
+  if (!button) return { found: false };
+  const r = button.getBoundingClientRect();
+  const x = r.left + r.width / 2;
+  const y = r.top + r.height / 2;
+  const hit = document.elementFromPoint(x, y);
+  return {
+    found: true,
+    slides: document.querySelectorAll(".slide-row").length,
+    onScreen: r.top >= 0 && r.bottom <= innerHeight,
+    // Not hidden behind anything, and not clipped out of its own pane.
+    clickable: hit === button || button.contains(hit),
+  };
+});
+console.log("import reachable:", JSON.stringify(reach));
+
+// And it works: paste a deck written elsewhere and add it.
+await page.click(".deck-actions .add-slide:nth-child(2)");
+await page.waitForSelector(".import-panel", { timeout: 5000 });
+await page.fill(
+  ".import-source",
+  [
+    "--- slide",
+    "id: s-01",
+    "layout: Full",
+    "title: Brought in",
+    "full:",
+    "  type: ul",
+    "  items:",
+    "    - From somewhere else",
+    "---",
+    "",
+  ].join(String.fromCharCode(10))
+);
+await page.waitForTimeout(300);
+const imported = {
+  summary: await page.textContent(".import-summary .ok, .import-summary .warn"),
+  canAdd: !(await page.isDisabled(".import-panel .primary")),
+};
+await page.click(".import-panel .primary");
+await page.waitForTimeout(500);
+const afterImport = {
+  panelGone: !(await page.isVisible(".import-panel")),
+  slides: await page.$$eval(".slide-row", (n) => n.length),
+  titles: await page.$$eval(".thumb-caption", (n) => n.map((x) => x.textContent)),
+};
+console.log("import:", JSON.stringify({ imported, afterImport }));
+
+// ---- and on a phone, where the rail is a drawer ------------------------
+//
+// Narrow screens hide the rail behind a toggle, so a deck action there
+// is two steps away however high up it sits. What must hold is that
+// opening the drawer puts it on screen without scrolling, and that
+// using it closes the drawer instead of leaving the panel behind it.
+await page.setViewportSize({ width: 390, height: 844 });
+await page.waitForTimeout(400);
+const phone = await page.evaluate(() => {
+  const railHidden = !document.querySelector("#outline")?.checkVisibility?.();
+  document.getElementById("rail-toggle").click();
+  return { railHidden, toggleVisible: Boolean(document.getElementById("rail-toggle")) };
+});
+await page.waitForTimeout(400);
+const onPhone = await page.evaluate(() => {
+  const button = [...document.querySelectorAll(".add-slide")].find(
+    (b) => b.textContent === "import"
+  );
+  const r = button.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return {
+    onScreen: r.top >= 0 && r.bottom <= innerHeight,
+    clickable: hit === button || button.contains(hit),
+  };
+});
+await page.click(".deck-actions .add-slide:nth-child(2)");
+await page.waitForTimeout(600);
+const phonePanel = await page.evaluate(() => {
+  const panel = document.querySelector(".import-panel");
+  if (!panel) return { open: false };
+  const r = panel.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, Math.max(2, r.top + 10));
+  return {
+    open: true,
+    // The drawer closed, so the panel is what is actually on top.
+    inFront: panel.contains(hit),
+    railClosed: !document.querySelector(".panes")?.classList.contains("rail-open"),
+  };
+});
+console.log("phone:", JSON.stringify({ phone, onPhone, phonePanel }));
+await page.setViewportSize({ width: 1280, height: 900 });
+
 // ---- what would actually be committed ----------------------------------
 // The proof: the files a Save would send, read off the app's own state
 // by asking it to validate — which mounts exactly those files.
@@ -151,7 +273,19 @@ const failed =
   picker.kinds.length !== 5 ||
   !picker.saysXml ||
   !afterWorkbook.tabs.includes("Case study pack") ||
-  !afterWorkbook.editing;
+  !afterWorkbook.editing ||
+  !reach.found ||
+  !reach.onScreen ||
+  !reach.clickable ||
+  !imported.canAdd ||
+  !afterImport.panelGone ||
+  !afterImport.titles.includes("Brought in") ||
+  !phone.railHidden ||
+  !onPhone.onScreen ||
+  !onPhone.clickable ||
+  !phonePanel.open ||
+  !phonePanel.inFront ||
+  !phonePanel.railClosed;
 
 console.log(failed ? "\nFAIL" : "\nPASS");
 await browser.close();

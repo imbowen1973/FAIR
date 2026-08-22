@@ -48,6 +48,12 @@ lesson plans and workbooks as documents, assessments as a question form.
 Save to a branch, submit a pull request. Review and merge happen on
 GitHub, where they belong.
 
+Content written elsewhere comes in through **import**, above the slides
+in the rail: paste a deck or open a file, and it is checked against this
+template — layouts, regions, outcome ids — before anything is added.
+Plain markdown works too, headings becoming slides. `docs/gpt-prompt.md`
+is the prompt that makes a model write slides this door will accept.
+
 ### The PowerPoint add-in — assemble decks by meaning
 
 Sideload `assembler/manifest.web.xml` into PowerPoint (Add-ins → Upload
@@ -95,6 +101,8 @@ outcomes.yaml               what it claims to teach
 competencies/framework.yaml the threads that build across sessions
 template.pptx               the deck's brand
 template.docx               the documents' brand
+layout-map.yaml             which layout and placeholder each region binds to
+layout-geometry.json        where those placeholders are, so the canvas is true
 attribution.yaml            the funder credit, burnt into every slide
 blocks/
   01-big-data/

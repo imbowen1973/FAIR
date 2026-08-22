@@ -162,10 +162,17 @@ button.tool {
   color: var(--muted); border-radius: 3px; line-height: 1.5;
 }
 button.tool:hover { background: var(--bg); color: var(--fg); }
+/* Also "+ answer", "+ hint", "+ competency": full width inside a form. */
 .add-slide {
   width: 100%; margin-top: 6px; border: 1px dashed var(--border-strong);
   background: none; color: var(--accent); font-size: 12px; padding: 5px;
 }
+.add-slide:hover { background: var(--bg); border-style: solid; }
+/* The deck's own actions, above its slides rather than below them: at
+   the foot of a twelve-slide deck they were off the bottom of the rail,
+   and nobody scrolls a thumbnail strip looking for a button. */
+.deck-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.deck-actions .add-slide { width: auto; flex: 1 1 40%; margin-top: 0; }
 
 .field { margin: 10px 0; }
 .field label { display: block; font-weight: 600; margin-bottom: 3px; font-size: 12px; }
