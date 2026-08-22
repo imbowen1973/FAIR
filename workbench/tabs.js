@@ -168,8 +168,10 @@ export function tabs(host, { documents, active, onOpen, onAdd, onRemove }) {
   });
 
   add.append(button, menu);
-  strip.appendChild(add);
-  host.appendChild(strip);
+  // Outside the strip, not in it. The strip scrolls horizontally, and
+  // `overflow-x: auto` forces `overflow-y: auto` with it -- so a menu
+  // inside it is clipped to the height of a tab and opens invisibly.
+  host.append(strip, add);
 }
 
 /** The default title for a kind, for the label of a document just added. */

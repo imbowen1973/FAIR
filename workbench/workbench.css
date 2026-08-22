@@ -369,10 +369,17 @@ button.mark.list { min-width: 26px; }
 /* ---- the block's documents, as tabs ---------------------------------- */
 /* One tab per document, so the strip answers "what is in this session".  */
 
-.tabs { border-bottom: 1px solid var(--border); background: var(--bg); }
+/* The strip scrolls; the add button does not live in it. `overflow-x`
+   forces `overflow-y` to match, so anything absolutely positioned inside
+   a scrolling strip is clipped to the height of a tab. */
+.tabs {
+  display: flex; align-items: flex-end; gap: 6px;
+  padding: 8px 18px 0;
+  border-bottom: 1px solid var(--border); background: var(--bg);
+}
 .tabstrip {
   display: flex; align-items: flex-end; gap: 2px;
-  padding: 8px 18px 0; overflow-x: auto;
+  overflow-x: auto; flex: 1 1 auto; min-width: 0;
 }
 button.tab {
   display: inline-flex; align-items: center; gap: 6px;
@@ -397,7 +404,7 @@ button.tab-close {
 button.tab-close:hover { opacity: 1; }
 button.tab.addbtn { padding: 7px 9px; }
 
-.tab-add { position: relative; }
+.tab-add { position: relative; flex: 0 0 auto; }
 .tab-menu {
   position: absolute; right: 0; top: 100%; z-index: 20; min-width: 200px;
   background: var(--bg-raised); border: 1px solid var(--border);
@@ -720,7 +727,7 @@ button.session-card:focus-visible { outline: 2px solid var(--accent); outline-of
 /* The add pane: pick what kind of thing you are making. Three of the
    four are markdown documents like the lesson plan; the assessment is
    the one that is not, and the pane says so. */
-.tab-menu.wide { min-width: 300px; max-width: 340px; padding: 10px; }
+.tab-menu.wide { width: 320px; max-width: calc(100vw - 24px); padding: 10px; }
 .menu-title {
   margin: 2px 4px 8px; font-size: 0.78rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);

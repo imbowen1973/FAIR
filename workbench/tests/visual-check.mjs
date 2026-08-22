@@ -240,6 +240,19 @@ const result = await page.evaluate(async () => {
         (m) => m.textContent
       );
     })(),
+    // Hit testing, not a bounding box. The add pane once opened inside
+    // the tab strip, which scrolls -- and `overflow-x: auto` forces
+    // `overflow-y` to match, so the pane was clipped to the height of a
+    // tab and opened invisibly. It still had a box, and a test that
+    // clicked it still passed. Only asking "what is at this point"
+    // catches that.
+    addPaneHittable: (() => {
+      const option = bareHost.querySelector(".kind-option");
+      if (!option) return false;
+      const r = option.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return Boolean(hit && option.contains(hit));
+    })(),
     uncreated: [...bareHost.querySelectorAll(".tab.uncreated .tab-label")].map(
       (t) => t.textContent
     ),
@@ -405,7 +418,8 @@ console.log(`  tabs: ${result.tabbar.labels.join(" | ")}`);
 console.log(`  opening a tab: ${result.tabbar.opened}`);
 console.log(`  not created yet: ${result.tabbar.uncreated.join(", ") || "none"}`);
 console.log(`  add button: "${result.tabbar.addLabel}" offering ` +
-  `${result.tabbar.addOffers.length} kinds`);
+  `${result.tabbar.addOffers.length} kinds, pane hittable: ` +
+  `${result.tabbar.addPaneHittable}`);
 console.log(`  document views: ${result.rich.tabs.join(" | ")}`);
 console.log(`  rich editor mounted: ${result.rich.mounted}` +
   ` (${result.rich.headings} heading, ${result.rich.items} items),` +
@@ -442,6 +456,7 @@ const failed =
   result.tabbar.addOffers.length < 4 ||
   !result.tabbar.addOffers.includes("Assessment") ||
   !result.tabbar.addOffers.includes("Teacher resources") ||
+  !result.tabbar.addPaneHittable ||
   !result.tabbar.uncreated.includes("Lesson plan") ||
   !result.mdeditor.preview.includes("<h1>") ||
   !String(result.mdeditor.bolded).includes("**Plan**") ||
