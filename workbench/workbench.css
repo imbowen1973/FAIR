@@ -692,3 +692,27 @@ button.tab.addbtn { gap: 5px; }
 .rail-heading:first-child { margin-top: 0; }
 .rail-heading strong { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .rail-heading span { font-size: 0.72rem; color: var(--muted); }
+
+/* ---- the module homepage --------------------------------------------- */
+/* course.yaml is the orchestrator: what the module is, and which sessions
+   it runs. The cards are the way in; each session owns its own outcomes,
+   plan and deck. */
+
+.session-cards { display: grid; gap: 8px; margin: 10px 0 16px; max-width: 54rem; }
+button.session-card {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 11px 14px; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-raised); color: var(--fg); font: inherit;
+}
+button.session-card:hover { border-color: var(--border-strong); }
+button.session-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card-title { font-weight: 600; }
+.card-facts { font-size: 0.78rem; color: var(--muted); }
+/* A session missing its outcomes or its plan is not finished. */
+.card-facts.thin { color: var(--warn-fg, #a15c00); }
+.card-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.structure-row .link { margin-left: auto; font-size: 0.76rem; }
+
+.competency-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; max-width: 46rem; }
+.competency-row input.id { font-family: Consolas, Menlo, monospace; font-weight: 600; }

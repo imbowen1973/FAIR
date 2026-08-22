@@ -85,6 +85,7 @@ const state = {
   // The course itself is a thing you can open, above the blocks: its
   // outcomes are library-wide, so they have no block to belong to.
   courseOpen: false,
+  courseTab: "overview",
   problems: [],
 };
 
@@ -947,18 +948,24 @@ function renderTabs() {
     const back = currentBlock();
     tabs($("tabs"), {
       documents: [
-        { id: "course-outcomes", title: "Outcomes and competencies", type: "course" },
+        { id: "overview", title: "Module", type: "course" },
+        { id: "competencies", title: "Competencies", type: "course" },
+        { id: "source", title: "course.yaml", type: "course" },
         ...(back
           ? [{ id: "back", title: `← ${back.meta?.title || back.id}`, type: "back" }]
           : []),
       ],
-      active: "course-outcomes",
+      active: state.courseTab,
       onOpen: (id) => {
-        if (id !== "back") return;
-        state.courseOpen = false;
-        renderOutline();
-        renderSlide();
-        revealEditor();
+        if (id === "back") {
+          state.courseOpen = false;
+          renderOutline();
+          renderSlide();
+          revealEditor();
+          return;
+        }
+        state.courseTab = id;
+        renderCourse();
       },
       onAdd: () => {},
       onRemove: () => {},
@@ -1217,6 +1224,50 @@ function setOutcomeOwner(outcomeId, blockId, { stay = false } = {}) {
   if (!stay) renderCourse();
 }
 
+/** flattenStructure, plus the path to each node so a caller can add to it. */
+function withTrails(structure, trail = [], depth = 0, out = []) {
+  (structure || []).forEach((node, index) => {
+    if (node.block) {
+      out.push({ kind: "block", block: node.block, depth, trail });
+      return;
+    }
+    out.push({
+      kind: node.kind || "group",
+      title: node.title || "",
+      depth,
+      trail: [...trail, index],
+    });
+    withTrails(node.children, [...trail, index], depth + 1, out);
+  });
+  return out;
+}
+
+/** The recipe's rows, with each session's facts attached for the cards. */
+function courseRows() {
+  const rows = withTrails(courseDoc().structure);
+  const placed = new Set(rows.filter((r) => r.kind === "block").map((r) => r.block));
+  for (const id of state.library.blocks.keys()) {
+    if (!placed.has(id)) rows.push({ kind: "block", block: id, depth: 0, trail: [] });
+  }
+  const owners = outcomeOwners();
+  const files = pendingFiles();
+  return rows
+    .filter((row) => row.kind !== "block" || state.library.blocks.has(row.block))
+    .map((row) => {
+      if (row.kind !== "block") return row;
+      const block = state.library.blocks.get(row.block);
+      return {
+        ...row,
+        title: block.meta?.title,
+        code: block.meta?.code,
+        duration: block.meta?.duration_minutes,
+        outcomes: Object.values(owners).filter((b) => b === row.block).length,
+        slides: (state.working.get(row.block) ?? workingSlides(block.parsed)).length,
+        hasPlan: files.has(`blocks/${row.block}/lessonplan.md`),
+      };
+    });
+}
+
 function renderCourse() {
   renderTabs();
   $("slidesview").hidden = true;
@@ -1225,32 +1276,155 @@ function renderCourse() {
 
   const host = $("document");
   host.innerHTML = "";
+
+  if (state.courseTab === "source") return renderCourseSource(host);
+  if (state.courseTab === "competencies") return renderCompetencies(host);
+
   const heading = document.createElement("h2");
   heading.className = "course-heading";
-  heading.textContent = "Outcomes and competencies";
+  heading.textContent = "Module";
   host.appendChild(heading);
-
-  const editorHost = document.createElement("div");
-  host.appendChild(editorHost);
+  const body = document.createElement("div");
+  host.appendChild(body);
 
   const draw = () =>
-    outcomesEditor(editorHost, {
-      outcomes: outcomeList(catalogueDoc()),
-      competencies: state.library.competencies,
-      blocks: blocksInOrder(),
-      owner: outcomeOwners(),
-      coverage: outcomeCoverage(),
-      onChange: (list, opts) => {
-        state.edits.set(OUTCOMES_PATH, stringifyYaml(outcomeDoc(list)));
-        state.library.outcomes = outcomeDoc(list);
+    courseHome(body, {
+      course: courseDoc(),
+      rows: courseRows(),
+      onChange: (next, opts) => {
+        writeCourse(next);
         updateActions();
-        // Only when the page's shape changed. Redrawing on every
-        // keystroke takes the caret with it.
         if (opts?.structural !== false) draw();
       },
-      onOwner: setOutcomeOwner,
+      onOpen: (id) => {
+        state.blockId = id;
+        state.slideIndex = 0;
+        state.courseOpen = false;
+        renderOutline();
+        renderSlide();
+        revealEditor();
+      },
+      onAddSession: addLesson,
+      onAddModule: addModule,
     });
   draw();
+}
+
+/** The competency framework — the module's, not a session's. */
+function renderCompetencies(host) {
+  const heading = document.createElement("h2");
+  heading.className = "course-heading";
+  heading.textContent = "Competencies";
+  host.appendChild(heading);
+  const body = document.createElement("div");
+  host.appendChild(body);
+
+  const path = "competencies/framework.yaml";
+  const read = () => parseYaml(state.edits.get(path) ?? state.files.get(path) ?? "") || {};
+  const labels = () => {
+    const out = {};
+    for (const [id, entry] of Object.entries(read().competencies || {})) {
+      out[id] = typeof entry === "string" ? entry : entry?.label ?? id;
+    }
+    return out;
+  };
+  const write = (next) => {
+    const doc = read();
+    state.edits.set(path, stringifyYaml({ ...doc, competencies: next }));
+    state.library.competencies = Object.fromEntries(
+      Object.entries(next).map(([id, e]) => [id, typeof e === "string" ? e : e.label])
+    );
+    updateActions();
+  };
+
+  const draw = () =>
+    competencyEditor(body, {
+      competencies: labels(),
+      onChange: (id, patch, opts) => {
+        const current = read().competencies || {};
+        const next = {};
+        for (const [key, entry] of Object.entries(current)) {
+          const value = typeof entry === "string" ? { label: entry } : { ...entry };
+          if (key !== id) {
+            next[key] = value;
+            continue;
+          }
+          if (patch.label !== undefined) value.label = patch.label;
+          next[patch.id ?? key] = value;
+        }
+        write(next);
+        if (opts?.structural !== false) draw();
+      },
+      onAdd: () => {
+        const current = read().competencies || {};
+        const id = freeCompetencyId(new Set(Object.keys(current)));
+        write({ ...current, [id]: { label: "" } });
+        draw();
+      },
+      onRemove: (id) => {
+        const current = { ...(read().competencies || {}) };
+        delete current[id];
+        write(current);
+        draw();
+      },
+    });
+  draw();
+
+  // Where each competency builds is a module-level question, so the
+  // alignment map belongs here rather than in a session.
+  host.appendChild(document.createElement("hr"));
+  const sub = document.createElement("h3");
+  sub.className = "outcome-group";
+  sub.textContent = "Where each one builds";
+  host.appendChild(sub);
+  const panel = document.createElement("div");
+  host.appendChild(panel);
+  outcomesEditor(panel, {
+    outcomes: outcomeList(catalogueDoc()),
+    competencies: state.library.competencies,
+    blocks: blocksInOrder(),
+    owner: outcomeOwners(),
+    coverage: outcomeCoverage(),
+    onChange: () => {},
+    onOwner: setOutcomeOwner,
+  });
+}
+
+/** course.yaml as text: the orchestrator, edited directly. */
+function renderCourseSource(host) {
+  const heading = document.createElement("h2");
+  heading.className = "course-heading";
+  heading.textContent = "course.yaml";
+  host.appendChild(heading);
+  const note = document.createElement("p");
+  note.className = "hint";
+  note.textContent =
+    "The module's orchestrator: what it is, and which sessions it runs, " +
+    "in order. Adding a session from the Module tab writes here too.";
+  host.appendChild(note);
+
+  const problem = document.createElement("p");
+  problem.className = "warn";
+  problem.hidden = true;
+  const area = document.createElement("textarea");
+  area.className = "mdsource";
+  area.spellcheck = false;
+  area.setAttribute("aria-label", "course.yaml source");
+  area.value = state.edits.get("course.yaml") ?? state.files.get("course.yaml") ?? "";
+  area.addEventListener("input", () => {
+    state.edits.set("course.yaml", area.value);
+    try {
+      state.library.course = parseYaml(area.value) || {};
+      problem.hidden = true;
+    } catch (err) {
+      // The text is kept, not reverted: losing an author's work to a
+      // half-typed line would be worse than showing them the error.
+      problem.hidden = false;
+      problem.textContent = err.message;
+    }
+    updateActions();
+  });
+  host.append(problem, area);
 }
 
 // ---- assessments -------------------------------------------------------
