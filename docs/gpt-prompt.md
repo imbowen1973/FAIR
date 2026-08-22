@@ -185,6 +185,14 @@ the blocks — commentary gets pasted too.
 
 Then the lesson plan as a second block, and the assessment as a third.
 
+## Ids
+
+Give each slide an `id`. Sequential `s-01`, `s-02` … is fine, and so is a
+name like `intro-hook`. Do not worry about clashing with a deck you are
+adding to: an incoming id is kept unless it genuinely collides, and a
+collision is moved for you. Never renumber slides to close a gap — a gap
+means a slide was retired, and its id stays retired.
+
 ## What will be refused
 
 The import validates against the real template before anything is added:

@@ -37,6 +37,13 @@ filenames), `title`, `version`. All other keys (Dublin Core, ELM, ESCO
 fields) are carried through to `index.json` untouched; the renderer does
 not interpret them.
 
+`slide_seq` is bookkeeping rather than content: the highest slide number
+this deck has ever handed out. The workbench writes it only when it
+cannot be worked out from the slides still present — that is, when the
+highest-numbered slide has been deleted — so that its id is retired
+rather than reissued. Leave it alone, and keep it if you edit the file by
+hand. See **Slide ids are permanent** below.
+
 ## Slide blocks
 
 ### Slides that are filled, not typed
@@ -158,6 +165,32 @@ Every other top-level key is a **region name** and must match a region
 declared for that layout in `layout-map.yaml`. Unknown regions are a hard
 error; missing regions are allowed (the placeholder stays empty and is
 removed by PowerPoint convention at edit time).
+
+### Slide ids are permanent
+
+An `id` is identity, not position. It is the key of `slide-id-map.json`,
+the `slideId` the PowerPoint pane ticks, and it is written into the
+provenance and the attribution line of **every rendered deck**. A deck
+sitting in somebody's downloads says what `s-03` is; this file must not
+disagree.
+
+So:
+
+- **An id is allocated once.** Deleting `s-03` retires the number. The
+  next slide added is `s-04`, not `s-03`, even though there is now a gap.
+- **An id is never renamed.** Importing slides leaves the incoming ids
+  alone unless one genuinely collides, and a collision moves the
+  *incoming* slide above everything the deck has used — never an existing
+  one.
+- **Gaps are expected and correct.** `s-01, s-02, s-04` is a deck that
+  lost a slide, not a deck that needs tidying. Renumbering it to close
+  the gap breaks every artifact already rendered from it.
+- **Ids need not be numbers.** `intro-hook` is a perfectly good id, and
+  the workbench will leave it alone.
+
+Duplicate ids are a hard error: `slide-id-map.json` is a mapping, so the
+second slide would silently win and the first would become unaddressable.
+The parser refuses the file rather than let that happen.
 
 ### Region content
 

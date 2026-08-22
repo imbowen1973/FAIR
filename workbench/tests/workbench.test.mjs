@@ -57,8 +57,10 @@ import {
   isLibrary,
   layoutRegions,
   libraryPaths,
+  mintSlideIds,
   parseSlides,
   placedBlocks,
+  slideMark,
   slideRegions,
   writeSlides,
   asListType,
@@ -860,12 +862,126 @@ test("filled regions are named, so the editor can stop you typing in them", () =
   );
 });
 
+/** A slides.md with the given frontmatter lines and one slide. */
+function deck(frontmatter, slide) {
+  const nl = String.fromCharCode(10);
+  return (
+    ["---", ...frontmatter, "---", ""].join(nl) +
+    nl +
+    ["--- slide", ...slide, "---", ""].join(nl)
+  );
+}
+
+// ---- slide ids are permanent -------------------------------------------
+//
+// An id is the key of slide-id-map.json and is written into the
+// provenance and speaker notes of every rendered deck. Reissuing one
+// points artifacts already in circulation at different content, so these
+// pin the rule: allocated once, never reused, never renamed.
+
+test("a new id is above everything the deck has used, not the lowest free", () => {
+  assert.deepEqual(mintSlideIds(1, ["s-01", "s-02", "s-03"], 3).ids, ["s-04"]);
+  // The gap left by a deleted s-02 is not filled: s-02 is retired.
+  assert.deepEqual(mintSlideIds(1, ["s-01", "s-03"], 3).ids, ["s-04"]);
+});
+
+test("the high-water mark survives losing the highest slide", () => {
+  // Delete s-03, then add one. Without the mark this returns s-03 again.
+  assert.deepEqual(mintSlideIds(1, ["s-01", "s-02"], 3).ids, ["s-04"]);
+});
+
+test("the mark is read from the deck's frontmatter and only rises", () => {
+  const parsed = parseSlides(
+    deck(["title: T", "slide_seq: 9"], ["id: s-01", "layout: Full"])
+  );
+  assert.equal(slideMark(parsed, []), 9);
+  // A slide numbered above the recorded mark raises it.
+  assert.equal(slideMark(parsed, [{ data: { id: "s-12" } }]), 12);
+});
+
+test("adding a slide leaves the frontmatter alone", () => {
+  // While the highest id present is the mark, it is derivable and the
+  // line would be churn on every review.
+  const parsed = parseSlides(deck(["title: T"], ["id: s-01", "layout: Full"]));
+  const working = workingSlides(parsed);
+  working.push(blankSlide("Full", "s-02"));
+  assert.ok(!renderSlidesFile(parsed, working).includes("slide_seq"));
+});
+
+test("deleting the highest slide records the mark, so it is not reissued", () => {
+  const parsed = parseSlides(
+    deck(["title: T"], ["id: s-01", "layout: Full"]) +
+      String.fromCharCode(10) +
+      ["--- slide", "id: s-02", "layout: Full", "---", ""].join(String.fromCharCode(10))
+  );
+  assert.equal(parsed.slides.length, 2);
+
+  // Delete s-02. Its number must not come back.
+  const working = workingSlides(parsed).slice(0, 1);
+  const saved = renderSlidesFile(parsed, working);
+  assert.match(saved, /slide_seq: 2/);
+
+  const reopened = parseSlides(saved);
+  const left = workingSlides(reopened);
+  assert.deepEqual(
+    mintSlideIds(1, left.map((w) => w.data.id), slideMark(reopened, left)).ids,
+    ["s-03"]
+  );
+});
+
+test("the mark does not disturb frontmatter that is already there", () => {
+  const parsed = parseSlides(
+    deck(
+      ["session: '01'", "title: T", "version: 1.0.0", "slide_seq: 9"],
+      ["id: s-01", "layout: Full"]
+    )
+  );
+  const out = renderSlidesFile(parsed, workingSlides(parsed));
+  for (const kept of ["session: '01'", "title: T", "version: 1.0.0"]) {
+    assert.ok(out.includes(kept), kept);
+  }
+  // Updated in place, not appended again on every save.
+  assert.equal(out.match(/slide_seq:/g).length, 1);
+  const again = parseSlides(out);
+  assert.equal(
+    renderSlidesFile(again, workingSlides(again)).match(/slide_seq:/g).length,
+    1
+  );
+  // And a mark already written is never lowered.
+  assert.match(out, /slide_seq: 9/);
+});
+
+
+test("an import keeps ids that do not clash and lifts ones that do", () => {
+  const out = renumber(
+    [{ id: "intro-hook" }, { id: "s-01" }],
+    ["s-01", "s-02", "s-03"],
+    3
+  );
+  // The author's own id is theirs; only the collision moves, and it
+  // moves above the mark rather than into a gap.
+  assert.deepEqual(out.map((s) => s.id), ["intro-hook", "s-04"]);
+});
+
+test("an import never lands on the id of a deleted slide", () => {
+  // Deck lost s-02 and s-03; the mark still says 3.
+  assert.deepEqual(renumber([{ id: "s-01" }], ["s-01"], 3).map((s) => s.id), ["s-04"]);
+});
+
 test("the opening slides carry a role and no words at all", () => {
-  const opening = openingSlides("s-01");
+  const opening = openingSlides(["s-07", "s-08"]);
   assert.deepEqual(opening.map((s) => s.role), ["title", "outcomes"]);
+  assert.deepEqual(opening.map((s) => s.id), ["s-07", "s-08"]);
   for (const slide of opening) {
     assert.deepEqual(Object.keys(slide).sort(), ["id", "layout", "role"]);
   }
+});
+
+test("the opening slides refuse to invent their own ids", () => {
+  // They used to derive s-01 and s-02 from a stem, which duplicated the
+  // ids of any deck that already had them.
+  assert.throws(() => openingSlides("s-01"), /two minted ids/);
+  assert.throws(() => openingSlides(["s-01"]), /two minted ids/);
 });
 
 test("a lesson plan nobody has written is uncreated, not missing", () => {

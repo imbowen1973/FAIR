@@ -15,7 +15,13 @@
 // A model generating eduFAIR content will get the grammar nearly right
 // and occasionally not. This is where that gets caught.
 
-import { layoutRegions, parseSlides, RESERVED_SLIDE_KEYS } from "./library.js";
+import {
+  layoutRegions,
+  mintSlideIds,
+  parseSlides,
+  RESERVED_SLIDE_KEYS,
+  slideNumber,
+} from "./library.js";
 
 /** A heading that starts a slide, when converting plain markdown. */
 const HEADING = /^(#{1,3})\s+(.+)$/;
@@ -172,22 +178,22 @@ export function slidesFromMarkdown(text, { layoutMap } = {}) {
  * way a paste goes wrong, and renumbering silently is kinder than
  * refusing — the ids are ours, not the author's.
  */
-export function renumber(slides, existingIds = []) {
-  const taken = new Set(existingIds);
-  return slides.map((slide, index) => {
-    let id = slide.id || `s-${String(index + 1).padStart(2, "0")}`;
-    if (taken.has(id)) {
-      const stem = String(id).replace(/-?\d+$/, "") || "s";
-      for (let n = 1; n < 999; n += 1) {
-        const candidate = `${stem}-${String(n).padStart(2, "0")}`;
-        if (!taken.has(candidate)) {
-          id = candidate;
-          break;
-        }
-      }
+export function renumber(slides, existingIds = [], mark = 0) {
+  const taken = [...existingIds];
+  let water = mark;
+  return slides.map((slide) => {
+    // An id that does not clash is the author's and is kept. Only a
+    // genuine collision moves, and it moves *above* everything this deck
+    // has ever handed out -- never into the gap a deleted slide left.
+    if (slide.id && !taken.includes(slide.id)) {
+      taken.push(slide.id);
+      water = Math.max(water, slideNumber(slide.id));
+      return { ...slide };
     }
-    taken.add(id);
-    return { ...slide, id };
+    const minted = mintSlideIds(1, taken, water);
+    water = minted.mark;
+    taken.push(minted.ids[0]);
+    return { ...slide, id: minted.ids[0] };
   });
 }
 
@@ -211,7 +217,7 @@ function el(tag, className, text) {
  * onAdd(slides)      put them after the current slide
  * onReplace(slides)  make them the deck
  */
-export function importPanel(host, { layoutMap, existingIds = [], onAdd, onReplace, onClose }) {
+export function importPanel(host, { layoutMap, existingIds = [], mark = 0, onAdd, onReplace, onClose }) {
   host.innerHTML = "";
   const panel = el("div", "import-panel");
   panel.append(el("h4", null, "Import slides"));
@@ -291,7 +297,7 @@ export function importPanel(host, { layoutMap, existingIds = [], onAdd, onReplac
         list.append(el("li", null, `${slide.layout} — ${slide.title ?? slide.id}`));
       }
       summary.append(list);
-      ready = renumber(result.slides, existingIds);
+      ready = renumber(result.slides, existingIds, mark);
     }
 
     add.disabled = Boolean(fatal.length);

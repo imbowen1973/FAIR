@@ -110,6 +110,88 @@ export function workingSlides(parsed) {
   }));
 }
 
+// ---- slide ids ----------------------------------------------------------
+//
+// An id is identity, not position. It is the key of slide-id-map.json,
+// the `slideId` the PowerPoint pane ticks, and it is written into the
+// provenance and the attribution line of every rendered deck. So a deck
+// already in circulation says what `s-03` is, and this side must never
+// disagree: **an id is allocated once, and never reused or renamed.**
+//
+// Position is the number in the rail, which comes from the index. The
+// two look alike on a deck nobody has edited yet and diverge the moment
+// one is moved -- that is correct, and the id is the one that must not
+// move.
+//
+// Lowest-free allocation, which this replaced, resurrected the id of a
+// deleted slide onto unrelated content. Highest-plus-one is not enough
+// on its own: delete the last slide, add one, and the number comes back.
+// So the high-water mark is kept in the deck's own frontmatter and only
+// ever rises.
+
+const SEQ_KEY = "slide_seq";
+const SEQ_LINE = /^slide_seq:[ \t]*\d+[ \t]*$/m;
+
+/** The trailing number of an id, or 0 for one that has none. */
+export function slideNumber(id) {
+  const match = /(\d+)$/.exec(String(id ?? ""));
+  return match ? Number(match[1]) : 0;
+}
+
+/** The high-water mark a deck carries: the last id it ever handed out. */
+export function slideMark(parsed, working = []) {
+  return Math.max(
+    Number(parsed?.frontmatter?.[SEQ_KEY]) || 0,
+    0,
+    ...(parsed?.slides || []).map((s) => slideNumber(s.data?.id)),
+    ...working.map((e) => slideNumber(e?.data?.id ?? e?.id))
+  );
+}
+
+/**
+ * Ids for `count` new slides: above everything this deck has ever used.
+ *
+ * `mark` is the deck's high-water mark. Pass it or ids come back that
+ * a deleted slide once owned.
+ */
+export function mintSlideIds(count, existing = [], mark = 0) {
+  const ids = existing.filter(Boolean).map(String);
+  const stem = (ids[0] || "s-01").replace(/\d+$/, "") || "s-";
+  const taken = new Set(ids);
+  let n = Math.max(mark, 0, ...ids.map(slideNumber));
+  const out = [];
+  while (out.length < count) {
+    n += 1;
+    const id = `${stem}${String(n).padStart(2, "0")}`;
+    // Only reachable when a stem repeats a number some other way; the
+    // mark makes it unreachable in practice and it costs one compare.
+    if (taken.has(id)) continue;
+    taken.add(id);
+    out.push(id);
+  }
+  return { ids: out, mark: n };
+}
+
+/**
+ * Record the high-water mark in the deck's frontmatter -- but only when
+ * it cannot be worked out from the slides that are still there.
+ *
+ * While the highest id present *is* the mark, the line would be noise,
+ * and an untouched save has to rebuild the file byte-for-byte or every
+ * review fills with churn. It earns its place the moment the highest
+ * slide is deleted, which is exactly when the number would be lost.
+ */
+function withSlideSeq(header, mark, present, nl) {
+  if (!mark) return header;
+  if (mark <= present && !SEQ_LINE.test(header)) return header;
+  const fm = header.match(FRONTMATTER);
+  if (!fm) return `---${nl}${SEQ_KEY}: ${mark}${nl}---${nl}${nl}${header}`;
+  const body = SEQ_LINE.test(fm[1])
+    ? fm[1].replace(SEQ_LINE, `${SEQ_KEY}: ${mark}`)
+    : `${fm[1]}${nl}${SEQ_KEY}: ${mark}`;
+  return `---${nl}${body}${nl}---${nl}` + header.slice(fm[0].length);
+}
+
 /** A new slide, with only what the grammar requires. */
 export function blankSlide(layout, id) {
   return { sourceIndex: null, data: { id, layout }, dirty: true };
@@ -155,7 +237,17 @@ export function renderSlidesFile(parsed, working) {
   const tail = hasSlides
     ? parsed.text.slice(parsed.slides[parsed.slides.length - 1].end)
     : "";
-  const out = header + bodies.join(nl + nl) + (tail.trim() ? tail : nl);
+  // The mark only rises, so a deck that loses its highest slide does not
+  // hand that number out again.
+  const out =
+    withSlideSeq(
+      header,
+      slideMark(parsed, working),
+      Math.max(0, ...working.map((e) => slideNumber(e?.data?.id))),
+      nl
+    ) +
+    bodies.join(nl + nl) +
+    (tail.trim() ? tail : nl);
   return out.endsWith(nl) ? out : out + nl;
 }
 

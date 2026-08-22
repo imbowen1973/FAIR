@@ -419,11 +419,20 @@ export function roleRegions(slide, layoutRegions) {
 }
 
 /** The two slides every session opens with, filled from the library. */
-export function openingSlides(firstId = "s-01") {
-  const stem = String(firstId).replace(/\d+$/, "") || "s-";
+export function openingSlides(ids) {
+  // The ids are minted by the caller and passed in. Deriving them from a
+  // stem here produced a second s-01 on any deck that already had one,
+  // and slide-id-map.json is a mapping: the duplicate silently won and
+  // the other slide became unaddressable. Refusing anything but two real
+  // ids is the point -- a wrong id here is invisible until a deck has
+  // shipped.
+  const [title, outcomes] = Array.isArray(ids) ? ids : [];
+  if (!title || !outcomes) {
+    throw new Error("openingSlides needs two minted ids, e.g. ['s-07','s-08']");
+  }
   return [
-    { id: `${stem}01`, layout: "Title", role: "title" },
-    { id: `${stem}02`, layout: "Full", role: "outcomes" },
+    { id: title, layout: "Title", role: "title" },
+    { id: outcomes, layout: "Full", role: "outcomes" },
   ];
 }
 
