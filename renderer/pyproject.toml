@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "python-pptx>=1.0",
     "python-docx>=1.1",
+    "markdown-it-py>=3.0",
     "PyYAML>=6.0",
 ]
 
@@ -21,6 +22,7 @@ fair-track = "fair_renderer.tracking:main"
 fair-assets = "fair_renderer.assets:main"
 fair-audit = "fair_renderer.audit:main"
 fair-doctemplate = "fair_renderer.word.inspect:main"
+fair-doc = "fair_renderer.word.render:main"
 
 [build-system]
 requires = ["setuptools>=61"]
