@@ -101,35 +101,101 @@ def _fill_plain(placeholder, region: Region, suppress_bullets: bool, code_typefa
             _suppress_bullet(paragraph)
 
 
-def _fill_image(slide, placeholder, image_path: Path) -> None:
+# How a picture meets its frame. A portrait photograph in a landscape
+# placeholder needs a decision, and it is not one the template can make:
+# the template knows the shape of the hole, only the author knows whether
+# this particular picture may lose its edges.
+IMAGE_FITS = ("cover", "contain", "width", "height")
+DEFAULT_IMAGE_FIT = "cover"
+
+
+def _fit_geometry(frame_w, frame_h, img_w, img_h, fit):
+    """Where a picture sits in its frame, and what is cropped off it.
+
+    Returns `(width, height, crop_x, crop_y)` — the shape's size, and the
+    fraction to take off *each* side of the source. One of the crops is
+    always zero: a picture is never cropped in both directions at once.
+    """
+    if not img_w or not img_h:
+        return frame_w, frame_h, 0.0, 0.0
+
+    by_width = frame_w / img_w
+    by_height = frame_h / img_h
+    scale = {
+        "cover": max(by_width, by_height),
+        "contain": min(by_width, by_height),
+        "width": by_width,
+        "height": by_height,
+    }.get(fit, max(by_width, by_height))
+
+    drawn_w, drawn_h = img_w * scale, img_h * scale
+
+    # Wider than the frame: keep the frame and crop the sides. Narrower:
+    # shrink the shape and let it sit centred in the space.
+    if drawn_w > frame_w + 1:
+        crop_x = (1 - frame_w / drawn_w) / 2
+        width = frame_w
+    else:
+        crop_x = 0.0
+        width = int(round(drawn_w))
+
+    if drawn_h > frame_h + 1:
+        crop_y = (1 - frame_h / drawn_h) / 2
+        height = frame_h
+    else:
+        crop_y = 0.0
+        height = int(round(drawn_h))
+
+    return width, height, crop_x, crop_y
+
+
+def _fill_image(slide, placeholder, image_path: Path, fit: str = DEFAULT_IMAGE_FIT) -> None:
     """Insert an image into a region (spec A.3, image branch).
 
     Picture placeholders keep their <p:ph> binding via insert_picture().
     For non-picture placeholders, the image is placed at the placeholder's
     exact geometry and the empty placeholder removed — a documented
     exception to full placeholder binding (the shape carries no <p:ph>).
+
+    Both kinds obey `fit` the same way. They used not to: a picture
+    placeholder cropped to fill while any other placeholder fitted
+    inside, so the same picture behaved differently depending on which
+    layout it landed in, and neither could be told otherwise.
     """
     if not image_path.exists():
         raise RenderError(f"image not found: {image_path}")
 
-    ph_type = placeholder.placeholder_format.type
-    if ph_type == PP_PLACEHOLDER.PICTURE:
-        return placeholder.insert_picture(str(image_path))
-
-    # Contain-fit: scale to the largest size that fits the region without
-    # distortion, centred in the placeholder's footprint.
     from PIL import Image
 
     with Image.open(image_path) as im:
-        iw, ih = im.size
-    box_w, box_h = placeholder.width, placeholder.height
-    scale = min(box_w / iw, box_h / ih)
-    w, h = int(iw * scale), int(ih * scale)
-    left = Emu(placeholder.left + (box_w - w) // 2)
-    top = Emu(placeholder.top + (box_h - h) // 2)
-    pic = slide.shapes.add_picture(str(image_path), left, top, width=Emu(w), height=Emu(h))
-    sp = placeholder._element
-    sp.getparent().remove(sp)
+        img_w, img_h = im.size
+
+    frame_w, frame_h = placeholder.width, placeholder.height
+    left, top = placeholder.left, placeholder.top
+    width, height, crop_x, crop_y = _fit_geometry(
+        frame_w, frame_h, img_w, img_h, fit
+    )
+
+    ph_type = placeholder.placeholder_format.type
+    if ph_type == PP_PLACEHOLDER.PICTURE:
+        # insert_picture keeps the <p:ph> and fills the frame, cropping;
+        # the crops and the size are then set to whatever `fit` asked for.
+        pic = placeholder.insert_picture(str(image_path))
+    else:
+        pic = slide.shapes.add_picture(str(image_path), Emu(left), Emu(top))
+        sp = placeholder._element
+        sp.getparent().remove(sp)
+
+    pic.crop_left = crop_x
+    pic.crop_right = crop_x
+    pic.crop_top = crop_y
+    pic.crop_bottom = crop_y
+    pic.width = Emu(int(width))
+    pic.height = Emu(int(height))
+    # Centred in the frame, which matters whenever the picture does not
+    # fill it: an image pinned to the top-left of its hole looks wrong.
+    pic.left = Emu(int(left + (frame_w - width) / 2))
+    pic.top = Emu(int(top + (frame_h - height) / 2))
     return pic
 
 
@@ -152,7 +218,7 @@ def _video_poster(build_dir: Path) -> Path:
 
 def _fill_video(slide, placeholder, region: Region, base_dir: Path, build_dir: Path) -> None:
     poster = base_dir / region.src if region.src else _video_poster(build_dir)
-    pic = _fill_image(slide, placeholder, poster)
+    pic = _fill_image(slide, placeholder, poster, region.fit or DEFAULT_IMAGE_FIT)
     pic.click_action.hyperlink.address = region.url
 
 
@@ -197,10 +263,10 @@ def _fill_region(
             code_typeface=code_typeface,
         )
     elif region.type == "image":
-        _fill_image(slide, placeholder, base_dir / region.src)
+        _fill_image(slide, placeholder, base_dir / region.src, region.fit or DEFAULT_IMAGE_FIT)
     elif region.type == "mermaid":
         image = resolve_mermaid(base_dir / region.src, build_dir)
-        _fill_image(slide, placeholder, image)
+        _fill_image(slide, placeholder, image, region.fit or DEFAULT_IMAGE_FIT)
     elif region.type == "video":
         _fill_video(slide, placeholder, region, base_dir, build_dir)
     else:  # pragma: no cover - parser guarantees the type set

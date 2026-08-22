@@ -1620,7 +1620,14 @@ function openMediaPicker(region, value, kind) {
     kind,
     images: availableImages(),
     resolve: mediaHelpers().resolve,
-    onPick: (next) => set(next),
+    current: value,
+    onFit: (fit) => {
+      const now = slideData(state.slideIndex)[region];
+      // Nothing to fit yet: remember it so the next picture arrives the
+      // way the author already said they wanted it.
+      set(typeof now === "object" && now ? { ...now, fit } : { ...value, fit });
+    },
+    onPick: (next) => set({ ...(value?.fit ? { fit: value.fit } : {}), ...next }),
     onClear: () => {
       const current = { ...slideData(state.slideIndex) };
       delete current[region];

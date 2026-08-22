@@ -855,3 +855,10 @@ button.vacant-media:hover { color: var(--accent); border-color: var(--accent); }
   outline-offset: -1px;
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+/* How a picture meets its frame. Not a formatting choice — the template
+   owns the shape of the hole — but only the author knows whether this
+   particular picture may lose its edges. */
+.media-fit { margin: 14px 0; }
+.media-fit h4 { margin: 0 0 6px; font-size: 0.82rem; }
+.media-fit .kind-option { max-width: 26rem; }

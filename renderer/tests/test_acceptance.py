@@ -2173,3 +2173,95 @@ def test_an_unknown_role_is_refused(tmp_path):
     )
     with pytest.raises(SessionParseError, match="unknown role"):
         parse_session(path)
+
+
+# ---- how a picture meets its frame --------------------------------------
+
+
+def _picture_deck(tmp_path, fit, size=(600, 1200)):
+    """Render one slide with a picture in a Picture placeholder."""
+    from PIL import Image
+
+    from pptx import Presentation
+
+    from edufair_renderer.render import render_session
+
+    sessions = tmp_path / "sessions"
+    (sessions / "assets").mkdir(parents=True)
+    Image.new("RGB", size, (200, 60, 60)).save(sessions / "assets" / "p.png")
+    fit_line = f"\n  fit: {fit}" if fit else ""
+    (sessions / "s.md").write_text(
+        "---\nsession: '01'\ntitle: T\nversion: 1.0.0\n---\n\n"
+        "--- slide\nid: s1\nlayout: Picture\ntitle: A picture\n"
+        f"picture:\n  type: image\n  src: assets/p.png{fit_line}\n---\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "out"
+    render_session(sessions / "s.md", EXAMPLES / "template.pptx",
+                   EXAMPLES / "layout-map.yaml", out)
+
+    prs = Presentation(str(next(out.glob("*.pptx"))))
+    A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
+    pic = next(s for s in prs.slides[0].shapes if s.element.find(f".//{A}blip") is not None)
+    rect = pic.element.find(f".//{A}srcRect")
+    crop_top = int(rect.get("t") or 0) / 100000 if rect is not None else 0.0
+    crop_left = int(rect.get("l") or 0) / 100000 if rect is not None else 0.0
+    return {
+        "width": pic.width,
+        "height": pic.height,
+        "crop_top": crop_top,
+        "crop_left": crop_left,
+        "bound": pic.element.find(f".//{P}ph") is not None,
+    }
+
+
+def test_a_picture_fills_or_fits_as_the_slide_asks(tmp_path):
+    """A portrait picture in a landscape frame forces a choice.
+
+    The template knows the shape of the hole; only the author knows
+    whether this picture may lose its edges.
+    """
+    cover = _picture_deck(tmp_path / "a", "cover")
+    contain = _picture_deck(tmp_path / "b", "contain")
+
+    # Cover fills the frame and takes the overflow off both ends.
+    assert cover["crop_top"] > 0.3
+    assert cover["width"] > contain["width"]
+    # Contain keeps every pixel and sits narrower than the frame.
+    assert contain["crop_top"] == 0
+    assert contain["height"] == cover["height"]
+
+    for result in (cover, contain):
+        assert result["bound"], "the slide must stay bound to its placeholder"
+
+
+def test_matching_one_edge_is_consistent_whatever_the_picture(tmp_path):
+    """`width` and `height` say which edge governs, rather than letting
+    the picture's own shape decide as cover does."""
+    tall = _picture_deck(tmp_path / "tall", "width", size=(600, 1200))
+    wide = _picture_deck(tmp_path / "wide", "width", size=(2000, 500))
+
+    # Both match the frame's width; only the tall one loses anything.
+    assert tall["width"] == wide["width"]
+    assert tall["crop_top"] > 0
+    assert wide["crop_top"] == 0 and wide["crop_left"] == 0
+
+
+def test_a_picture_with_no_fit_still_fills_the_frame(tmp_path):
+    """The default is unchanged, so existing libraries render as before."""
+    assert _picture_deck(tmp_path, None)["crop_top"] > 0.3
+
+
+def test_an_unknown_fit_is_refused_at_parse_time(tmp_path):
+    from edufair_renderer.parser import SessionParseError, parse_session
+
+    path = tmp_path / "s.md"
+    path.write_text(
+        "---\nsession: '01'\ntitle: T\nversion: 1.0.0\n---\n\n"
+        "--- slide\nid: s1\nlayout: Picture\n"
+        "picture:\n  type: image\n  src: a.png\n  fit: squish\n---\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SessionParseError, match="fit must be one of"):
+        parse_session(path)

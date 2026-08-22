@@ -102,8 +102,11 @@ function el(tag, className, text) {
  * onPick({type, src, url})  a choice was made
  * onUpload(files)           files to put through the asset policy
  * onClear()                 empty the placeholder
+ * onFit(fit)                how the picture meets its frame
  */
-export function mediaPicker(host, { region, kind, images, resolve, onPick, onUpload, onClear }) {
+export function mediaPicker(host, {
+  region, kind, images, resolve, current, onPick, onUpload, onClear, onFit,
+}) {
   host.innerHTML = "";
   const panel = el("div", "media-picker");
   panel.append(el("h4", null, `${kind === "video" ? "Video" : "Picture"} for ${region}`));
@@ -170,6 +173,33 @@ export function mediaPicker(host, { region, kind, images, resolve, onPick, onUpl
     }
     panel.append(grid);
   }
+
+  // How the picture meets its frame. Not a formatting choice -- the
+  // template owns the shape of the hole -- but only the author knows
+  // whether this particular picture may lose its edges.
+  const fits = el("div", "media-fit");
+  fits.append(el("h4", null, "How it fills the frame"));
+  const chosen = current?.fit || "cover";
+  for (const [value, label, note] of [
+    ["cover", "Fill the frame", "Crops whichever edges do not fit."],
+    ["contain", "Fit inside", "The whole picture, with space around it."],
+    ["width", "Match the width", "Crops top and bottom if it is too tall."],
+    ["height", "Match the height", "Crops the sides if it is too wide."],
+  ]) {
+    const option = el("button", "kind-option");
+    option.type = "button";
+    option.dataset.fit = value;
+    if (value === chosen) option.classList.add("on");
+    option.append(el("span", "kind-label", label), el("span", "kind-note", note));
+    option.addEventListener("click", () => {
+      for (const other of fits.querySelectorAll(".kind-option")) {
+        other.classList.toggle("on", other.dataset.fit === value);
+      }
+      onFit?.(value);
+    });
+    fits.append(option);
+  }
+  panel.append(fits);
 
   const clear = el("button", null, "Empty this placeholder");
   clear.type = "button";

@@ -15,6 +15,11 @@ RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "outcomes", "dok", "
 # is how a deck comes to disagree with the course it belongs to.
 SLIDE_ROLES = {"title", "outcomes"}
 CONTENT_TYPES = {"ul", "ol", "p", "image", "mermaid", "video"}
+
+# How a picture meets its frame. Mirrors render.IMAGE_FITS, and is
+# declared here so the grammar can refuse an unknown one at parse time
+# rather than silently falling back at render time.
+IMAGE_FITS = ("cover", "contain", "width", "height")
 MAX_LIST_DEPTH = 5
 
 # Theme colour slots authors may reference. These resolve through the
@@ -58,6 +63,10 @@ class Region:
     src: str | None = None
     color: str | None = None  # default theme colour for the region's items
     url: str | None = None  # video: external hosting URL (https)
+    # How a picture meets its frame: cover, contain, width, height.
+    # The template knows the shape of the hole; only the author knows
+    # whether this picture may lose its edges.
+    fit: str | None = None
 
 
 @dataclass
@@ -194,12 +203,19 @@ def _parse_region(name: str, raw, where: str) -> Region:
         poster = raw.get("poster")
         if poster is not None and (not isinstance(poster, str) or not poster):
             raise SessionParseError(f"{where}: video 'poster' must be a path")
-        return Region(name=name, type="video", url=url, src=poster)
+        return Region(
+            name=name, type="video", url=url, src=poster, fit=raw.get("fit")
+        )
     # image / mermaid
     src = raw.get("src")
     if not isinstance(src, str) or not src:
         raise SessionParseError(f"{where}: region '{name}' of type {ctype} requires 'src'")
-    return Region(name=name, type=ctype, src=src)
+    fit = raw.get("fit")
+    if fit is not None and fit not in IMAGE_FITS:
+        raise SessionParseError(
+            f"{where}: region '{name}': fit must be one of {sorted(IMAGE_FITS)}"
+        )
+    return Region(name=name, type=ctype, src=src, fit=fit)
 
 
 def _parse_slide(lineno: int, raw_yaml: str, path: Path, seen_ids: set[str]) -> Slide:

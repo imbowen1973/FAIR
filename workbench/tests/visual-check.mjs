@@ -406,10 +406,12 @@ const result = await page.evaluate(async () => {
     Object.keys(geometry.layouts[key].regions || {}).some((n) => /picture|image/i.test(n))
   );
   let media = { skipped: true };
+  let pictureRegionName = null;
   if (pictureLayout) {
     const pictureRegion = Object.keys(geometry.layouts[pictureLayout].regions).find(
       (n) => /picture|image/i.test(n)
     );
+    pictureRegionName = pictureRegion;
     const mediaHost = document.createElement("div");
     mediaHost.style.width = "900px";
     document.body.appendChild(mediaHost);
@@ -596,10 +598,33 @@ const result = await page.evaluate(async () => {
   mediaButton?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
   selection.ribbonOffersMedia = Boolean(mediaButton) && ribbonMedia === 1;
 
+  // How a picture meets its frame. The preview has to agree with the
+  // deck about the crop, or it is showing one that will not happen.
+  const fitStyles = {};
+  for (const fit of ["cover", "contain", "width", "height"]) {
+    const fitHost = document.createElement("div");
+    fitHost.style.width = "700px";
+    document.body.appendChild(fitHost);
+    drawSlide(fitHost, {
+      geometry,
+      layoutKey: pictureLayout ?? Object.keys(geometry.layouts)[0],
+      slide: {
+        id: "f",
+        layout: pictureLayout ?? Object.keys(geometry.layouts)[0],
+        [pictureRegionName ?? "full"]: { type: "image", src: "media/x.png", fit },
+      },
+      media: mediaHelpers,
+    });
+    const img = fitHost.querySelector("img.media-image");
+    fitStyles[fit] = img
+      ? { objectFit: img.style.objectFit, width: img.style.width, height: img.style.height }
+      : null;
+  }
+
   const vacant = host.querySelectorAll(".region.vacant").length;
   return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes,
     tabbar, mdeditor, question, alignment, derived, rich, media, assets, stamp,
-    placeholders, selection };
+    placeholders, selection, fitStyles };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -656,6 +681,9 @@ console.log(`  empty placeholders: ${result.placeholders.labels?.join(" | ")}`);
 console.log(`  picker opened for: ${JSON.stringify(result.placeholders.openedPicker)}`);
 console.log(`  selection follows the click: ${JSON.stringify(result.selection.moved)}`);
 console.log(`  ribbon offers media: ${result.selection.ribbonOffersMedia}`);
+console.log(`  picture fit: cover=${result.fitStyles.cover?.objectFit} ` +
+  `contain=${result.fitStyles.contain?.objectFit} ` +
+  `width=${result.fitStyles.width?.width} height=${result.fitStyles.height?.height}`);
 console.log(`  worst-case upload: ${JSON.stringify(result.assets)}`);
 console.log(`  funder stamp: ${JSON.stringify(result.stamp)}`);
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
@@ -711,6 +739,10 @@ const failed =
     (!result.placeholders.labels.some((l) => l.includes("picture")) ||
       !result.placeholders.openedPicker.length)) ||
   !result.selection.ribbonOffersMedia ||
+  result.fitStyles.cover?.objectFit !== "cover" ||
+  result.fitStyles.contain?.objectFit !== "contain" ||
+  result.fitStyles.width?.width !== "100%" ||
+  result.fitStyles.height?.height !== "100%" ||
   (!result.selection.skipped &&
     (result.selection.moved.some((m) => m.length !== 1) ||
       result.selection.moved[0][0] === result.selection.moved[1]?.[0])) ||

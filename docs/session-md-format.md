@@ -112,6 +112,36 @@ dok: 2
 ---
 ```
 
+### Pictures, and how they meet their frame
+
+```yaml
+picture:
+  type: image
+  src: media/chain.png
+  fit: cover        # cover | contain | width | height
+```
+
+The template owns the shape of the hole. Only the author knows whether
+*this* picture may lose its edges, so `fit` is content rather than
+formatting:
+
+| `fit` | What happens |
+|---|---|
+| `cover` | Fills the frame; crops whichever edges do not fit. The default. |
+| `contain` | The whole picture, with space around it. |
+| `width` | Matches the frame's width; crops top and bottom if it is too tall. |
+| `height` | Matches the frame's height; crops the sides if it is too wide. |
+
+`cover` lets the picture's own shape decide which way it is cropped.
+`width` and `height` say which edge governs, which is what you want
+across a set of photographs of differing shapes — otherwise one is
+cropped at the sides and the next at the top.
+
+A picture placeholder used to crop to fill while any other placeholder
+fitted inside, so the same picture behaved differently depending on the
+layout. Both now obey `fit`, and the slide stays bound to its
+placeholder either way.
+
 ### Reserved keys
 
 | Key        | Required | Meaning                                             |

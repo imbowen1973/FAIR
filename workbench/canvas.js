@@ -251,9 +251,20 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
     img.src = source;
     img.alt = "";
     img.loading = "lazy";
-    // The template decides the shape of the hole; the picture fills it
-    // the way PowerPoint fills a picture placeholder.
+    // The template decides the shape of the hole; `fit` decides how the
+    // picture meets it, and the preview has to agree with the deck or it
+    // is showing a crop that will not happen.
     img.className = "media-image";
+    const fit = value.fit || "cover";
+    if (fit === "width") {
+      img.style.width = "100%";
+      img.style.height = "auto";
+    } else if (fit === "height") {
+      img.style.height = "100%";
+      img.style.width = "auto";
+    } else {
+      img.style.objectFit = fit === "contain" ? "contain" : "cover";
+    }
     media.appendChild(img);
     // A poster that cannot load says so rather than leaving a gap: a
     // broken path is exactly what an author needs to see.
