@@ -5,6 +5,7 @@ description = "Renders session markdown into template-bound .pptx decks (Compone
 requires-python = ">=3.10"
 dependencies = [
     "python-pptx>=1.0",
+    "python-docx>=1.1",
     "PyYAML>=6.0",
 ]
 
@@ -19,6 +20,7 @@ fair-migrate = "fair_renderer.migrate:main"
 fair-track = "fair_renderer.tracking:main"
 fair-assets = "fair_renderer.assets:main"
 fair-audit = "fair_renderer.audit:main"
+fair-doctemplate = "fair_renderer.word.inspect:main"
 
 [build-system]
 requires = ["setuptools>=61"]
