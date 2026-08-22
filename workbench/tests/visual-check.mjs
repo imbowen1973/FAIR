@@ -37,6 +37,7 @@ const result = await page.evaluate(async () => {
   const { outcomesEditor, outcomeList } = await import("./outcomes.js");
   const { slideMeta } = await import("./meta.js");
   const { resolveMedia, videoHost, videoThumb } = await import("./media.js");
+  const { prepareImage } = await import("./attach.js");
   const raw = (p) =>
     fetch(
       `https://raw.githubusercontent.com/Agrifoodskills/Andragogy-Pedagogy/HEAD/${p}`
@@ -444,9 +445,36 @@ const result = await page.evaluate(async () => {
     };
   }
 
+  // The asset policy, enforced where the bytes are. A detailed photo at
+  // one pass and 2000px lands well over the 500 KB the build allows, and
+  // an upload that ignored that would commit a file CI then refuses --
+  // a failure after the fact, and the worst moment to learn a limit.
+  const canvas = document.createElement("canvas");
+  canvas.width = 3000;
+  canvas.height = 2000;
+  const ctx = canvas.getContext("2d");
+  const noise = ctx.createImageData(canvas.width, canvas.height);
+  for (let i = 0; i < noise.data.length; i += 4) {
+    noise.data[i] = Math.random() * 255;
+    noise.data[i + 1] = Math.random() * 255;
+    noise.data[i + 2] = Math.random() * 255;
+    noise.data[i + 3] = 255;
+  }
+  ctx.putImageData(noise, 0, 0);
+  const big = await new Promise((done) =>
+    canvas.toBlob((blob) => done(new File([blob], "big.jpg", { type: "image/jpeg" })), "image/jpeg", 1)
+  );
+  let assets = { skipped: true };
+  try {
+    const prepared = await prepareImage(big);
+    assets = { skipped: false, kb: Math.round(prepared.bytes.length / 1024) };
+  } catch (err) {
+    assets = { skipped: false, refused: String(err.message).slice(0, 60) };
+  }
+
   const vacant = host.querySelectorAll(".region.vacant").length;
   return { fit, edited, markEdit, vacant, markerRoom, tabbed, untabbed, listTypes,
-    tabbar, mdeditor, question, alignment, derived, rich, media };
+    tabbar, mdeditor, question, alignment, derived, rich, media, assets };
 });
 
 /** A region's value is a string or a typed object; both carry text. */
@@ -499,6 +527,7 @@ console.log(`  grouped by session: ${result.alignment.groups.join(" | ")}`);
 console.log(`  competencies confined to one session: ${result.alignment.confined.join(", ") || "none"}`);
 console.log(`  derived from outcome: ${JSON.stringify(result.derived.fromOutcome)}`);
 console.log(`  media: ${JSON.stringify(result.media)}`);
+console.log(`  worst-case upload: ${JSON.stringify(result.assets)}`);
 console.log(`typing reached the data:`, JSON.stringify(result.edited));
 console.log(`marks survived serialisation:`, JSON.stringify(result.markEdit));
 if (errors.length) console.log("console errors:", errors.slice(0, 5));
@@ -547,6 +576,7 @@ const failed =
   JSON.stringify(result.derived.fromOutcome) !== JSON.stringify(["AP1"]) ||
   !result.derived.lit.includes("O1") ||
   !result.derived.lit.includes("AP9") ||
+  (!result.assets.skipped && !(result.assets.kb <= 500)) ||
   (!result.media.skipped &&
     (!result.media.image ||
       !result.media.videoStill ||

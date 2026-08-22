@@ -148,6 +148,28 @@ needs a `poster:` alongside.
 An image already in the repo can be reused by any slide in the course,
 so a diagram used in four sessions is one file, not four.
 
+### Why JPEG and PNG, and not WebP
+
+WebP would save roughly a fifth at these sizes. It is not used because
+**python-pptx refuses it** — `unsupported image format, expected one of
+BMP, GIF, JPEG, PNG, TIFF, WMF` — so a WebP on a slide fails the build
+outright. PowerPoint itself only learned WebP in recent Microsoft 365
+builds, and a deck opened in anything older would show a hole.
+
+### Why 2000 px
+
+It is what the template needs. Its widest placeholder is 90% of the
+slide, which is 1728 px on a 1080p projector; the rest is headroom for a
+crop. The workbench compresses to fit the 500 KB cap, dropping quality
+before pixels — detail costs more bytes than size does, and a slide
+image at quality 0.7 is hard to tell from one at 0.82 while halving the
+pixels is visible.
+
+**The dominant cost is history, not any single file.** Git keeps every
+version for ever, so a diagram revised three times is four copies in the
+repo whatever each one weighs. Reusing an image rather than uploading it
+again is the single biggest saving available.
+
 The split is not tidiness. Clinical photographs must not carry GPS
 coordinates or device identifiers into a public repo, so images go
 through the asset policy without exception — and running that policy
