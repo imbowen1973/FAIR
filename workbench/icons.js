@@ -25,6 +25,12 @@ const PATHS = {
   add: "M3 3h10v10H3z M8 6v4M6 8h4",
   // Chevron for the picker.
   chevron: "M4 6l4 4 4-4",
+  // A framed picture: two peaks and a sun. The universal image glyph,
+  // and it has to be that -- this was a box-drawing character, which
+  // read as nothing at all.
+  media:
+    "M2 3.5h12v9H2z M2.5 12l3.5-4 2.5 2.5M8 10.5l2-2 3.5 3.5" +
+    "M10.6 6.3a1 1 0 1 0 0 .01",
 };
 
 /**

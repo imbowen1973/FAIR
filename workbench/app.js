@@ -358,7 +358,7 @@ function hasOpeningSlides() {
  */
 function openImport() {
   revealEditor();
-  const host = $("meta");
+  const host = $("panels");
   const panel = document.createElement("div");
   host.prepend(panel);
   panel.scrollIntoView({ block: "nearest" });
@@ -1133,6 +1133,7 @@ function renderBlock() {
   $("slidesview").hidden = !slides;
   $("document").hidden = slides;
   $("ribbon").hidden = !slides;
+  $("sidebar").hidden = !slides;
 
   if (slides) {
     renderRibbon();
@@ -1412,6 +1413,7 @@ function renderCourse() {
   renderTabs();
   $("slidesview").hidden = true;
   $("ribbon").hidden = true;
+  $("sidebar").hidden = true;
   $("document").hidden = false;
 
   const host = $("document");
@@ -1685,9 +1687,9 @@ function availableImages() {
   return [...new Set([...repoImages(state.tree), ...staged])];
 }
 
-/** Fill a placeholder: the panel below the slide, not a modal. */
+/** Fill a placeholder: a panel above the slide, not a modal. */
 function openMediaPicker(region, value, kind) {
-  const host = $("meta");
+  const host = $("panels");
   const panel = document.createElement("div");
   host.prepend(panel);
   panel.scrollIntoView({ block: "nearest" });

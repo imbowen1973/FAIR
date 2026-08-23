@@ -9,6 +9,8 @@
 // It acts on whatever is selected in the editable slide, so it is a
 // property of the canvas rather than of any one field.
 
+import { icon } from "./icons.js";
+
 const COMMANDS = {
   bold: ["B", "Bold", "bold"],
   italic: ["I", "Italic", "italic"],
@@ -24,7 +26,10 @@ function button(label, title, onDown, className = "mark") {
   const b = document.createElement("button");
   b.type = "button";
   b.className = className;
-  b.textContent = label;
+  // A string label is text; a node is an icon, and the title carries the
+  // meaning either way.
+  if (label instanceof Node) b.appendChild(label);
+  else b.textContent = label;
   b.title = title;
   b.setAttribute("aria-label", title);
   // mousedown, not click: click moves focus out of the slide first and
@@ -101,7 +106,12 @@ export function ribbon(host, {
   const mediaGroup = document.createElement("div");
   mediaGroup.className = "ribbon-group";
   mediaGroup.appendChild(
-    button("▨", "Put a picture or a video in the selected region", () => onMedia?.(), "mark")
+    button(
+      icon("media", { size: 16 }),
+      "Put a picture or a video in the selected region",
+      () => onMedia?.(),
+      "mark with-icon"
+    )
   );
   host.appendChild(mediaGroup);
 

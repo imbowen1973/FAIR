@@ -88,15 +88,23 @@
       <aside id="outline" class="pane outline" aria-label="Block contents"></aside>
       <section class="pane editor" aria-label="Document">
         <div id="slidesview">
+          <!-- Import and the media picker open here, above the slide:
+               they are the width of the editor, not of the sidebar. -->
+          <div id="panels"></div>
           <div id="canvas" class="canvas"></div>
           <p class="hint canvas-hint">
             Click a region to edit it. Layout, geometry and colours come from
             the template — <strong>Preview deck</strong> renders the real file.
           </p>
-          <div id="meta" class="meta"></div>
         </div>
         <div id="document" class="document" hidden></div>
       </section>
+      <!-- The slide's identity, its meaning and its speaker notes. Beside
+           the slide when the window can hold it, underneath when it
+           cannot: below the fold is where this went to be forgotten. -->
+      <aside id="sidebar" class="pane sidebar" aria-label="Slide details">
+        <div id="meta" class="meta"></div>
+      </aside>
     </div>
 
     <div id="problems" class="problems"></div>
