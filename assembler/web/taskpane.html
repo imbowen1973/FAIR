@@ -11,7 +11,7 @@
   <header>
     <img src="assets/edufair-logo.png" alt="" class="brand"/>
     <div>
-      <h1>FAIR Deck Assembler</h1>
+      <h1>eduFAIR Deck Assembler</h1>
       <p class="sub">Find slides across a course and build a deck</p>
     </div>
   </header>
@@ -68,6 +68,13 @@
     <img id="funder-logo" alt="" hidden/>
     <p id="funder-text" class="funder-text"></p>
   </footer>
+
+  <!-- Which build this pane is running. The Office webview caches hard,
+       and a pane serving a mix of old and new modules is exactly how the
+       logo went missing after a rename -- this makes that answerable. -->
+  <p class="build" title="If this does not match the latest commit, clear the Office cache.">
+    build <code>dev</code>
+  </p>
 
   <script type="module" src="taskpane.js"></script>
 </body>
