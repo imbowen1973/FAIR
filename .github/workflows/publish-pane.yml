@@ -36,8 +36,12 @@ jobs:
           cp -r assembler/web/* _site/
           rm -rf _site/data _site/libraries
           cp renderer/src/edufair_renderer/*.py _site/py/edufair_renderer/
-          # The landing page offers this for download; it lives a level up.
-          cp assembler/manifest.web.xml _site/
+          # The Word pane renders through the word/ subpackage, which is
+          # not matched by the glob above.
+          mkdir -p _site/py/edufair_renderer/word
+          cp renderer/src/edufair_renderer/word/*.py _site/py/edufair_renderer/word/
+          # The landing page offers these for download; they live a level up.
+          cp assembler/manifest.web.xml assembler/manifest.word.xml _site/
           # The workbench is the authoring SPA; same static hosting, same
           # /py/ modules, so it ships alongside the pane.
           mkdir -p _site/workbench
@@ -66,10 +70,11 @@ jobs:
 
           # Entry points are loaded by src/href, not by import.
           sed -i -E 's#src="taskpane[.]js#&?v='"$V"'#; s#href="taskpane[.]css#&?v='"$V"'#' taskpane.html
+          sed -i -E 's#src="word-taskpane[.]js#&?v='"$V"'#; s#href="taskpane[.]css#&?v='"$V"'#' word-taskpane.html
           sed -i -E 's#href="taskpane[.]css#&?v='"$V"'#' index.html
           sed -i -E 's#src="app[.]js#&?v='"$V"'#; s#href="workbench[.]css#&?v='"$V"'#' workbench/index.html
           # And show it, so "which build am I on?" is answerable at a glance.
-          sed -i "s#>dev<#>$V<#" taskpane.html workbench/index.html
+          sed -i "s#>dev<#>$V<#" taskpane.html word-taskpane.html workbench/index.html
 
           # A module that escaped stamping would quietly reintroduce the
           # stale-cache bug, so fail the deploy rather than ship it.
@@ -77,11 +82,23 @@ jobs:
             echo "unstamped import -- would be cacheable and stale"
             exit 1
           fi
-          for f in taskpane.html workbench/index.html; do
+          for f in taskpane.html word-taskpane.html workbench/index.html; do
+            # Existence first: `grep -q` on a missing file reports failure,
+            # which reads as "no unstamped marker" and would let a page
+            # that never got copied sail through.
+            if [ ! -f "$f" ]; then
+              echo "$f: missing from the build"
+              exit 1
+            fi
             if grep -q '>dev<' "$f"; then
               echo "$f: build marker not stamped"
               exit 1
             fi
+          done
+          # The Word pane renders through these; without them it loads and
+          # then fails at the point of use, which is the worst place.
+          for f in py/edufair_renderer/word/render.py py/edufair_renderer/word/blocks.py; do
+            [ -f "$f" ] || { echo "$f: missing from the build"; exit 1; }
           done
           echo "stamped build $V"
       - uses: actions/configure-pages@v5

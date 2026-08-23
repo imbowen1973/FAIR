@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>eduFAIR Documents</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <link rel="stylesheet" href="taskpane.css"/>
+</head>
+<body>
+  <header>
+    <img src="assets/edufair-logo.png" alt="" class="brand"/>
+    <div>
+      <h1>eduFAIR Documents</h1>
+      <p class="sub">Bring a lesson plan or workbook out of git and into Word</p>
+    </div>
+  </header>
+
+  <main>
+    <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+
+    <section id="step-source">
+      <label for="repo">Library</label>
+      <div class="corpus-row">
+        <input id="repo" placeholder="owner/repo" spellcheck="false"/>
+        <button id="open">Open</button>
+      </div>
+      <p class="hint">
+        Public repositories are read straight from git and rendered in this
+        pane. Nothing is uploaded and nothing is stored.
+      </p>
+    </section>
+
+    <section id="step-pick" hidden>
+      <label for="document">Document</label>
+      <select id="document"></select>
+      <label class="check" for="replace">
+        <input id="replace" type="checkbox"/>
+        <span>Replace everything in this document, rather than insert at the cursor</span>
+      </label>
+      <button id="insert" class="primary">Insert into Word</button>
+      <p class="hint">
+        No template is used. The document names Word's built-in styles, so
+        it takes its fonts and colours from your own Word theme — change
+        the theme and the document follows.
+      </p>
+    </section>
+  </main>
+
+  <p class="build" title="If this does not match the latest commit, clear the Office cache.">
+    build <code>dev</code>
+  </p>
+
+  <script type="module" src="word-taskpane.js"></script>
+</body>
+</html>

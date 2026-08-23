@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Word pane: markdown out of git, rendered into Word in the
+     browser. Static app on GitHub Pages, no server anywhere.
+     Published by .github/workflows/publish-pane.yml. -->
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:type="TaskPaneApp">
+  <Id>3d5e8a17-94c2-4b60-8f7d-2a1c6e930bb4</Id>
+  <Version>0.1.0</Version>
+  <ProviderName>eduFAIR</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="eduFAIR Documents"/>
+  <Description DefaultValue="Render lesson plans and workbooks from a git library into Word"/>
+  <IconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://github.com/imbowen1973/FAIR"/>
+  <Hosts>
+    <Host Name="Document"/>
+  </Hosts>
+  <!-- No <Requirements>: an unmet one makes Office refuse to start the
+       add-in with "this add-in could not be started" and nothing else.
+       word-taskpane.js checks WordApi with isSetSupported and says what
+       is missing, which it can only do if it is allowed to run. -->
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://imbowen1973.github.io/FAIR/word-taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>

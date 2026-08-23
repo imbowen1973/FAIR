@@ -88,6 +88,7 @@ test("the deploy stamps both the pane and the workbench", () => {
 
 const MANIFESTS = [
   "manifest.web.xml",
+  "manifest.word.xml",
   "manifest.xml",
   "manifest.hosted.template.xml",
 ];
@@ -120,4 +121,45 @@ test("a failure during start-up reaches the screen", () => {
   // message does not say what happened.
   assert.match(js, /unhandledrejection/);
   assert.match(js, /could not start/);
+});
+
+// ---- the Word pane ships what it renders with --------------------------
+//
+// The pane is Python in Pyodide. It fetches the edufair_renderer.word
+// package as source at runtime, and the deploy's `cp *.py` glob does not
+// match a subpackage — so the pane would load, look fine, and fail only
+// when someone pressed Insert.
+
+test("the deploy copies the word subpackage the Word pane needs", () => {
+  const yml = readFileSync(
+    join(REPO, ".github", "workflows", "publish-pane.yml"),
+    "utf8"
+  );
+  assert.match(yml, /edufair_renderer\/word/, "word/*.py must be copied");
+  assert.match(yml, /manifest\.word\.xml/, "the Word manifest must be published");
+});
+
+test("the Word pane asks for modules that exist", async () => {
+  const { WORD_MODULES, WORD_BASE_MODULES } = await import(
+    "../web/word-renderer.js"
+  );
+  const base = join(REPO, "renderer", "src", "edufair_renderer");
+  for (const mod of WORD_BASE_MODULES) {
+    assert.ok(
+      readdirSync(base).includes(`${mod}.py`),
+      `no such top-level module: ${mod}`
+    );
+  }
+  for (const mod of WORD_MODULES) {
+    assert.ok(
+      readdirSync(join(base, "word")).includes(`${mod}.py`),
+      `no such word module: ${mod}`
+    );
+  }
+});
+
+test("the Word pane declares the Word host and nothing else", () => {
+  const xml = readFileSync(join(REPO, "assembler", "manifest.word.xml"), "utf8");
+  assert.match(xml, /<Host Name="Document"\/>/);
+  assert.doesNotMatch(xml, /<Host Name="Presentation"\/>/);
 });
