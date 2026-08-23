@@ -144,7 +144,11 @@ function removeSource() {
   storeSources(loadStoredSources().filter((s) => s.url !== currentSource.url));
   currentSource = null;
   renderSourcePicker();
-  switchSource(initialSource());
+  // Not awaited, so its rejection would be unhandled and silent -- and
+  // the first thing it does on every reload is refetch the last library.
+  switchSource(initialSource()).catch((err) => {
+    setStatus(`Could not open the last library: ${err.message}`, "error");
+  });
 }
 
 async function switchSource(source) {
@@ -657,7 +661,25 @@ function funderLogoUrl(logo) {
   return joinUrl(currentSource.url, joinUrl("data", logo));
 }
 
+// A pane that throws during start-up shows nothing at all, and Office
+// says only that the add-in could not be started. Anything that goes
+// wrong from here on has to end up on screen instead.
+window.addEventListener("error", (e) => {
+  setStatus(`The pane hit an error: ${e.message}`, "error");
+});
+window.addEventListener("unhandledrejection", (e) => {
+  setStatus(`The pane hit an error: ${e.reason?.message ?? e.reason}`, "error");
+});
+
 Office.onReady((info) => {
+  try {
+    start(info);
+  } catch (err) {
+    setStatus(`The pane could not start: ${err.message}`, "error");
+  }
+});
+
+function start(info) {
   try {
     applyOfficeTheme();
   } catch {
@@ -711,4 +733,4 @@ Office.onReady((info) => {
   });
   $("expand-all").addEventListener("click", toggleExpandAll);
   $("assemble").addEventListener("click", assemble);
-});
+}

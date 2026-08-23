@@ -21,11 +21,10 @@
   <Hosts>
     <Host Name="Presentation"/>
   </Hosts>
-  <Requirements>
-    <Sets DefaultMinVersion="1.1">
-      <Set Name="PowerPointApi" MinVersion="1.2"/>
-    </Sets>
-  </Requirements>
+  <!-- No <Requirements>: an unmet one makes Office refuse to start the
+       add-in with "this add-in could not be started" and nothing else.
+       taskpane.js checks PowerPointApi 1.2 with isSetSupported and says
+       what is missing, which it can only do if it is allowed to run. -->
   <DefaultSettings>
     <SourceLocation DefaultValue="https://__FAIR_HOST__/taskpane.html"/>
   </DefaultSettings>

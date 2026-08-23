@@ -77,3 +77,47 @@ test("the deploy stamps both the pane and the workbench", () => {
   // Guards, not just rewrites: a miss must fail the deploy.
   assert.match(yml, /exit 1/, "an unstamped import fails the build");
 });
+
+// ---- the manifest must not gate on what the code already checks -------
+//
+// A <Requirements> set the host does not meet is not graceful: Office
+// refuses to start the add-in and says only "this add-in could not be
+// started". The pane already checks PowerPointApi 1.2 at runtime and
+// says what is missing and what to do — a message that can only appear
+// if the add-in is allowed to run at all.
+
+const MANIFESTS = [
+  "manifest.web.xml",
+  "manifest.xml",
+  "manifest.hosted.template.xml",
+];
+
+test("no manifest gates start-up on a requirement set", () => {
+  for (const name of MANIFESTS) {
+    // Comments come out first: the note explaining the absence names the
+    // element, and would otherwise look like the element.
+    const xml = readFileSync(join(REPO, "assembler", name), "utf8")
+      .replace(/<!--[\s\S]*?-->/g, "");
+    assert.equal(
+      /<Requirements>/.test(xml),
+      false,
+      `${name} declares <Requirements>, which turns an unsupported host ` +
+        "into an unactionable start-up failure"
+    );
+  }
+});
+
+test("the pane checks the API set it needs at runtime instead", () => {
+  const js = readFileSync(join(REPO, "assembler", "web", "taskpane.js"), "utf8");
+  assert.match(js, /isSetSupported\("PowerPointApi", "1\.2"\)/);
+  // And says something the reader can act on.
+  assert.match(js, /Update Office/);
+});
+
+test("a failure during start-up reaches the screen", () => {
+  const js = readFileSync(join(REPO, "assembler", "web", "taskpane.js"), "utf8");
+  // A pane that throws while starting renders nothing, and Office's own
+  // message does not say what happened.
+  assert.match(js, /unhandledrejection/);
+  assert.match(js, /could not start/);
+});

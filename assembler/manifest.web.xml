@@ -9,7 +9,7 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:type="TaskPaneApp">
   <Id>c9d1f7b3-2e84-4a06-b1c5-7f3a9d8e6042</Id>
-  <Version>0.6.0</Version>
+  <Version>0.7.0</Version>
   <ProviderName>FAIR Consortium</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="eduFAIR Deck Assembler"/>
@@ -20,11 +20,15 @@
   <Hosts>
     <Host Name="Presentation"/>
   </Hosts>
-  <Requirements>
-    <Sets DefaultMinVersion="1.1">
-      <Set Name="PowerPointApi" MinVersion="1.2"/>
-    </Sets>
-  </Requirements>
+  <!-- No <Requirements> here on purpose.
+       This used to declare PowerPointApi 1.2, which is what the pane
+       needs for insertSlidesFromBase64. A requirement the host does not
+       meet is not a graceful degradation: Office refuses to start the
+       add-in at all and says only "this add-in could not be started",
+       which tells the user nothing and cannot be acted on.
+       taskpane.js checks the same set with isSetSupported and says what
+       is missing and what to do about it. That message can only appear
+       if the add-in is allowed to start. -->
   <DefaultSettings>
     <SourceLocation DefaultValue="https://imbowen1973.github.io/FAIR/taskpane.html"/>
   </DefaultSettings>
