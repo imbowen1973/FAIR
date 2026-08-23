@@ -110,6 +110,73 @@ export function workingSlides(parsed) {
   }));
 }
 
+// ---- changing a layout without losing what is in it ---------------------
+//
+// Layouts do not offer the same regions. Moving a slide from one that has
+// `full` to one that has `left`/`right` used to keep the `full:` key: the
+// canvas stopped drawing it, because there is no placeholder to draw it
+// in, and the renderer refuses an unknown region outright. So the author
+// saw their words vanish and the deck would not build.
+//
+// Nothing here decides on the author's behalf. It works out what fits,
+// what does not, and where the rest could go -- the caller shows that and
+// asks.
+
+/**
+ * What changing `slide` to `nextLayout` would do to its content.
+ *
+ * `kept`    regions the new layout also has
+ * `orphans` regions with content that it does not, in file order
+ * `free`    regions of the new layout that nothing has claimed
+ * `suggested` a default destination for each orphan, or "" to discard
+ */
+export function layoutChange(slide, layoutMap, nextLayout) {
+  const next = layoutRegions(layoutMap, nextLayout);
+  const filled = slideRegions(slide).filter((r) => !isEmptyRegion(slide[r]));
+  const kept = filled.filter((r) => next.includes(r));
+  const orphans = filled.filter((r) => !next.includes(r));
+  const free = next.filter((r) => !kept.includes(r));
+
+  // Pair them off in order: the first orphan into the first free region.
+  // It is a starting point for the author, never applied unasked.
+  const suggested = {};
+  free.forEach((target, i) => {
+    if (orphans[i]) suggested[orphans[i]] = target;
+  });
+  for (const orphan of orphans) if (!(orphan in suggested)) suggested[orphan] = "";
+  return { kept, orphans, free, suggested };
+}
+
+/** Whether a region holds anything worth worrying about losing. */
+export function isEmptyRegion(value) {
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (typeof value !== "object") return false;
+  if (Array.isArray(value.items)) return value.items.length === 0;
+  if (typeof value.text === "string") return value.text.trim() === "";
+  // An image or a video is content even with nothing else on it.
+  return !value.src && !value.url && !value.type;
+}
+
+/**
+ * The slide after a layout change, with orphaned content moved.
+ *
+ * `moves` maps an orphaned region to where it should go: a region of the
+ * new layout, or "" to drop it. An orphan with no entry is dropped, so
+ * the caller has to have decided about every one of them.
+ */
+export function applyLayoutChange(slide, layoutMap, nextLayout, moves = {}) {
+  const { orphans } = layoutChange(slide, layoutMap, nextLayout);
+  const out = { ...slide, layout: nextLayout };
+  for (const region of orphans) {
+    const target = moves[region];
+    const value = out[region];
+    delete out[region];
+    if (target) out[target] = value;
+  }
+  return out;
+}
+
 // ---- slide ids ----------------------------------------------------------
 //
 // An id is identity, not position. It is the key of slide-id-map.json,

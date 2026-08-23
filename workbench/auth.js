@@ -15,44 +15,112 @@
 // - `pat`:    a fine-grained token the user pastes. Zero infrastructure,
 //             so the workbench is usable before any broker exists.
 //
-// The token is held in sessionStorage, never localStorage: it dies with
-// the tab rather than sitting on disk until someone clears it.
+// Where the token is kept is the author's choice, and it is a real one.
+//
+// sessionStorage dies with the tab: safest, and it means pasting a token
+// again every time. localStorage survives a restart, at the cost of the
+// token sitting on disk where any script running on this origin could
+// read it — which for a static page with no third-party scripts is a
+// small risk, but not a zero one.
+//
+// So: session by default, disk only when asked for, and the preference
+// itself is remembered so the choice is made once. Either way a
+// fine-grained token scoped to the repositories being edited limits what
+// a leak is worth.
 
 const TOKEN_KEY = "fair.wb.token";
 const LOGIN_KEY = "fair.wb.login";
+const PERSIST_KEY = "fair.wb.persist";
+
+/** The stores to try, in order: the tab's own first. */
+function stores() {
+  const out = [];
+  try {
+    out.push(sessionStorage);
+  } catch {
+    /* blocked */
+  }
+  try {
+    out.push(localStorage);
+  } catch {
+    /* blocked */
+  }
+  return out;
+}
+
+/** Whether the author asked to stay signed in on this device. */
+export function persisting() {
+  try {
+    return localStorage.getItem(PERSIST_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remember the choice, and move the token to match it.
+ *
+ * Turning it off has to clear the copy on disk immediately: leaving it
+ * there while the UI says otherwise would be the worst of both.
+ */
+export function setPersisting(on) {
+  try {
+    if (on) localStorage.setItem(PERSIST_KEY, "1");
+    else localStorage.removeItem(PERSIST_KEY);
+  } catch {
+    return false;
+  }
+  const token = storedToken();
+  const login = storedLogin();
+  clear();
+  if (token) remember(token, login);
+  return true;
+}
 
 function remember(token, login) {
+  const store = persisting() ? stores()[1] ?? stores()[0] : stores()[0];
   try {
-    sessionStorage.setItem(TOKEN_KEY, token);
-    if (login) sessionStorage.setItem(LOGIN_KEY, login);
+    store?.setItem(TOKEN_KEY, token);
+    if (login) store?.setItem(LOGIN_KEY, login);
   } catch {
     /* private mode: the session still works, it just will not survive reload */
   }
 }
 
-export function storedToken() {
-  try {
-    return sessionStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
+function read(key) {
+  for (const store of stores()) {
+    try {
+      const value = store.getItem(key);
+      if (value) return value;
+    } catch {
+      /* try the next */
+    }
   }
+  return null;
+}
+
+export function storedToken() {
+  return read(TOKEN_KEY);
 }
 
 export function storedLogin() {
-  try {
-    return sessionStorage.getItem(LOGIN_KEY);
-  } catch {
-    return null;
+  return read(LOGIN_KEY);
+}
+
+function clear() {
+  for (const store of stores()) {
+    try {
+      store.removeItem(TOKEN_KEY);
+      store.removeItem(LOGIN_KEY);
+    } catch {
+      /* nothing to clear */
+    }
   }
 }
 
+/** Sign out everywhere, whichever store the token ended up in. */
 export function signOut() {
-  try {
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(LOGIN_KEY);
-  } catch {
-    /* nothing to clear */
-  }
+  clear();
 }
 
 /** A pasted fine-grained PAT. Validated by using it, not by shape. */

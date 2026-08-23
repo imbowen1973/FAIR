@@ -22,10 +22,11 @@ const COMMANDS = {
 
 const THEME_SLOTS = ["accent1", "accent2", "accent3", "accent4", "accent5", "accent6"];
 
-function button(label, title, onDown, className = "mark") {
+function button(label, title, onDown, className = "mark", id = null) {
   const b = document.createElement("button");
   b.type = "button";
   b.className = className;
+  if (id) b.id = id;
   // A string label is text; a node is an icon, and the title carries the
   // meaning either way.
   if (label instanceof Node) b.appendChild(label);
@@ -50,11 +51,25 @@ function button(label, title, onDown, className = "mark") {
  * onColour(slot) when a theme colour is chosen for the selection's region.
  * onMedia()      a picture or video is wanted in the selected region.
  * onListType(kind) when the region becomes a "ul", an "ol", or null for none.
+ * onUndo() / onRedo()  step the block's history.
  */
 export function ribbon(host, {
   layouts, layout, onCommand, onLayout, onColour, onListType, onMedia,
+  onUndo, onRedo,
 }) {
   host.innerHTML = "";
+
+  // First, and on their own: undo is what you reach for after the change
+  // you did not mean, and it has to be somewhere you already are.
+  const steps = document.createElement("div");
+  steps.className = "ribbon-group";
+  steps.appendChild(
+    button(icon("undo", { size: 16 }), "Undo", () => onUndo?.(), "mark with-icon", "undo")
+  );
+  steps.appendChild(
+    button(icon("redo", { size: 16 }), "Redo", () => onRedo?.(), "mark with-icon", "redo")
+  );
+  host.appendChild(steps);
 
   const marks = document.createElement("div");
   marks.className = "ribbon-group";

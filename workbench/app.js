@@ -5,10 +5,27 @@
 // files fetched from git plus the edits not yet committed; closing the
 // tab loses only the uncommitted edits, and the app says so.
 
-import { brokerProvider, patProvider, signOut, storedLogin, storedToken } from "./auth.js";
+import {
+  brokerProvider,
+  patProvider,
+  persisting,
+  setPersisting,
+  signOut,
+  storedLogin,
+  storedToken,
+} from "./auth.js";
 import { BROKER_URL, CLIENT_ID } from "./config.js";
 import { draftBranch, GitHub, parseRepo } from "./github.js";
 import { decorate } from "./icons.js";
+import { needsAsking, relayoutPanel } from "./relayout.js";
+import {
+  canRedo,
+  canUndo,
+  newHistory,
+  record,
+  redo as redoStep,
+  undo as undoStep,
+} from "./history.js";
 import {
   asListType,
   blankSlide,
@@ -20,6 +37,7 @@ import {
   placedBlocks,
   readLibrary,
   mintSlideIds,
+  applyLayoutChange,
   renderSlidesFile,
   slideMark,
   workingSlides,
@@ -99,6 +117,10 @@ const state = {
   // for rendering -- mixing them would try to re-commit template.pptx.
   uploads: new Map(), // path -> Uint8Array
   working: new Map(), // blockId -> [{sourceIndex, data, dirty}]
+  // Undo, per block: a stack of whole snapshots of the slides above.
+  // Per block rather than global, so undo never silently jumps you into
+  // a different session's deck.
+  history: new Map(), // blockId -> {stack, at, lastKey, lastAt}
   // Which document each block was last left on, so switching away and
   // back returns you to the workbook rather than to the deck.
   docByBlock: new Map(), // blockId -> document id
@@ -333,6 +355,7 @@ function addOpeningSlides() {
   }
   list.unshift(...opening.map((data) => ({ sourceIndex: null, data, dirty: true })));
   state.slideIndex = 0;
+  remember();
   renderOutline();
   renderSlide();
   updateActions();
@@ -375,6 +398,7 @@ function openImport() {
       state.slideIndex = at;
     }
     panel.remove();
+    remember();
     renderOutline();
     renderSlide();
     updateActions();
@@ -410,6 +434,7 @@ function addSlide() {
   const at = Math.min(list.length, state.slideIndex + 1);
   list.splice(at, 0, blankSlide(layouts.includes("Full") ? "Full" : layouts[0], nextSlideId()));
   state.slideIndex = at;
+  remember();
   renderOutline();
   renderSlide();
   updateActions();
@@ -426,6 +451,7 @@ function deleteSlide(index) {
   if (!confirm(`Delete "${data.title ?? data.id ?? "this slide"}"?`)) return;
   list.splice(index, 1);
   state.slideIndex = Math.max(0, Math.min(index, list.length - 1));
+  remember();
   renderOutline();
   renderSlide();
   updateActions();
@@ -438,6 +464,7 @@ function moveSlide(index, delta) {
   const [entry] = list.splice(index, 1);
   list.splice(to, 0, entry);
   state.slideIndex = to;
+  remember();
   renderOutline();
   renderSlide();
   updateActions();
@@ -667,12 +694,91 @@ function renderOutline() {
 let activeRegion = null;
 
 /** Record an edit to the slide in focus and redraw what depends on it. */
-function commitSlide(next) {
+function commitSlide(next, { step = null } = {}) {
   const entry = working()[state.slideIndex];
   entry.data = next;
   entry.dirty = true;
+  remember(step);
   renderOutline();
   updateActions();
+}
+
+// ---- undo --------------------------------------------------------------
+
+/** The deck as it stands, deep enough that undo cannot alias it. */
+function snapshot(blockId = state.blockId) {
+  return {
+    slideIndex: state.slideIndex,
+    entries: working(blockId).map((e) => ({
+      sourceIndex: e.sourceIndex,
+      dirty: e.dirty,
+      data: structuredClone(e.data),
+    })),
+  };
+}
+
+function historyFor(blockId = state.blockId) {
+  if (!state.history.has(blockId)) {
+    // Seed with the deck as opened, or the first undo has nothing to go
+    // back to and the first edit is unrecoverable.
+    state.history.set(blockId, record(newHistory(), snapshot(blockId)));
+  }
+  return state.history.get(blockId);
+}
+
+/**
+ * Record the deck after a change.
+ *
+ * `step` groups keystrokes: successive edits to one region collapse into
+ * a single undo step. Structural changes pass null and get their own.
+ */
+function remember(step = null) {
+  if (!state.blockId) return;
+  record(historyFor(), snapshot(), step);
+  updateHistoryButtons();
+}
+
+function restore(snap) {
+  if (!snap) return;
+  const list = working();
+  list.splice(
+    0,
+    list.length,
+    ...snap.entries.map((e) => ({
+      sourceIndex: e.sourceIndex,
+      dirty: e.dirty,
+      data: structuredClone(e.data),
+    }))
+  );
+  state.slideIndex = Math.min(snap.slideIndex, Math.max(0, list.length - 1));
+  renderOutline();
+  renderSlide();
+  updateActions();
+  updateHistoryButtons();
+}
+
+function undo() {
+  const h = historyFor();
+  if (!canUndo(h)) return status("Nothing to undo.", "");
+  restore(undoStep(h));
+  status("Undone.", "ok");
+}
+
+function redo() {
+  const h = historyFor();
+  if (!canRedo(h)) return status("Nothing to redo.", "");
+  restore(redoStep(h));
+  status("Redone.", "ok");
+}
+
+function updateHistoryButtons() {
+  const h = state.blockId ? historyFor() : null;
+  const set = (id, on) => {
+    const button = document.getElementById(id);
+    if (button) button.disabled = !on;
+  };
+  set("undo", Boolean(h) && canUndo(h));
+  set("redo", Boolean(h) && canRedo(h));
 }
 
 /**
@@ -720,7 +826,9 @@ function renderCanvas({ redraw = true } = {}) {
         if (value === "" && !(region in current)) next[region] = "";
         else next[region] = value;
         const structural = !(region in current);
-        commitSlide(next);
+        commitSlide(next, {
+          step: structural ? null : `edit:${state.slideIndex}:${region}`,
+        });
         if (structural) renderCanvas();
       },
       onSelectRegion: (region) => {
@@ -759,9 +867,48 @@ function renderRibbon() {
       if (box) box.dispatchEvent(new Event("input", { bubbles: true }));
     },
     onLayout: (key) => {
-      commitSlide({ ...slideData(state.slideIndex), layout: key });
-      renderCanvas();
-      renderRibbon();
+      const current = slideData(state.slideIndex);
+      const change = (next) => {
+        commitSlide(next);
+        renderCanvas();
+        renderRibbon();
+        renderOutline();
+      };
+      // Most changes fit and are silent. One that would leave content
+      // with nowhere to go is the one that used to lose it.
+      if (!needsAsking(current, state.library.layoutMap, key)) {
+        change({ ...current, layout: key });
+        return;
+      }
+      const host = $("panels");
+      const panel = document.createElement("div");
+      host.prepend(panel);
+      relayoutPanel(panel, {
+        slide: current,
+        layoutMap: state.library.layoutMap,
+        nextLayout: key,
+        onApply: (moves) => {
+          panel.remove();
+          change(applyLayoutChange(current, state.library.layoutMap, key, moves));
+          const moved = Object.entries(moves).filter(([, to]) => to);
+          const dropped = Object.entries(moves).filter(([, to]) => !to);
+          status(
+            [
+              `Layout is now ${key}.`,
+              moved.length && moved.map(([f, t]) => `${f} → ${t}`).join(", ") + ".",
+              dropped.length && `Dropped ${dropped.map(([f]) => f).join(", ")}.`,
+            ]
+              .filter(Boolean)
+              .join(" "),
+            dropped.length ? "error" : "ok"
+          );
+        },
+        onCancel: () => {
+          panel.remove();
+          // Put the picker back to what the slide actually is.
+          renderRibbon();
+        },
+      });
     },
     onColour: (slot) => {
       const region = activeRegion;
@@ -797,6 +944,8 @@ function renderRibbon() {
       const kind = current?.type === "video" ? "video" : "image";
       openMediaPicker(region, current ?? {}, kind);
     },
+    onUndo: undo,
+    onRedo: redo,
     onListType: (kind) => {
       const region = activeRegion;
       if (!region) return;
@@ -810,6 +959,7 @@ function renderRibbon() {
   });
   paintSwatches($("ribbon"), state.library.geometry?.theme);
   paintListType($("ribbon"), regionType(activeRegion));
+  updateHistoryButtons();
 }
 
 // ---- new lessons and modules -------------------------------------------
@@ -2371,6 +2521,26 @@ async function boot() {
 }
 
 $("broker-signin").addEventListener("click", () => broker.start());
+// Set before signing in, so the very first token lands in the store the
+// author chose rather than being moved there afterwards.
+const persist = $("pat-persist");
+if (persist) {
+  persist.checked = persisting();
+  persist.addEventListener("change", () => {
+    if (!setPersisting(persist.checked)) {
+      persist.checked = false;
+      status("This browser will not let the page store anything.", "error");
+      return;
+    }
+    status(
+      persist.checked
+        ? "The token will be kept on this device until you sign out."
+        : "The token is held for this tab only.",
+      "ok"
+    );
+  });
+}
+
 $("pat-signin").addEventListener("click", signInWithToken);
 $("pat").addEventListener("keydown", (e) => {
   if (e.key === "Enter") signInWithToken();
@@ -2399,6 +2569,24 @@ for (const [id, name] of [
 ]) {
   decorate($(id), name);
 }
+/** Whether the browser's own undo should have this keystroke instead. */
+function inTextSurface(node) {
+  const el = node instanceof Element ? node : node?.parentElement;
+  return Boolean(el?.closest('input, textarea, [contenteditable="true"]'));
+}
+
+document.addEventListener("keydown", (e) => {
+  const meta = e.ctrlKey || e.metaKey;
+  if (!meta || e.key.toLowerCase() !== "z") return;
+  if (!state.blockId || activeDoc()?.editor !== "slides") return;
+  // Typing has its own undo, and it is the right one: it restores the
+  // caret as well as the words.
+  if (inTextSurface(e.target)) return;
+  e.preventDefault();
+  if (e.shiftKey) redo();
+  else undo();
+});
+
 $("open-manual").addEventListener("click", () => openRepo($("manual-repo").value));
 $("validate").addEventListener("click", runValidate);
 $("preview").addEventListener("click", previewDeck);

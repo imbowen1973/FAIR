@@ -35,12 +35,21 @@
         target="_blank" rel="noopener">fine-grained token</a> with
         <strong>Contents: read and write</strong> and
         <strong>Pull requests: read and write</strong> on the library repos
-        you author. It is held for this tab only and never written to disk.
+        you author.
       </p>
       <div class="row">
         <input id="pat" type="password" placeholder="github_pat_…" autocomplete="off"/>
         <button id="pat-signin">Use token</button>
       </div>
+      <label class="row check" for="pat-persist">
+        <input id="pat-persist" type="checkbox"/>
+        <span>
+          Stay signed in on this device. Off, the token is held for this tab
+          only; on, it is written to this browser's storage and survives a
+          restart — convenient, and worth a moment's thought on a shared
+          machine.
+        </span>
+      </label>
     </details>
   </section>
 

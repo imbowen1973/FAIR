@@ -29,6 +29,8 @@ import { markdownToHtml } from "../markdown.js";
 import { repoImages, resolveMedia, videoHost, videoThumb } from "../media.js";
 import { repoLogos } from "../course.js";
 import { readImport, renumber } from "../import.js";
+import { canRedo, canUndo, newHistory, record, redo, undo } from "../history.js";
+import { describeRegion, needsAsking } from "../relayout.js";
 import {
   fillRole,
   freeOutcomeId,
@@ -57,6 +59,9 @@ import {
   isLibrary,
   layoutRegions,
   libraryPaths,
+  applyLayoutChange,
+  isEmptyRegion,
+  layoutChange,
   mintSlideIds,
   parseSlides,
   placedBlocks,
@@ -871,6 +876,127 @@ function deck(frontmatter, slide) {
     ["--- slide", ...slide, "---", ""].join(nl)
   );
 }
+
+// ---- changing a layout must not lose what is in it ---------------------
+
+const RELAYOUT_MAP = {
+  Full: { regions: { title: 0, full: 1 } },
+  Comparison: { regions: { title: 0, left: 1, right: 2 } },
+  Title: { regions: { title: 0 } },
+};
+
+test("a layout change reports what has nowhere to go", () => {
+  const slide = { id: "s-01", layout: "Full", title: "T", full: { type: "ul", items: ["a"] } };
+  const change = layoutChange(slide, RELAYOUT_MAP, "Comparison");
+  assert.deepEqual(change.kept, ["title"]);
+  assert.deepEqual(change.orphans, ["full"]);
+  assert.deepEqual(change.free, ["left", "right"]);
+  // Paired off in order as a starting point, never applied unasked.
+  assert.deepEqual(change.suggested, { full: "left" });
+});
+
+test("a layout with nowhere to put the content says so", () => {
+  const slide = { id: "s-01", layout: "Full", title: "T", full: "words" };
+  const change = layoutChange(slide, RELAYOUT_MAP, "Title");
+  assert.deepEqual(change.orphans, ["full"]);
+  assert.deepEqual(change.free, []);
+  assert.deepEqual(change.suggested, { full: "" });
+});
+
+test("an empty region is not content worth asking about", () => {
+  // Every layout leaves regions behind; only the filled ones matter.
+  for (const empty of [undefined, null, "", "  ", { type: "ul", items: [] }, { type: "p", text: "" }]) {
+    assert.equal(isEmptyRegion(empty), true, JSON.stringify(empty) ?? "undefined");
+  }
+  for (const full of ["a", { type: "ul", items: ["a"] }, { src: "media/x.png" }, { url: "https://v" }]) {
+    assert.equal(isEmptyRegion(full), false, JSON.stringify(full));
+  }
+  const slide = { id: "s-01", layout: "Full", title: "T", full: "" };
+  assert.equal(needsAsking(slide, RELAYOUT_MAP, "Title"), false);
+});
+
+test("applying a layout change moves the content it was told to", () => {
+  const slide = { id: "s-01", layout: "Full", title: "T", full: { type: "ul", items: ["a"] } };
+  const moved = applyLayoutChange(slide, RELAYOUT_MAP, "Comparison", { full: "left" });
+  assert.deepEqual(moved, {
+    id: "s-01", layout: "Comparison", title: "T", left: { type: "ul", items: ["a"] },
+  });
+  // An orphan told to go nowhere is dropped, and the key goes with it --
+  // leaving it behind is what the renderer refuses.
+  const dropped = applyLayoutChange(slide, RELAYOUT_MAP, "Title", { full: "" });
+  assert.deepEqual(Object.keys(dropped).sort(), ["id", "layout", "title"]);
+});
+
+test("what a region holds is described before it is moved", () => {
+  assert.ok(describeRegion({ type: "ul", items: ["a", "b"] }).includes("2 items"));
+  assert.equal(describeRegion({ type: "ul", items: ["a"] }), "1 item");
+  assert.match(describeRegion("hello"), /hello/);
+  assert.ok(describeRegion({ src: "media/cow.png" }).includes("cow.png"));
+});
+
+// ---- undo --------------------------------------------------------------
+
+test("undo steps back and redo steps forward again", () => {
+  const h = record(newHistory(), "a");
+  assert.equal(canUndo(h), false, "nothing to undo at the start");
+  record(h, "b");
+  record(h, "c");
+  assert.equal(undo(h), "b");
+  assert.equal(undo(h), "a");
+  assert.equal(canUndo(h), false);
+  assert.equal(redo(h), "b");
+  assert.equal(redo(h), "c");
+  assert.equal(canRedo(h), false);
+});
+
+test("a burst of typing is one step, not one per keystroke", () => {
+  const h = record(newHistory(), "");
+  let t = 1000;
+  for (const text of ["h", "he", "hel", "hell", "hello"]) record(h, text, "edit:0:full", t += 50);
+  assert.equal(h.stack.length, 2, "the whole word is one step");
+  assert.equal(undo(h), "");
+
+  // A pause makes the next keystroke a step of its own.
+  const g = record(newHistory(), "");
+  record(g, "a", "edit:0:full", 1000);
+  record(g, "ab", "edit:0:full", 5000);
+  assert.equal(g.stack.length, 3);
+});
+
+test("typing in a different region never joins the step before it", () => {
+  const h = record(newHistory(), "");
+  record(h, "a", "edit:0:left", 1000);
+  record(h, "b", "edit:0:right", 1010);
+  assert.equal(h.stack.length, 3);
+});
+
+test("a change after an undo drops the redo tail", () => {
+  const h = record(newHistory(), "a");
+  record(h, "b");
+  record(h, "c");
+  undo(h);
+  record(h, "d");
+  assert.equal(canRedo(h), false, "c is unreachable now");
+  assert.equal(undo(h), "b");
+});
+
+test("a change after an undo does not coalesce into the step before it", () => {
+  const h = record(newHistory(), "");
+  record(h, "a", "edit:0:full", 1000);
+  undo(h);
+  record(h, "z", "edit:0:full", 1050);
+  // Without clearing the key this would overwrite, and the undo would be
+  // silently discarded.
+  assert.equal(canUndo(h), true);
+  assert.equal(undo(h), "");
+});
+
+test("the stack is capped and drops the oldest", () => {
+  const h = newHistory();
+  for (let i = 0; i < 200; i += 1) record(h, i);
+  assert.ok(h.stack.length <= 60, `capped, got ${h.stack.length}`);
+  assert.equal(h.stack[h.stack.length - 1], 199);
+});
 
 // ---- slide ids are permanent -------------------------------------------
 //

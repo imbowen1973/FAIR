@@ -350,6 +350,14 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
 .sidebar .meta-field.grow { min-width: 0; }
 .sidebar .notes-field .rt { min-height: 14em; }
 
+/* Moving content when a layout changes: what it is, and where it goes. */
+.relayout-row {
+  display: flex; align-items: center; gap: 10px;
+  margin: 8px 0; flex-wrap: wrap;
+}
+.relayout-from { font-size: 12px; }
+.relayout-arrow { color: var(--muted); }
+
 /* Icons sit on the text line and follow the theme through currentColor. */
 .icon { flex: none; vertical-align: -2px; }
 button.with-icon {
@@ -774,6 +782,13 @@ button.kind-option.on .kind-label::before { content: "✓ "; color: var(--accent
 .q-settings { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
 .q-settings .q-field { margin-bottom: 0; }
 label.check.tight { font-size: 0.76rem; color: var(--muted); gap: 3px; }
+/* The sign-in choice is a sentence rather than a word, so the box sits at
+   the top of it instead of floating in the middle. */
+label.check.row {
+  align-items: flex-start; gap: 8px; margin-top: 8px;
+  font-size: 0.82rem; color: var(--muted);
+}
+label.check.row input { margin-top: 3px; flex: none; }
 
 /* ---- media ------------------------------------------------------------ */
 /* A picture is the one thing on a slide whose effect cannot be judged

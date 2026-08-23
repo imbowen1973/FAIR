@@ -18,11 +18,22 @@ const BASE = process.env.WB || "http://localhost:8890/workbench/";
 const FILES = {
   "course.yaml": "id: v\ntitle: V130\nstructure:\n  - block: 01-misuse\n",
   "blocks/01-misuse/block.yaml": "title: Misuse\nduration_minutes: 90\nresources: []\n",
-  "blocks/01-misuse/slides.md":
-    "---\nsession: '01'\ntitle: Misuse\nversion: 1.0.0\n---\n\n" +
-    "--- slide\nid: s-01\nlayout: Full\ntitle: Opening\nnotes: |\n  Ask the room.\n---\n",
-  "layout-map.yaml":
-    "Full:\n  layout: Full\n  regions:\n    title: 0\n    full: 1\n",
+  "blocks/01-misuse/slides.md": [
+    "---", "session: '01'", "title: Misuse", "version: 1.0.0", "---", "",
+    "--- slide", "id: s-01", "layout: Full", "title: Opening",
+    "full:", "  type: ul", "  items:",
+    "    - Re-identification from anonymised records",
+    "    - Bias nobody audits",
+    "notes: |", "  Ask the room.", "---", "",
+  ].join(String.fromCharCode(10)),
+  "layout-map.yaml": [
+    "Full:", "  layout: Full", "  regions:",
+    "    title: 0", "    full: 1",
+    "Comparison:", "  layout: Comparison", "  regions:",
+    "    title: 0", "    left: 1", "    right: 2",
+    "Title:", "  layout: Title", "  regions:", "    title: 0", "",
+  ].join(String.fromCharCode(10)),
+  "layout-geometry.json": "{\"slide\": {\"widthEmu\": 12192000, \"heightEmu\": 6858000, \"aspect\": 1.7778, \"widthPt\": 960.0}, \"theme\": {\"dk1\": \"#000000\", \"lt1\": \"#FFFFFF\", \"accent1\": \"#4F81BD\", \"accent2\": \"#C0504D\", \"accent3\": \"#9BBB59\", \"accent4\": \"#8064A2\", \"accent5\": \"#4BACC6\", \"accent6\": \"#F79646\", \"bg1\": \"#FFFFFF\", \"tx1\": \"#000000\"}, \"layouts\": {\"Full\": {\"layoutName\": \"Full\", \"regions\": {\"title\": {\"idx\": 0, \"x\": 0.06, \"y\": 0.07, \"w\": 0.88, \"h\": 0.15, \"type\": \"title\", \"style\": {\"align\": \"l\", \"sizePt\": 32.0}, \"inset\": {\"l\": 0.01, \"r\": 0.01, \"t\": 0.00667, \"b\": 0.00667}}, \"full\": {\"idx\": 1, \"x\": 0.06, \"y\": 0.27, \"w\": 0.88, \"h\": 0.6, \"type\": \"body\", \"style\": {\"align\": \"l\", \"sizePt\": 20.0}, \"inset\": {\"l\": 0.01, \"r\": 0.01, \"t\": 0.00667, \"b\": 0.00667}}}}, \"Comparison\": {\"layoutName\": \"Comparison\", \"regions\": {\"title\": {\"idx\": 0, \"x\": 0.06, \"y\": 0.07, \"w\": 0.88, \"h\": 0.15, \"type\": \"title\", \"style\": {\"align\": \"l\", \"sizePt\": 32.0}, \"inset\": {\"l\": 0.01, \"r\": 0.01, \"t\": 0.00667, \"b\": 0.00667}}, \"left\": {\"idx\": 1, \"x\": 0.06, \"y\": 0.27, \"w\": 0.42, \"h\": 0.6, \"type\": \"body\", \"style\": {\"align\": \"l\", \"sizePt\": 20.0}, \"inset\": {\"l\": 0.01, \"r\": 0.01, \"t\": 0.00667, \"b\": 0.00667}}, \"right\": {\"idx\": 2, \"x\": 0.52, \"y\": 0.27, \"w\": 0.42, \"h\": 0.6, \"type\": \"body\", \"style\": {\"align\": \"l\", \"sizePt\": 20.0}, \"inset\": {\"l\": 0.01, \"r\": 0.01, \"t\": 0.00667, \"b\": 0.00667}}}}, \"Title\": {\"layoutName\": \"Title\", \"regions\": {\"title\": {\"idx\": 0, \"x\": 0.075, \"y\": 0.31, \"w\": 0.85, \"h\": 0.21, \"type\": \"center_title\", \"style\": {\"align\": \"l\", \"sizePt\": 44.0}, \"inset\": {\"l\": 0.01, \"r\": 0.01, \"t\": 0.00667, \"b\": 0.00667}}}}}}",
 };
 
 const browser = await chromium.launch({ channel: "msedge" });
@@ -118,13 +129,100 @@ const media = await page.evaluate(() => {
 });
 console.log("media button:", JSON.stringify(media));
 
+// ---- changing a layout must not lose the content -----------------------
+//
+// Full has `full`; Comparison does not. The old code kept the `full:` key,
+// the canvas stopped drawing it, and the renderer refuses an unknown
+// region -- so the words vanished and the deck would not build.
+const regionText = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll(".canvas .region")]
+      .map((r) => r.textContent.trim())
+      .filter(Boolean)
+  );
+
+const before = await regionText();
+await page.selectOption(".ribbon select.layout", "Comparison");
+await page.waitForTimeout(400);
+const asked = await page.evaluate(() => {
+  const panel = document.querySelector(".relayout-panel");
+  if (!panel) return { shown: false };
+  const r = panel.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 10);
+  return {
+    shown: true,
+    onScreen: r.top >= 0 && r.top < innerHeight,
+    inFront: panel.contains(hit),
+    // It has to name the region and say where it would go.
+    says: panel.textContent.includes("full"),
+    target: panel.querySelector("select")?.value,
+  };
+});
+await page.click(".relayout-panel .primary");
+await page.waitForTimeout(400);
+const after = await regionText();
+console.log("layout change asked:", JSON.stringify(asked));
+console.log("regions before:", JSON.stringify(before), "after:", JSON.stringify(after));
+
+// ---- undo ---------------------------------------------------------------
+const undoButton = await page.evaluate(() => {
+  const b = document.getElementById("undo");
+  if (!b) return { found: false };
+  const r = b.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return { found: true, enabled: !b.disabled, clickable: hit === b || b.contains(hit) };
+});
+await page.click("#undo");
+await page.waitForTimeout(400);
+const undone = {
+  layout: await page.evaluate(() => document.querySelector(".ribbon select.layout")?.value),
+  regions: await regionText(),
+};
+console.log("undo button:", JSON.stringify(undoButton));
+console.log("after undo:", JSON.stringify(undone));
+
+// ---- where the token is kept is a choice, and it is honoured ----------
+const store = await page.evaluate(() => {
+  const KEY = "fair.wb.token";
+  const box = document.getElementById("pat-persist");
+  const read = () => ({
+    session: sessionStorage.getItem(KEY),
+    local: localStorage.getItem(KEY),
+  });
+  const off = read();
+  // Turn it on: the token must move to disk, not be copied to it.
+  box.checked = true;
+  box.dispatchEvent(new Event("change"));
+  const on = read();
+  // And back off again: the copy on disk has to go immediately.
+  box.checked = false;
+  box.dispatchEvent(new Event("change"));
+  const back = read();
+  return { off, on, back };
+});
+console.log("token store:", JSON.stringify(store));
+
 if (errors.length) console.log("errors:", errors.slice(0, 5));
 
 const failed =
   errors.length > 0 ||
   !wide.beside || wide.below || !wide.onScreen || !wide.hasId || !wide.hasNotes ||
   !narrow.below || narrow.beside || !narrow.hasId || !narrow.hasNotes ||
-  !media.found || !media.isIcon || media.text !== "" || !media.drawn || !media.clickable;
+  !media.found || !media.isIcon || media.text !== "" || !media.drawn || !media.clickable ||
+  !asked.shown || !asked.onScreen || !asked.inFront || !asked.says ||
+  asked.target !== "left" ||
+  // Nothing was lost. The new layout may add an empty region of its own,
+  // which is why this is containment rather than equality.
+  !before.every((text) => after.includes(text)) ||
+  !undoButton.found || !undoButton.enabled || !undoButton.clickable ||
+  // Session only by default; on disk when asked; nowhere stale after.
+  !store.off.session || store.off.local ||
+  !store.on.local || store.on.session ||
+  !store.back.session || store.back.local ||
+  undone.layout !== "Full" ||
+  !before.every((text) => undone.regions.includes(text)) ||
+  // Undo put the deck back as it was, not merely close to it.
+  undone.regions.length !== before.length;
 
 console.log(failed ? "\nFAIL" : "\nPASS");
 await browser.close();

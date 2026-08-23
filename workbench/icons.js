@@ -25,6 +25,9 @@ const PATHS = {
   add: "M3 3h10v10H3z M8 6v4M6 8h4",
   // Chevron for the picker.
   chevron: "M4 6l4 4 4-4",
+  // Arrows curving back and forward: undo and redo.
+  undo: "M5.5 3.5l-3 3 3 3M2.5 6.5h6a4 4 0 1 1 0 8H5",
+  redo: "M10.5 3.5l3 3-3 3M13.5 6.5h-6a4 4 0 1 0 0 8H11",
   // A framed picture: two peaks and a sun. The universal image glyph,
   // and it has to be that -- this was a box-drawing character, which
   // read as nothing at all.
