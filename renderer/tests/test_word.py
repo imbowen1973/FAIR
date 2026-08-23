@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import zipfile
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from docx import Document
 from docx.oxml.ns import qn
 from lxml import etree
 
+from edufair_renderer.word.render import render_document
 from edufair_renderer.word.template import (
     DOCUMENT_CT,
     TEMPLATE_CTS,
@@ -448,3 +450,73 @@ def test_the_worked_example_uses_a_layout_the_template_has(tmp_path):
     assert used, "the prompt must show a worked slide"
     for name in used:
         assert name in layouts, f"the example uses {name}, which this template lacks"
+
+
+# ---- rendering needs no template ---------------------------------------
+#
+# This is the design, not a convenience. A .docx carries its own
+# styles.xml, and Word's built-in styles are defined against the theme
+# rather than against literal fonts and colours -- so a document that
+# names built-in styles takes its appearance from the reader's own Word.
+# Requiring a template would mean shipping and keeping one in step for no
+# gain, and would put a file on a server that never needed to be there.
+
+def test_a_document_renders_with_no_template_at_all(tmp_path):
+    source = tmp_path / "workbook.md"
+    source.write_text(
+        "# Cold chain\n\n"
+        "Vaccines fail quietly.\n\n"
+        "## What to check\n\n"
+        "- The log, not the light\n"
+        "- The door seal\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "workbook.docx"
+    summary = render_document(source, None, out)
+
+    assert out.is_file(), "no template is the ordinary case, not an error"
+    assert summary["blocks"] > 0
+
+    document = Document(str(out))
+    used = [p.style.name for p in document.paragraphs if p.text.strip()]
+    assert "Title" in used
+    assert any(name.startswith("Heading") for name in used), (
+        "headings must be real styles or they miss Word's navigation pane"
+    )
+
+
+def test_the_built_in_styles_follow_the_theme_not_a_literal(tmp_path):
+    """The reason no template is needed, pinned.
+
+    If these ever became literal fonts and colours, a rendered document
+    would stop taking its appearance from the reader's Word and a
+    template would quietly become necessary again.
+    """
+    source = tmp_path / "d.md"
+    source.write_text("# T\n\n## H\n\nWords.\n", encoding="utf-8")
+    out = tmp_path / "d.docx"
+    render_document(source, None, out)
+
+    xml = Document(str(out)).styles.element.xml
+    for style_id in ("Heading1", "Title"):
+        match = re.search(
+            r'<w:style [^>]*w:styleId="%s".*?</w:style>' % style_id, xml, re.S
+        )
+        assert match, f"{style_id} is not defined"
+        frag = match.group(0)
+        assert "Theme" in frag or "themeColor" in frag, (
+            f"{style_id} names a literal typeface or colour, so the document "
+            "no longer follows the reader's theme"
+        )
+
+
+def test_a_template_is_still_honoured_when_there_is_one(tmp_path):
+    """Optional does not mean ignored: a house style still binds."""
+    brand = _branded(tmp_path / "brand.docx", styles=["eduFAIR Callout"])
+    source = tmp_path / "d.md"
+    source.write_text("# T\n\nWords.\n", encoding="utf-8")
+
+    out = tmp_path / "d.docx"
+    render_document(source, brand, out)
+    names = {s.name for s in Document(str(out)).styles}
+    assert "eduFAIR Callout" in names, "the template's own styles must survive"

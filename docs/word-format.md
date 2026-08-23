@@ -1,28 +1,66 @@
 # Word documents
 
 A session's lesson plan, workbook and teacher resources are markdown in
-the repo. This renders them into a branded Word file on the same terms
-the deck renderer works to:
+the repo. This renders them into Word on the same terms the deck renderer
+works to:
 
-**FAIR defines meaning. The template defines appearance.**
+**eduFAIR defines meaning. Appearance comes from the styles.**
 
 A document says what each thing *is* — a heading, a list, a figure, a
-callout — and the template says what those look like. Nothing in the
+callout — and a *named style* says what that looks like. Nothing in the
 markdown may name a font, a colour, a margin or a size, and the block
 model has nowhere to put such a thing. That absence is the enforcement:
 a rule written down is a rule someone works around.
 
 ```
 lessonplan.md        ┐
-workbook.md          ├─ template.docx ─→ .docx
+workbook.md          ├─→ .docx
 teacher-resources.md ┘
 ```
 
-## The template
+## No template is needed
 
-One per library, beside `template.pptx`. Any flavour Word saved it as —
-`.docx`, `.dotx`, `.dotm` — opens the same way; which one it is is not
-something an author should have to think about.
+This is the point, so it comes first: **rendering needs no template
+file, and nothing has to ship one.**
+
+A `.docx` carries its own `styles.xml`, and Word's built-in styles are
+defined against the theme rather than against literal fonts and colours:
+
+```xml
+<w:style w:styleId="Heading1">
+  <w:rPr>
+    <w:rFonts w:asciiTheme="majorHAnsi"/>
+    <w:color w:themeColor="accent1" w:themeShade="BF"/>
+  </w:rPr>
+</w:style>
+```
+
+So a document whose paragraphs name `Title`, `Heading 1`, `Quote` and
+the rest takes its appearance from whatever theme is in play — the
+reader's own Word set-up, their organisation's theme, or one they apply
+after the fact. Restyling a rendered document is a theme change, not a
+re-render.
+
+```bash
+edufair-doc workbook.md --out workbook.docx
+```
+
+That is the whole command. There is nothing to install on a server and
+nothing to keep in step.
+
+## An optional house style
+
+A template is for a house style that differs from the built-ins — a
+funder's brand, a callout style Word does not have. It is an option, not
+a requirement:
+
+```bash
+edufair-doc workbook.md --template brand.docx --out workbook.docx
+```
+
+Any flavour Word saved it as — `.docx`, `.dotx`, `.dotm` — opens the
+same way; which one it is is not something an author should have to
+think about.
 
 Its body is emptied and everything else kept: styles, numbering,
 headers, footers, page setup, theme. **A template is a shape, not a

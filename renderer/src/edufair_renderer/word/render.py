@@ -224,7 +224,7 @@ def _fill_controls(document, meta: DocumentMeta) -> list[str]:
 
 def render_document(
     source: Path,
-    template: Path,
+    template: Path | None,
     out_path: Path,
     *,
     style_map: dict | None = None,
@@ -299,8 +299,10 @@ def main(argv: list[str] | None = None) -> int:
         description="Render a markdown document into a branded Word file",
     )
     ap.add_argument("document", type=Path)
-    ap.add_argument("--template", type=Path, required=True,
-                    help="the Word template: .docx, .dotx or .dotm")
+    ap.add_argument("--template", type=Path, default=None,
+                    help="optional house style: .docx, .dotx or .dotm. Without "
+                         "one the document names Word's built-in styles and "
+                         "takes its appearance from the reader's own theme")
     ap.add_argument("--styles", type=Path, default=None,
                     help="style-map.yaml (default: derived from the template)")
     ap.add_argument("--out", type=Path, default=None,

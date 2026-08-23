@@ -115,8 +115,23 @@ def _retyped(data: bytes) -> bytes:
     return out.getvalue()
 
 
-def load_template(path: Path):
-    """Open a Word template of any flavour, keeping everything but its type."""
+def load_template(path: Path | None):
+    """Open a Word template of any flavour, keeping everything but its type.
+
+    `None` is the ordinary case, not a fallback. A .docx carries its own
+    styles.xml, and Word's built-in styles are defined against the theme
+    rather than against literal fonts and colours:
+
+        Heading 1  <w:rFonts w:asciiTheme="majorHAnsi"/>
+                   <w:color w:themeColor="accent1"/>
+
+    So a document that names built-in styles picks up whatever theme is
+    in play -- the reader's own Word set-up, or one they apply later. A
+    template is for a house style that differs from those built-ins. It
+    is never needed to render, and nothing has to ship one.
+    """
+    if path is None:
+        return Document()
     if not path.is_file():
         raise WordTemplateError(f"no such template: {path}")
     data = path.read_bytes()

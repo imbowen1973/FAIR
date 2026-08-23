@@ -22,8 +22,11 @@ Rendered files are **derived artifacts**. The commit is the fact.
 ## What is here that is not elsewhere
 
 - **It renders into the designer's template, not around it.** Content
-  binds to the named placeholders of a real branded `.pptx`, and to the
-  named styles of a real branded `.docx`. Output stays fully editable.
+  binds to the named placeholders of a real branded `.pptx`, and to
+  named Word styles. Output stays fully editable — and because Word's
+  built-in styles are defined against the theme, a rendered document
+  takes its appearance from the reader's own Word, with no template
+  needed anywhere.
 - **Every slide is addressable.** An injected stable identity lets
   PowerPoint's own APIs pull individual slides, turning rendered decks
   into a queryable slide database.
@@ -71,8 +74,8 @@ pip install -e "renderer[test]"                     # Python >= 3.10
 
 edufair-corpus path/to/library --out /tmp/build     # build everything
 edufair-template brand.pptx --out layout-map.yaml   # bind a new deck template
-edufair-doctemplate brand.docx --styles style-map.yaml
-edufair-doc workbook.md --template brand.docx --out workbook.docx
+edufair-doc workbook.md --out workbook.docx         # Word, no template needed
+edufair-doctemplate brand.docx --styles style-map.yaml  # only for a house style
 edufair-prompt path/to/library --out prompt.md      # instructions for a model
 ```
 
@@ -100,7 +103,7 @@ course.yaml                 what the course is, and its sessions in order
 outcomes.yaml               what it claims to teach
 competencies/framework.yaml the threads that build across sessions
 template.pptx               the deck's brand
-template.docx               the documents' brand
+template.docx               optional: a house style for documents
 layout-map.yaml             which layout and placeholder each region binds to
 layout-geometry.json        where those placeholders are, so the canvas is true
 attribution.yaml            the funder credit, burnt into every slide
