@@ -11,6 +11,15 @@ import {
   listDocuments,
   renderMarkdownToDocx,
 } from "./word-renderer.js";
+import {
+  addSource,
+  initialSource,
+  loadSources,
+  rememberLast,
+  repoOf,
+  repoSource,
+  sourcesAreShared,
+} from "./sources.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -48,12 +57,52 @@ export function documentLabel(path) {
   return block ? `${pretty} — ${block.replace(/[-_]/g, " ")}` : pretty;
 }
 
-async function open() {
+/** The picker, from the list both panes share. */
+function renderSourcePicker() {
+  const select = $("source");
+  const sources = loadSources().filter(repoOf); // a corpus URL is not a repo
+  select.innerHTML = "";
+  if (!sources.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "no libraries yet — add one";
+    select.appendChild(option);
+    $("add-source-row").hidden = false;
+    return sources;
+  }
+  for (const source of sources) {
+    const option = document.createElement("option");
+    option.value = source.url;
+    option.textContent = source.name;
+    select.appendChild(option);
+  }
+  return sources;
+}
+
+function add() {
+  let parsed;
   try {
-    repo = parseRepo($("repo").value);
+    parsed = parseRepo($("repo").value);
   } catch (err) {
     return setStatus(err.message, "error");
   }
+  const source = repoSource(parsed.owner, parsed.repo);
+  addSource(source);
+  $("repo").value = "";
+  $("add-source-row").hidden = true;
+  renderSourcePicker();
+  $("source").value = source.url;
+  open();
+}
+
+async function open() {
+  const chosen = loadSources().find((s) => s.url === $("source").value);
+  repo = chosen ? repoOf(chosen) : null;
+  if (!repo) {
+    $("step-pick").hidden = true;
+    return setStatus("Add a library to start.", "");
+  }
+  rememberLast(chosen.url);
   setStatus(`Reading ${repo.owner}/${repo.repo}…`);
   try {
     const paths = await listDocuments(repo.owner, repo.repo);
@@ -125,9 +174,30 @@ function start(info) {
       "error"
     );
   }
-  $("open").addEventListener("click", open);
+  if (!sourcesAreShared()) {
+    setStatus(
+      "This pane cannot store anything, so libraries will not be " +
+        "remembered or shared with PowerPoint.",
+      "error"
+    );
+  }
+
+  const sources = renderSourcePicker();
+  const last = initialSource(sources.filter(repoOf));
+  if (last) {
+    $("source").value = last.url;
+    open();
+  }
+
+  $("source").addEventListener("change", open);
+  $("add").addEventListener("click", add);
+  $("toggle-add").addEventListener("click", () => {
+    const row = $("add-source-row");
+    row.hidden = !row.hidden;
+    if (!row.hidden) $("repo").focus();
+  });
   $("insert").addEventListener("click", insert);
   $("repo").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") open();
+    if (e.key === "Enter") add();
   });
 }

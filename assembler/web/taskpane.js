@@ -15,6 +15,14 @@ import {
   searchCatalog,
   usedCompetencies,
 } from "./assembler.js";
+import {
+  addSource as rememberSource,
+  initialSource,
+  loadSources,
+  rememberLast,
+  removeSource as forgetSource,
+  repoSource,
+} from "./sources.js";
 
 // Decks rendered in-browser (wasm sources), keyed by source url then
 // sourcePptx. RAM only — nothing is stored anywhere.
@@ -27,8 +35,6 @@ const memoryAssets = new Map();
 // whatever the server had built into its own data/ directory, which made
 // the tool depend on a server holding content. Every library is now an
 // explicit pick: a repo that renders in this tab, or a corpus URL.
-const STORE_KEY = "fair.sources";
-const LAST_KEY = "fair.lastSource";
 
 let catalog = null;
 let currentSource = null;
@@ -47,47 +53,10 @@ function setStatus(message, kind = "") {
   el.hidden = !message;
 }
 
-function loadStoredSources() {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((s) => s && s.url) : [];
-  } catch {
-    return [];
-  }
-}
-
-function storeSources(sources) {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(sources));
-  } catch {
-    /* private-mode webviews: picker still works for this session */
-  }
-}
-
+// The list lives in sources.js so the Word pane sees the same one: add a
+// library here and it is there, and vice versa.
 function allSources() {
-  return loadStoredSources();
-}
-
-function rememberLast(url) {
-  try {
-    localStorage.setItem(LAST_KEY, url ?? "");
-  } catch {
-    /* private-mode webviews: the picker still works for this session */
-  }
-}
-
-/** The library to open on launch: the last one used, else the first. */
-function initialSource() {
-  const sources = allSources();
-  if (sources.length === 0) return null;
-  let last = null;
-  try {
-    last = localStorage.getItem(LAST_KEY);
-  } catch {
-    /* ignore */
-  }
-  return sources.find((s) => s.url === last) ?? sources[0];
+  return loadSources();
 }
 
 function renderSourcePicker() {
@@ -141,7 +110,7 @@ async function loadCatalog(source) {
 /** Forget a stored library, then open whatever is left (or nothing). */
 function removeSource() {
   if (!currentSource) return;
-  storeSources(loadStoredSources().filter((s) => s.url !== currentSource.url));
+  forgetSource(currentSource.url);
   currentSource = null;
   renderSourcePicker();
   // Not awaited, so its rejection would be unhandled and silent -- and
@@ -554,15 +523,10 @@ function addSource() {
   // server, decks only in this tab's memory.
   const repo = parseRepoInput(input.value);
   if (repo) {
-    const source = {
-      name: `${repo.owner}/${repo.repo}`,
-      url: `wasm:${repo.owner}/${repo.repo}`,
-    };
-    const stored = loadStoredSources();
-    if (!stored.some((s) => s.url === source.url)) {
-      stored.push(source);
-      storeSources(stored);
-    }
+    // Described the same way the Word pane describes it, so a library
+    // added in either is the same entry in both.
+    const source = repoSource(repo.owner, repo.repo);
+    rememberSource(source);
     input.value = "";
     renderSourcePicker();
     $("source").value = source.url;
@@ -578,11 +542,7 @@ function addSource() {
     setStatus("Enter owner/repo (renders in your browser) or an https corpus URL.", "error");
     return;
   }
-  const stored = loadStoredSources();
-  if (!stored.some((s) => s.url === source.url) && source.url !== "") {
-    stored.push(source);
-    storeSources(stored);
-  }
+  if (source.url) rememberSource(source);
   input.value = "";
   renderSourcePicker();
   $("source").value = source.url;

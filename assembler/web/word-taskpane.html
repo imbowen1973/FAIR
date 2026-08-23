@@ -20,14 +20,19 @@
     <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 
     <section id="step-source">
-      <label for="repo">Library</label>
+      <label for="source">Library</label>
       <div class="corpus-row">
+        <select id="source"></select>
+        <button id="toggle-add" title="Add a library" aria-label="Add a library">+</button>
+      </div>
+      <div class="add-source" id="add-source-row" hidden>
         <input id="repo" placeholder="owner/repo" spellcheck="false"/>
-        <button id="open">Open</button>
+        <button id="add">Add</button>
       </div>
       <p class="hint">
-        Public repositories are read straight from git and rendered in this
-        pane. Nothing is uploaded and nothing is stored.
+        Libraries are shared with the PowerPoint pane: add one in either and
+        it is there in the other. Public repositories are read straight from
+        git and rendered here — nothing is uploaded.
       </p>
     </section>
 
