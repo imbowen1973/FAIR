@@ -71,6 +71,16 @@ function buildList(items, type, style, theme, scale, depth) {
     const colour = themeColour(theme, typeof item === "object" ? item.color : null);
     if (colour) li.style.color = colour;
 
+    // A line inside a list that carries no bullet -- the lead-in before
+    // the points, or the sentence that closes them. The canvas has to
+    // show it the way the deck will, or the two disagree about the same
+    // slide.
+    if (typeof item === "object" && item.bullet === false) {
+      li.style.listStyle = "none";
+      li.style.marginLeft = "-1em";
+      li.dataset.bullet = "none";
+    }
+
     const children = typeof item === "object" ? item.items ?? [] : [];
     if (children.length) {
       li.appendChild(buildList(children, type, style, theme, scale, depth + 1));

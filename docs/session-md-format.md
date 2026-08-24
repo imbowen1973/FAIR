@@ -149,6 +149,37 @@ fitted inside, so the same picture behaved differently depending on the
 layout. Both now obey `fit`, and the slide stays bound to its
 placeholder either way.
 
+### Lists, and lines inside them that carry no bullet
+
+`ul` is a bulleted list and `ol` a numbered one. An item is a string, or
+a mapping with `text:` and optionally `items:` for nesting, `color:` for
+a theme slot, and `bullet: false`.
+
+`bullet: false` is how one placeholder holds both prose and points — a
+lead-in, the points, and the line that closes them:
+
+```yaml
+full:
+  type: ul
+  items:
+    - text: There are three things to check before sharing a dataset.
+      bullet: false
+    - Who can be re-identified
+    - What was consented to
+    - text: If any of them is unclear, do not share it.
+      bullet: false
+```
+
+A layout offers the regions it offers. Where it offers one, splitting a
+lead-in into a region of its own is not possible, and inventing a second
+region would be a layout decision taken by the content.
+
+**The bullet glyph is the template's**, as everything else about
+appearance is. Where the template defines none — its master has no
+`bodyStyle`, or none for that outline level — the renderer supplies one,
+because a `ul` that renders without bullets contradicts the content that
+declared it a list. A template that has its own is left alone.
+
 ### Reserved keys
 
 | Key        | Required | Meaning                                             |

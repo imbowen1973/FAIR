@@ -15,6 +15,11 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
+import shutil
+
+from pptx import Presentation
+
+from edufair_renderer.corpus import main as corpus_main
 from edufair_renderer.render import render_session
 
 REPO = Path(__file__).resolve().parents[2]
@@ -2265,3 +2270,157 @@ def test_an_unknown_fit_is_refused_at_parse_time(tmp_path):
     )
     with pytest.raises(SessionParseError, match="fit must be one of"):
         parse_session(path)
+
+
+# ---- lists have to look like lists ------------------------------------
+#
+# A `ul` rendered without bullets is simply wrong: the content says the
+# list is bulleted and the output does not show it. The example template
+# has no `bodyStyle` element at all, so nothing defined a bullet and
+# every bulleted list came out as plain paragraphs -- which is what was
+# reported, and what nothing here would have caught.
+
+A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
+
+def _bullet_props(paragraph):
+    """The bullet elements written onto a paragraph, by name."""
+    pPr = paragraph._p.find(f"{{{A_NS}}}pPr")
+    if pPr is None:
+        return []
+    out = []
+    for child in pPr:
+        name = etree.QName(child).localname
+        if name.startswith("bu"):
+            out.append(name)
+    return out
+
+
+def _body_paragraphs(slide):
+    for shape in slide.shapes:
+        if not shape.has_text_frame:
+            continue
+        if shape.placeholder_format is not None and shape.placeholder_format.idx == 0:
+            continue  # the title
+        for paragraph in shape.text_frame.paragraphs:
+            if paragraph.text.strip():
+                yield paragraph
+
+
+def _render_one(tmp_path, region_yaml):
+    lib = tmp_path / "lib"
+    (lib / "blocks" / "01-b").mkdir(parents=True)
+    shutil.copy(EXAMPLES / "template.pptx", lib / "template.pptx")
+    shutil.copy(EXAMPLES / "layout-map.yaml", lib / "layout-map.yaml")
+    (lib / "course.yaml").write_text(
+        "title: T\nstructure:\n  - block: 01-b\n", encoding="utf-8"
+    )
+    (lib / "blocks" / "01-b" / "block.yaml").write_text(
+        "title: B\nduration_minutes: 45\nresources: []\n", encoding="utf-8"
+    )
+    (lib / "blocks" / "01-b" / "slides.md").write_text(
+        "---\nsession: '01'\ntitle: T\nversion: 1.0.0\n---\n\n"
+        "--- slide\nid: s-01\nlayout: Full\ntitle: T\n" + region_yaml + "---\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "build"
+    # Through the CLI, which is what derives the template and layout
+    # map from the library rather than being handed them.
+    corpus_main([str(lib), "--out", str(out)])
+    deck = next((out / "sessions").rglob("*.pptx"))
+    return Presentation(str(deck)).slides[0]
+
+
+def test_a_bulleted_list_gets_bullets_even_from_a_bare_template(tmp_path):
+    slide = _render_one(
+        tmp_path,
+        "full:\n  type: ul\n  items:\n    - First\n"
+        "    - text: Parent\n      items:\n        - Nested\n",
+    )
+    props = [_bullet_props(p) for p in _body_paragraphs(slide)]
+    assert props, "no body paragraphs were written at all"
+    for one in props:
+        assert "buChar" in one, f"a bulleted item with no bullet: {one}"
+
+
+def test_a_numbered_list_is_numbered_not_bulleted(tmp_path):
+    slide = _render_one(tmp_path, "full:\n  type: ol\n  items:\n    - One\n    - Two\n")
+    for one in (_bullet_props(p) for p in _body_paragraphs(slide)):
+        assert "buAutoNum" in one
+        assert "buChar" not in one
+
+
+def test_a_placeholder_can_hold_both_plain_lines_and_bullets(tmp_path):
+    """One region, a lead-in, the points, and a line that closes them.
+
+    A layout offers the regions it offers; splitting a lead-in into its
+    own region is not possible when there is only one, and inventing a
+    second would be a layout decision taken by the content.
+    """
+    slide = _render_one(
+        tmp_path,
+        "full:\n  type: ul\n  items:\n"
+        "    - text: Three things to check.\n      bullet: false\n"
+        "    - Who can be re-identified\n"
+        "    - What was consented to\n"
+        "    - text: If any is unclear, do not share.\n      bullet: false\n",
+    )
+    got = [(p.text, _bullet_props(p)) for p in _body_paragraphs(slide)]
+    assert [text for text, _ in got] == [
+        "Three things to check.",
+        "Who can be re-identified",
+        "What was consented to",
+        "If any is unclear, do not share.",
+    ]
+    assert "buNone" in got[0][1]
+    assert "buChar" in got[1][1]
+    assert "buChar" in got[2][1]
+    assert "buNone" in got[3][1]
+
+
+def test_a_template_that_defines_its_own_bullet_is_left_alone(tmp_path):
+    """The glyph is the template's. Only its absence is ours to fix."""
+    lib = tmp_path / "lib"
+    (lib / "blocks" / "01-b").mkdir(parents=True)
+    shutil.copy(EXAMPLES / "template.pptx", lib / "template.pptx")
+
+    # Give the master a bodyStyle that asks for a dash at the first level.
+    import zipfile
+
+    src = lib / "template.pptx"
+    data = {}
+    with zipfile.ZipFile(src) as z:
+        for name in z.namelist():
+            data[name] = z.read(name)
+    master = next(n for n in data if n.startswith("ppt/slideMasters/slideMaster1.xml"))
+    root = etree.fromstring(data[master])
+    styles = root.find(f"{{{A_NS}}}txStyles")
+    if styles is None:
+        styles = etree.SubElement(root, f"{{{A_NS}}}txStyles")
+    body = etree.SubElement(styles, f"{{{A_NS}}}bodyStyle")
+    lvl = etree.SubElement(body, f"{{{A_NS}}}lvl1pPr")
+    etree.SubElement(lvl, f"{{{A_NS}}}buChar").set("char", "-")
+    data[master] = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+    with zipfile.ZipFile(src, "w") as z:
+        for name, blob in data.items():
+            z.writestr(name, blob)
+
+    shutil.copy(EXAMPLES / "layout-map.yaml", lib / "layout-map.yaml")
+    (lib / "course.yaml").write_text("title: T\nstructure:\n  - block: 01-b\n", encoding="utf-8")
+    (lib / "blocks" / "01-b" / "block.yaml").write_text(
+        "title: B\nduration_minutes: 45\nresources: []\n", encoding="utf-8"
+    )
+    (lib / "blocks" / "01-b" / "slides.md").write_text(
+        "---\nsession: '01'\ntitle: T\nversion: 1.0.0\n---\n\n"
+        "--- slide\nid: s-01\nlayout: Full\ntitle: T\n"
+        "full:\n  type: ul\n  items:\n    - First\n---\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "build"
+    # Through the CLI, which is what derives the template and layout
+    # map from the library rather than being handed them.
+    corpus_main([str(lib), "--out", str(out)])
+    deck = next((out / "sessions").rglob("*.pptx"))
+    slide = Presentation(str(deck)).slides[0]
+    for one in (_bullet_props(p) for p in _body_paragraphs(slide)):
+        assert one == [], f"the template's own bullet was overridden: {one}"

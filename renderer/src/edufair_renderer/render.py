@@ -64,9 +64,81 @@ def _suppress_bullet(paragraph) -> None:
     etree.SubElement(pPr, f"{{{A_NS}}}buNone")
 
 
+def _bullet_sources(placeholder):
+    """The list-style elements a body placeholder inherits from, in order.
+
+    The placeholder's own lstStyle, then the layout's matching
+    placeholder, then the master's bodyStyle. Nothing else: a first
+    attempt searched the whole master, which has bullets defined
+    *somewhere* in every real template, so it always concluded the
+    template had an opinion and never supplied one.
+    """
+    out = []
+    body = placeholder._element.find(f"{{{A_NS}}}txBody")
+    if body is not None:
+        out.append(body.find(f"{{{A_NS}}}lstStyle"))
+    try:
+        idx = placeholder.placeholder_format.idx
+        layout = placeholder.part.slide_layout
+        for shape in layout.placeholders:
+            if shape.placeholder_format.idx == idx:
+                shape_body = shape._element.find(f"{{{A_NS}}}txBody")
+                if shape_body is not None:
+                    out.append(shape_body.find(f"{{{A_NS}}}lstStyle"))
+                break
+        master = layout.slide_master._element
+        txStyles = master.find(f"{{{A_NS}}}txStyles")
+        if txStyles is not None:
+            out.append(txStyles.find(f"{{{A_NS}}}bodyStyle"))
+    except Exception:  # not a placeholder, or no layout behind it
+        pass
+    return [o for o in out if o is not None]
+
+
+def _defines_a_bullet(placeholder, level: int) -> bool:
+    """Whether the template puts a bullet on paragraphs at this level.
+
+    A `ul` that renders without bullets is simply wrong: the content says
+    the list is bulleted and the output does not show it. The glyph and
+    its size stay the template's, so this only asks whether the template
+    has an opinion at all -- and one is supplied when it has none.
+
+    The example template's master has no `bodyStyle` element whatsoever,
+    so every bulleted list came out as plain paragraphs.
+    """
+    want = f"{{{A_NS}}}lvl{level + 1}pPr"
+    for style in _bullet_sources(placeholder):
+        level_props = style.find(want)
+        if level_props is None:
+            continue
+        for tag in ("buChar", "buAutoNum"):
+            if level_props.find(f"{{{A_NS}}}{tag}") is not None:
+                return True
+        # An explicit buNone at this level is the template saying no.
+        if level_props.find(f"{{{A_NS}}}buNone") is not None:
+            return True
+    return False
+
+
+def _apply_bullet(paragraph, char: str = "•") -> None:
+    """Put a bullet on a paragraph the template left bare."""
+    pPr = _clear_bullet_props(paragraph)
+    element = etree.SubElement(pPr, f"{{{A_NS}}}buChar")
+    element.set("char", char)
+
+
 def _fill_list(placeholder, region: Region, numbered: bool, code_typeface: str) -> None:
     tf = placeholder.text_frame
     first = True
+    # Per level, asked once: a template can define bullets for the first
+    # level and leave the nested ones bare, and walking the inheritance
+    # chain for every paragraph would give the same answer each time.
+    bare_level = {}
+
+    def needs_bullet(level: int) -> bool:
+        if level not in bare_level:
+            bare_level[level] = not _defines_a_bullet(placeholder, level)
+        return bare_level[level]
 
     def write_items(entries: list[ListItem], level: int) -> None:
         nonlocal first
@@ -83,8 +155,14 @@ def _fill_list(placeholder, region: Region, numbered: bool, code_typeface: str) 
                 color=item.color or region.color,
                 code_typeface=code_typeface,
             )
-            if numbered:
+            if not item.bullet:
+                # A plain line inside a list: the lead-in before the
+                # points, or the sentence that closes them.
+                _suppress_bullet(paragraph)
+            elif numbered:
                 _apply_auto_numbering(paragraph)
+            elif not numbered and needs_bullet(level):
+                _apply_bullet(paragraph)
             if item.children:
                 write_items(item.children, level + 1)
 

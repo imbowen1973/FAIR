@@ -52,6 +52,12 @@ class ListItem:
     text: str
     children: list["ListItem"] = field(default_factory=list)
     color: str | None = None  # theme colour slot, e.g. "accent2"
+    # A line inside a list that carries no bullet. One placeholder often
+    # has to hold a lead-in sentence, then the points, then a closing
+    # line -- splitting that across regions is not possible when the
+    # layout offers one, and inventing a second region would be a layout
+    # decision made by the content.
+    bullet: bool = True
 
 
 @dataclass
@@ -148,11 +154,17 @@ def _parse_list_items(raw, where: str, depth: int = 0) -> list[ListItem]:
             items.append(ListItem(text=entry))
         elif isinstance(entry, dict) and "text" in entry:
             children = _parse_list_items(entry.get("items", []), where, depth + 1)
+            bullet = entry.get("bullet", True)
+            if not isinstance(bullet, bool):
+                raise SessionParseError(
+                    f"{where}: 'bullet' must be true or false, got {bullet!r}"
+                )
             items.append(
                 ListItem(
                     text=str(entry["text"]),
                     children=children,
                     color=_check_color(entry.get("color"), where),
+                    bullet=bullet,
                 )
             )
         else:
