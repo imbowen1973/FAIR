@@ -81,6 +81,37 @@ function buildList(items, type, style, theme, scale, depth) {
 }
 
 /** Read a list back, nesting and all. */
+/**
+ * Every block of text in an editable region, however the browser made it.
+ *
+ * The reader used to be `box.querySelectorAll("p")`. Press Enter in a
+ * contenteditable and Chromium inserts a `div`, not a `p` -- so a new
+ * line was invisible here and was dropped on the next commit. The text
+ * was on the screen and absent from the file, which is the worst
+ * possible pair: nothing looked wrong until a reload.
+ */
+function readBlocks(box) {
+  const out = [];
+  for (const node of box.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      // A bare text node is what typing into a region that held nothing
+      // produces, before the browser wraps it in anything at all.
+      if (node.textContent.trim()) out.push(node.textContent);
+      continue;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+    const tag = node.nodeName.toLowerCase();
+    if (tag === "br") continue;
+    if (tag === "ul" || tag === "ol") continue; // read as a list instead
+    const text = fromElement(node);
+    // Browsers leave empty wrappers behind while rewrapping what was
+    // typed. They are artefacts, not blank lines anybody asked for, and
+    // they would render as empty paragraphs on the slide.
+    if (text.trim()) out.push(text);
+  }
+  return out;
+}
+
 function readList(list) {
   return [...list.children].map((li) => {
     const own = document.createElement("div");
@@ -187,6 +218,12 @@ function paragraph(text, sizePx) {
  */
 function fillRegion(box, value, style, theme, scale, commit, editable, media0 = {}, onMedia) {
   const size = style.sizePt ? style.sizePt * scale : null;
+  // On the box as well as on each paragraph. The per-element size is what
+  // the template says; this is what anything the *browser* creates
+  // inherits -- press Enter and the new block carried no size at all, so
+  // fresh text rendered at the page default and looked like a different
+  // document.
+  if (size) box.style.fontSize = `${size}px`;
   box.style.textAlign = ALIGN[style.align] ?? "left";
   if (style.bold) box.style.fontWeight = "700";
   const colour = themeColour(theme, style.colorSlot) ?? style.color;
@@ -207,9 +244,7 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
       box.contentEditable = "true";
       box.dataset.editable = "text";
       box.addEventListener("input", () => {
-        const text = [...box.querySelectorAll("p")]
-          .map((p) => fromElement(p))
-          .join("\n");
+        const text = readBlocks(box).join(String.fromCharCode(10));
         commit(type === "text" ? text : { ...value, text });
       });
     }
@@ -223,12 +258,21 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
     if (editable) {
       box.contentEditable = "true";
       box.dataset.editable = "list";
-      box.addEventListener("input", () => commit({ ...value, items: readList(list) }));
+      // The live list, not the one drawn: the browser can replace it
+      // outright when the last item is deleted and retyped, and reading
+      // the detached original returned nothing.
+      const items = () => {
+        const live = box.querySelector("ul, ol") ?? list;
+        // Anything the browser put outside the list is still the
+        // author's text, so it joins the end rather than vanishing.
+        return [...readList(live), ...readBlocks(box)];
+      };
+      box.addEventListener("input", () => commit({ ...value, items: items() }));
       box.addEventListener("keydown", (event) => {
         if (event.key !== "Tab") return;
         event.preventDefault();
-        if (indent(list, event.shiftKey)) {
-          commit({ ...value, items: readList(list) });
+        if (indent(box.querySelector("ul, ol") ?? list, event.shiftKey)) {
+          commit({ ...value, items: items() });
         }
       });
     }

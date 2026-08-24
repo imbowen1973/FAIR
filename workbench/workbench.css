@@ -178,7 +178,14 @@ button.link.danger { color: var(--danger); }
   padding-top: 2px; font-variant-numeric: tabular-nums;
 }
 /* The thumbnail hosts a .stage, which sizes itself by aspect ratio. */
-.thumb { display: block; min-width: 0; }
+/* A thumbnail is a picture of a slide, not a control. It sits inside the
+   row's pick button and had been swallowing clicks meant for the reorder
+   and delete buttons beside it: drawSlide falls back to a 150px stage
+   when the host has not been laid out yet, which is wider than the thumb
+   and spilled over them. Both halves are fixed -- it cannot overflow,
+   and it cannot take a click either way. */
+.thumb { display: block; min-width: 0; overflow: hidden; pointer-events: none; }
+.thumb .stage { max-width: 100%; }
 .slide-row.on .thumb .stage { box-shadow: 0 0 0 2px var(--accent); }
 .thumb-caption {
   grid-column: 2; font-size: 11px; line-height: 1.3; color: var(--fg);
@@ -324,7 +331,12 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
 /* ---- the editing surface ------------------------------------------- */
 .editor { display: flex; flex-direction: column; gap: 10px; }
 .canvas { width: 100%; }
-.canvas .stage { margin: 0 auto; }
+/* max-width as well as the width canvas.js computes. That width is a
+   fixed pixel value measured when the slide was drawn, and a measurement
+   taken before the layout settled is too large -- at which point
+   `margin: auto` spills the stage over *both* sides, and the left side is
+   the rail, where it covered the reorder and delete buttons. */
+.canvas .stage { margin: 0 auto; max-width: 100%; }
 .canvas-hint { margin: 0; }
 
 .stage.editable .region[data-editable] { cursor: text; }

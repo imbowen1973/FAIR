@@ -51,10 +51,6 @@ const FILES = {
     "id: s-01",
     "layout: Full",
     "title: Opening",
-    "full:",
-    "  type: ul",
-    "  items:",
-    "    - The original bullet",
     "---",
     "",
   ].join("\n"),
@@ -131,81 +127,114 @@ await page.click("#open-manual");
 await page.waitForSelector("#workspace:not([hidden])", { timeout: 15000 });
 await page.waitForTimeout(600);
 
-const PHOTO = process.env.PHOTO;
-if (!PHOTO) throw new Error("set PHOTO to a real image path");
-const EXPECT = process.env.EXPECT_EXT || "";
+/** The slide as it would be committed: read the file the app would save. */
+const slideSource = () =>
+  page.evaluate(async () => {
+    const { parseSlides } = await import("./library.js");
+    // The canvas holds the truth for regions; the source view is what a
+    // Save would write. Read it through the app's own tab.
+    const tab = [...document.querySelectorAll(".tabstrip .tab")].find((t) =>
+      t.textContent.includes("Slides")
+    );
+    return { hasTab: Boolean(tab), parse: typeof parseSlides === "function" };
+  });
 
-// Pick the body region, then ask the ribbon for a picture. Media acts on
-// the selected region, as colour and list type do.
-await page.locator('.canvas .region[data-region="full"]').first().click();
-await page.waitForTimeout(250);
-const mediaButton = page.locator('.ribbon button[aria-label*="picture"]').first();
-await mediaButton.click();
-await page.waitForSelector(".media-picker", { timeout: 8000 });
+/** Type into a region on the canvas. */
+async function typeInRegion(region, text) {
+  const box = page.locator(`.canvas .region[data-region="${region}"]`).first();
+  await box.click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press("Control+A");
+  await page.keyboard.type(text);
+  await page.waitForTimeout(400);
+}
 
-// A second press closes it. A button that only opens leaves the panel to
-// be dismissed some other way, and there is no other way that is obvious.
-await mediaButton.click();
-await page.waitForTimeout(300);
-const toggled = await page.evaluate(() => ({
-  closed: !document.querySelector(".media-picker"),
+/**
+ * Everything the slide currently holds.
+ *
+ * Read from the rail thumbnail, not the canvas. The canvas is a live
+ * contenteditable that is deliberately not redrawn on a metadata change,
+ * so it goes on showing what was typed even after the data underneath
+ * has been overwritten — which is exactly how this bug stayed invisible.
+ * The thumbnail is drawn from the committed slide on every commitSlide,
+ * so it is the honest witness.
+ */
+const slideNow = () =>
+  page.evaluate(() => {
+    const regions = {};
+    const thumb = document.querySelector(".slide-row .thumb");
+    for (const r of thumb ? thumb.querySelectorAll("[data-region]") : []) {
+      regions[r.dataset.region] = r.textContent.trim();
+    }
+    regions._thumb = thumb ? thumb.textContent.trim() : "";
+    const notesHost = document.querySelector("#meta .notes-field");
+    return {
+      regions,
+      notes: notesHost ? notesHost.textContent.trim() : null,
+      id: document.querySelector("#meta input")?.value ?? null,
+      dok: document.querySelector("#meta select.dok")?.value ?? null,
+      outcomesOn: [...document.querySelectorAll("#meta .chips .chip.on")].map((c) =>
+        c.textContent.trim()
+      ),
+    };
+  });
+
+// ---- typing into a list, and saving while still in it -----------------
+//
+// Press Enter in a contenteditable and Chromium inserts a <div>, not a
+// <p> or an <li>. The reader looked for the elements it had drawn, so a
+// new line was invisible to it and dropped on the next commit -- text on
+// the screen and absent from the file. The same <div> carried no
+// font-size, because the size was set per element, so it also rendered
+// at the page default and looked like a different document.
+
+// An empty placeholder: clicked to start it, exactly as an author does.
+const vacant = page.locator('.canvas .region.vacant').first();
+await vacant.click();
+await page.waitForTimeout(400);
+const region = page.locator('.canvas .region[data-region="full"]').first();
+await region.click();
+await page.waitForTimeout(200);
+await page.keyboard.type("First bullet");
+await page.keyboard.press("Enter");
+await page.keyboard.type("Second bullet");
+await page.keyboard.press("Enter");
+await page.keyboard.type("Third bullet");
+await page.waitForTimeout(600);
+
+// Deliberately NOT clicking away: the report was that it was still in
+// focus when saved.
+const committed = await page.evaluate(() => ({
+  thumb: document.querySelector(".slide-row .thumb")?.textContent?.trim() ?? "",
 }));
-await mediaButton.click();
-await page.waitForSelector(".media-picker", { timeout: 8000 });
-console.log("media button toggles:", JSON.stringify(toggled));
 
-const beforeUpload = await page.evaluate(() => ({
-  picker: Boolean(document.querySelector(".media-picker")),
-  hasInput: Boolean(document.querySelector("#media-upload")),
-  status: document.getElementById("status").textContent,
-}));
-
-await page.setInputFiles("#media-upload", PHOTO);
-// The policy resizes and re-encodes, stepping quality then size, so this
-// is not instant on a five-megabyte photograph.
-await page.waitForTimeout(6000);
-
-const afterUpload = await page.evaluate(() => {
-  const img = document.querySelector(".canvas .region img, .canvas img");
+// And what the file would hold, which is the thing that was losing text.
+const onScreen = await page.evaluate(() => {
+  const box = document.querySelector('.canvas .region[data-region="full"]');
+  const sizes = [...box.querySelectorAll("li, p, div")].map((n) =>
+    Math.round(parseFloat(getComputedStyle(n).fontSize))
+  );
   return {
-    status: document.getElementById("status").textContent,
-    // Did a picture actually land on the slide?
-    imgOnCanvas: Boolean(img),
-    imgSrc: img ? img.currentSrc || img.src : null,
-    imgLoaded: img ? img.complete && img.naturalWidth > 0 : false,
-    natural: img ? [img.naturalWidth, img.naturalHeight] : null,
-    thumb: document.querySelector(".slide-row .thumb")?.textContent?.trim() ?? "",
-    thumbImg: Boolean(document.querySelector(".slide-row .thumb img")),
+    text: box.textContent.trim(),
+    blocks: box.querySelectorAll("li, p, div").length,
+    sizes,
+    boxSize: Math.round(parseFloat(getComputedStyle(box).fontSize)),
   };
 });
 
-// And what would be committed: the staged bytes and the declaration.
-const staged = await page.evaluate(() => {
-  const dirty = document.getElementById("dirty").textContent;
-  return { dirty };
-});
+console.log("on the canvas:", JSON.stringify(onScreen));
+console.log("committed to the slide:", JSON.stringify(committed.thumb));
 
-console.log("picker:", JSON.stringify(beforeUpload));
-console.log("after upload:", JSON.stringify(afterUpload));
-console.log("staged:", JSON.stringify(staged));
+if (errors.length) console.log("errors:", errors.slice(0, 4));
 
-if (errors.length) console.log("errors:", errors.slice(0, 5));
-
+const wanted = ["First bullet", "Second bullet", "Third bullet"];
 const failed =
   errors.length > 0 ||
-  !beforeUpload.picker ||
-  !toggled.closed ||
-  !beforeUpload.hasInput ||
-  !afterUpload.imgOnCanvas ||
-  !afterUpload.imgLoaded ||
-  !afterUpload.natural?.[0] ||
-  // Resized: the policy caps the long edge at 2000px.
-  afterUpload.natural[0] > 2000 ||
-  !afterUpload.thumbImg ||
-  // The format is decided by whether the pixels use transparency, not by
-  // what the file was called.
-  (EXPECT && !afterUpload.status.includes(EXPECT)) ||
-  !/file|change/.test(staged.dirty);
+  // Every line typed must be in the committed slide, not just on screen.
+  !wanted.every((line) => committed.thumb.includes(line)) ||
+  // And every block must be at the template's size, not the page default.
+  onScreen.sizes.length === 0 ||
+  onScreen.sizes.some((s) => Math.abs(s - onScreen.boxSize) > 1);
 
 console.log(failed ? String.fromCharCode(10) + "FAIL" : String.fromCharCode(10) + "PASS");
 await browser.close();

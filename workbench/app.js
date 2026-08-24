@@ -203,6 +203,29 @@ function measureHeader() {
 measureHeader();
 addEventListener("resize", measureHeader);
 
+// The stage is drawn at a measured pixel width, and the type size is
+// scaled from it. CSS keeps it inside its pane when the window changes;
+// only a redraw makes the type right again.
+let resizeTimer = null;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (state.library && state.blockId && activeDoc()?.editor === "slides") {
+      renderCanvas();
+    }
+  }, 150);
+});
+
+// Enter inside a contenteditable inserts a <div> by default in Chromium
+// and Safari. Everything that reads a region back expects paragraphs, and
+// a <div> is both unstyled and easy to miss -- so ask for <p> once, here,
+// rather than repairing the DOM afterwards on every keystroke.
+try {
+  document.execCommand("defaultParagraphSeparator", false, "p");
+} catch {
+  /* older engines: readBlocks copes with whatever they produce */
+}
+
 async function afterSignIn(token, login) {
   state.gh = new GitHub(token);
   state.login = login;
@@ -993,6 +1016,14 @@ function renderRibbon() {
       renderCanvas();
     },
     onMedia: () => {
+      // A second press closes it. A button that only ever opens leaves
+      // the panel to be dismissed some other way, and there is no other
+      // way that is obvious.
+      const open = $("panels").querySelector(".media-picker");
+      if (open) {
+        open.closest("#panels > *")?.remove();
+        return;
+      }
       const region = activeRegion;
       if (!region) {
         status("Click the region you want the picture in first.", "error");
