@@ -21,11 +21,9 @@ const TARGET_EDGE = 2000;
 // Matches assets.MAX_IMAGE_BYTES. The build refuses anything larger, so
 // an upload that ignored it would commit a file and fail CI afterwards.
 const MAX_BYTES = 500_000;
-const JPEG_QUALITY = 0.82;
-// Quality steps, then size steps. Detail costs more than pixels do, so
-// quality gives way first: a slide image at 0.7 is hard to tell from one
-// at 0.82, while halving the pixels is visible.
-const QUALITY_STEPS = [0.82, 0.74, 0.66, 0.58];
+// Quality gives way before pixels do: a slide image at 0.7 is hard to
+// tell from one at 0.9, while halving the pixels is visible. So the
+// quality is searched first and the size only if that is not enough.
 const EDGE_STEPS = [1, 0.8, 0.64];
 // WebP is deliberately absent, and not for want of trying: python-pptx
 // refuses it outright -- "unsupported image format, expected one of
@@ -45,20 +43,61 @@ export function safeName(name) {
   return ext ? `${stem || "file"}.${ext}` : stem || "file";
 }
 
-function readAsImage(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error(`${file.name} could not be read as an image`));
-    };
-    img.src = url;
-  });
+/**
+ * Decode to a bitmap.
+ *
+ * createImageBitmap rather than `new Image()`: it decodes off the main
+ * thread, and `imageOrientation: "from-image"` applies the EXIF rotation
+ * so a photograph taken sideways on a phone is not committed sideways.
+ * The old path drew the raw pixels and lost the orientation flag with
+ * the rest of the metadata, which turned a correct photo into a wrong
+ * one.
+ */
+async function decode(file) {
+  try {
+    return await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    // Older engines reject the options object rather than ignoring it.
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      throw new Error(`${file.name} could not be read as an image`);
+    }
+  }
+}
+
+/**
+ * Whether the image actually uses transparency.
+ *
+ * The format was decided from the file's MIME type: any PNG was
+ * re-encoded as PNG. PNG has no quality control, so a PNG photograph or
+ * screenshot could only be made smaller by throwing away pixels, and a
+ * large one never reached the cap at all -- it was refused, which is why
+ * uploading a screenshot did nothing.
+ *
+ * Most PNGs have no transparent pixel. Asking the pixels rather than the
+ * container is the difference between a 4 MB refusal and a 180 KB JPEG.
+ */
+function usesAlpha(bitmap) {
+  // A sample is enough: one transparent pixel anywhere means PNG, and a
+  // thumbnail keeps every region of the image at a fraction of the cost.
+  const w = Math.min(160, bitmap.width);
+  const h = Math.max(1, Math.round((w / bitmap.width) * bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  let data;
+  try {
+    data = ctx.getImageData(0, 0, w, h).data;
+  } catch {
+    return true; // tainted canvas: keep transparency rather than lose it
+  }
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 250) return true;
+  }
+  return false;
 }
 
 /**
@@ -70,48 +109,78 @@ function readAsImage(file) {
  * a file that "looks small enough".
  */
 export async function prepareImage(file) {
-  const img = await readAsImage(file);
-  const edge = Math.max(img.naturalWidth, img.naturalHeight);
+  const bitmap = await decode(file);
+  const edge = Math.max(bitmap.width, bitmap.height);
   const base = edge > TARGET_EDGE ? TARGET_EDGE / edge : 1;
 
-  // PNG keeps transparency; anything else is a photo and takes JPEG.
-  const alpha = /png|gif|webp/i.test(file.type);
+  // The pixels decide, not the container.
+  const alpha = usesAlpha(bitmap);
   const mime = alpha ? "image/png" : "image/jpeg";
 
   const encode = (scale, quality) => {
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     const ctx = canvas.getContext("2d");
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    // Smooth downscaling: the default is fine for small steps and visibly
+    // aliased for the large ones a 4000px photograph needs.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     return new Promise((resolve) =>
       canvas.toBlob(resolve, mime, alpha ? undefined : quality)
     );
   };
 
-  // Under the cap, or as close as the steps get. Without this an upload
-  // could commit a file the build then refuses -- which is a failure
-  // after the fact, and the worst moment to discover a size limit.
   let blob = null;
   let last = null;
-  for (const shrink of EDGE_STEPS) {
-    for (const quality of alpha ? [undefined] : QUALITY_STEPS) {
-      last = await encode(base * shrink, quality ?? JPEG_QUALITY);
-      if (!last) continue;
-      if (last.size <= MAX_BYTES) {
+
+  if (!alpha) {
+    // Binary search the quality rather than walking fixed steps: it
+    // reaches a better answer in about six encodes instead of sixteen,
+    // and sixteen re-encodes of a 4000px photograph is a frozen tab.
+    let lo = 0.4;
+    let hi = 0.92;
+    for (let i = 0; i < 6; i += 1) {
+      const mid = (lo + hi) / 2;
+      const candidate = await encode(base, mid);
+      if (!candidate) break;
+      last = candidate;
+      if (candidate.size <= MAX_BYTES) {
+        blob = candidate; // good enough, and try for better
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    // Still over at the lowest quality worth using: fewer pixels then.
+    for (const shrink of EDGE_STEPS.slice(1)) {
+      if (blob) break;
+      last = await encode(base * shrink, lo);
+      if (last && last.size <= MAX_BYTES) blob = last;
+    }
+  } else {
+    // PNG has no quality knob, so size is the only lever.
+    for (const shrink of EDGE_STEPS) {
+      last = await encode(base * shrink);
+      if (last && last.size <= MAX_BYTES) {
         blob = last;
         break;
       }
     }
-    if (blob) break;
   }
+
   blob = blob ?? last;
+  bitmap.close?.();
   if (!blob) throw new Error(`${file.name} could not be re-encoded`);
   if (blob.size > MAX_BYTES) {
     throw new Error(
       `${file.name} is still ${Math.round(blob.size / 1024)} KB after ` +
         `compression, over the ${MAX_BYTES / 1000} KB the build allows. ` +
-        "Crop it, or simplify it, and try again."
+        (alpha
+          ? "It has transparent areas, so it has to stay a PNG. Flatten it " +
+            "onto a background and it will compress as a photograph."
+          : "Crop it, or simplify it, and try again.")
     );
   }
 

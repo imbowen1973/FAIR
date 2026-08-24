@@ -17,7 +17,12 @@ import sys
 from pathlib import Path
 
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".wmv", ".flv"}
-IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif"}
+# Not an oversight. python-pptx refuses WebP outright -- "unsupported
+# image format, expected one of BMP, GIF, JPEG, PNG, TIFF, WMF" -- so a
+# .webp on a slide fails at render, long after it was committed. The
+# policy has to refuse it here, where the message can say why.
+REFUSED_IMAGE_EXTS = {".webp": "the deck renderer cannot read WebP", ".tif": "", ".tiff": ""}
 MAX_IMAGE_BYTES = 500_000
 MAX_IMAGE_EDGE = 2200
 
@@ -29,7 +34,13 @@ def check_assets(root: Path) -> list[str]:
             continue
         ext = path.suffix.lower()
         rel = path.relative_to(root)
-        if ext in VIDEO_EXTS:
+        if ext in REFUSED_IMAGE_EXTS:
+            why = REFUSED_IMAGE_EXTS[ext] or "the deck renderer cannot read it"
+            errors.append(
+                f"{rel}: {why} — save it as PNG (if it needs transparency) "
+                "or JPEG and reference that instead"
+            )
+        elif ext in VIDEO_EXTS:
             errors.append(
                 f"{rel}: video files are not allowed in the repo — host it "
                 f"(YouTube etc.) and reference it with a {{type: video, url: ...}} region"

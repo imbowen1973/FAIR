@@ -215,6 +215,38 @@ await page.selectOption("#meta select.dok", "3");
 await page.waitForTimeout(400);
 const afterDok = await slideNow();
 
+// ---- the session's own facts, which nothing could edit ----------------
+//
+// The subtitle on a title slide is `code · N minutes` from block.yaml,
+// and the canvas marks it derived so it cannot be typed over. With no
+// editor for block.yaml either, it was text on a slide that no part of
+// the tool could change.
+const outcomesTab = page.locator(".tabstrip .tab", { hasText: "Outcomes" }).first();
+await outcomesTab.click();
+await page.waitForTimeout(700);
+await page.fill("#session-title", "Renamed session");
+await page.fill("#session-code", "V130");
+await page.fill("#session-duration_minutes", "75");
+await page.waitForTimeout(500);
+
+// Back to the deck: the title slide must follow, and the fields must
+// have kept each other rather than overwriting.
+await page.locator(".tabstrip .tab", { hasText: "Slides" }).first().click();
+await page.waitForTimeout(700);
+const titleSlide = await page.evaluate(() => ({
+  thumb: document.querySelector(".slide-row .thumb")?.textContent?.trim() ?? "",
+}));
+await outcomesTab.click();
+await page.waitForTimeout(600);
+const session = await page.evaluate(() => ({
+  title: document.getElementById("session-title")?.value ?? "",
+  code: document.getElementById("session-code")?.value ?? "",
+  minutes: document.getElementById("session-duration_minutes")?.value ?? "",
+}));
+await page.locator(".tabstrip .tab", { hasText: "Slides" }).first().click();
+await page.waitForTimeout(600);
+console.log("session details kept:", JSON.stringify(session));
+
 // ---- the course editor, which had the same defect ---------------------
 //
 // Module name and description both write on every keystroke and neither
@@ -276,6 +308,10 @@ const failed =
   afterDok.dok !== "3" ||
   !titleKept(afterDok) ||
   !afterDok.notes?.includes("Ask the room") ||
+  // Every session field must survive the ones typed after it.
+  session.title !== "Renamed session" ||
+  session.code !== "V130" ||
+  session.minutes !== "75" ||
   // The course editor: the first field must survive the second.
   (courseFields.inputs >= 2 &&
     (course.title !== "A module name" ||

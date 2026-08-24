@@ -1199,13 +1199,25 @@ function blockMeta() {
   return { path, data: parseYaml(text) || {} };
 }
 
-/** Write block.yaml back after changing its resources. */
-function setBlockResources(resources) {
+/**
+ * Write block.yaml back.
+ *
+ * Takes a patch and merges it into the file as it stands -- `undefined`
+ * removes a key -- so two fields edited in a row cannot overwrite each
+ * other.
+ */
+function setBlockMeta(patch) {
   const { path, data } = blockMeta();
-  const next = { ...data, resources };
+  const next = patched(data, patch);
   state.edits.set(path, stringifyYaml(next));
   // The library's own copy of the meta, so tabs redraw from it at once.
   currentBlock().meta = next;
+  updateActions();
+  return next;
+}
+
+function setBlockResources(resources) {
+  return setBlockMeta({ resources });
 }
 
 /** Add a document of `kind` to this block, file and manifest together. */
@@ -2194,11 +2206,87 @@ function renderQuestionList() {
  * author edits them where they belong while the ids stay unique across
  * the course.
  */
+/**
+ * The session's own facts: what it is called, its code, how long it runs.
+ *
+ * These fill the title slide, and until now nothing could change them.
+ * The subtitle on a `role: title` slide is `code · N minutes` taken from
+ * block.yaml, and the canvas marks it derived so it cannot be typed over
+ * -- correctly, or it would drift from the session it describes. But
+ * with no editor for block.yaml either, it was simply unreachable: text
+ * on a slide that no part of the tool could change.
+ */
+function sessionDetails(host) {
+  const meta = currentBlock()?.meta ?? {};
+  const wrap = document.createElement("div");
+  wrap.className = "session-details";
+
+  const heading = document.createElement("h3");
+  heading.className = "outcome-group";
+  heading.textContent = "This session";
+  wrap.appendChild(heading);
+
+  wrap.appendChild(
+    Object.assign(document.createElement("p"), {
+      className: "hint",
+      textContent:
+        "The title slide is filled from these, which is why it cannot be " +
+        "typed over on the canvas — change them here and every deck that " +
+        "opens on this session follows.",
+    })
+  );
+
+  const row = document.createElement("div");
+  row.className = "meta-row";
+
+  const add = (key, label, hint, { type = "text", min } = {}) => {
+    const field = document.createElement("div");
+    field.className = `meta-field${key === "title" ? " grow" : ""}`;
+    const id = `session-${key}`;
+    const tag = document.createElement("label");
+    tag.htmlFor = id;
+    tag.textContent = label;
+    const input = document.createElement("input");
+    input.id = id;
+    input.className = "text";
+    input.type = type;
+    if (min !== undefined) input.min = String(min);
+    input.value = meta[key] ?? "";
+    input.placeholder = hint;
+    input.addEventListener("input", () => {
+      const raw = input.value.trim();
+      const value =
+        raw === "" ? undefined : type === "number" ? Number(raw) : raw;
+      setBlockMeta({ [key]: value });
+      // The title slide and the rail caption both read this.
+      renderOutline();
+      renderTabs();
+    });
+    field.append(tag, input);
+    row.appendChild(field);
+  };
+
+  add("title", "Session title", "What this session is called");
+  add("code", "Code", "V130, optional");
+  add("duration_minutes", "Minutes", "45", { type: "number", min: 1 });
+
+  wrap.appendChild(row);
+  host.appendChild(wrap);
+  host.appendChild(document.createElement("hr"));
+}
+
 function renderSessionOutcomes(host) {
   const block = currentBlock();
+  // Two panels, because sessionOutcomes clears the host it is given and
+  // would take the details with it.
+  const details = document.createElement("div");
+  const panel = document.createElement("div");
+  host.append(details, panel);
+  sessionDetails(details);
+
   const draw = () => {
     const owned = new Set(blockOutcomes(block.id));
-    sessionOutcomes(host, {
+    sessionOutcomes(panel, {
       outcomes: outcomeList(catalogueDoc()).filter((o) => owned.has(o.id)),
       competencies: state.library.competencies,
       coverage: outcomeCoverage(),

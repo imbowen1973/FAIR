@@ -379,6 +379,12 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
 #new-library .field input { width: 100%; box-sizing: border-box; }
 #setup-offer { margin-top: 10px; }
 
+/* The session's own facts, above its outcomes. */
+.session-details { margin-bottom: 4px; }
+.session-details .meta-row { align-items: flex-end; }
+.session-details input.text { width: 100%; box-sizing: border-box; }
+.session-details .meta-field { min-width: 120px; }
+
 /* Icons sit on the text line and follow the theme through currentColor. */
 .icon { flex: none; vertical-align: -2px; }
 button.with-icon {
