@@ -2644,6 +2644,20 @@ let setupTarget = null;
 
 /** Offer to fill a repo that turned out not to be a library. */
 function offerSetup(owner, repo, fileCount) {
+  // Offering to fill a repository this token cannot push to would fail
+  // on the first write, after the seed had been fetched and the author
+  // had filled in a form. Say it now instead.
+  if (!state.canWrite) {
+    setupTarget = null;
+    $("setup-offer").hidden = true;
+    status(
+      `${owner}/${repo} is not a library, and this token cannot push to it. ` +
+        "Give the token Contents: read and write for this repository — and if " +
+        `${owner} is an organisation, have it approve the token.`,
+      "error"
+    );
+    return;
+  }
   setupTarget = { owner, repo };
   status(
     fileCount === 0

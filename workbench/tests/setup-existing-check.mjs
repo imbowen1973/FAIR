@@ -4,10 +4,18 @@
 // look for somewhere to fill it. That arrives in one of two states and
 // both are ordinary:
 //
-//   no commits at all  — no ref, no tree. GitHub answers 404 for the
-//                        branch and 409 for the tree, and the first
-//                        commit has no parent and no base tree.
+//   no commits at all  — the Git Data API refuses the repository
+//                        outright: POST /git/blobs answers 409 "Git
+//                        Repository is empty". It has to be bootstrapped
+//                        through PUT /contents/<path>, which creates the
+//                        first commit and the branch, and only then can
+//                        the rest be written normally.
 //   a README           — a normal repo that simply is not a library.
+//
+// The first of those reached a user as a raw 409 because this mock was
+// written to what I believed rather than to what GitHub does: it handed
+// out blob shas for a repository with no commits. A mock that agrees
+// with the code it is checking proves nothing.
 //
 // Neither may lose what is already there, and neither may be told to go
 // and read the format documentation.
@@ -25,7 +33,7 @@ const BASE = process.env.WB || "http://localhost:8898/workbench/";
  * `existing` is a map of path -> content already in the repo; an empty
  * map means a repo with no commits.
  */
-async function run(browser, label, existing) {
+async function run(browser, label, existing, canPush = true) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e.message)));
@@ -42,7 +50,9 @@ async function run(browser, label, existing) {
   });
 
   const empty = existing.size === 0;
-  const calls = { blobs: [], trees: [], commits: [], refPost: [], refPatch: [] };
+  const calls = {
+    blobs: [], trees: [], commits: [], refPost: [], refPatch: [], contentsPut: [],
+  };
   // What the repo holds: what it started with, plus whatever is committed.
   const contents = new Map(existing);
 
@@ -63,17 +73,17 @@ async function run(browser, label, existing) {
     if (url.endsWith("/user") && method === "GET") return json({ login: "tester" });
     if (url.includes("/user/repos")) return json([]);
     if (/\/repos\/tester\/[^/]+$/.test(url) && method === "GET") {
-      return json({ default_branch: "main", permissions: { push: true } });
+      return json({ default_branch: "main", permissions: { push: canPush } });
     }
 
     // An empty repository: no ref, and the tree is a 409.
     if (url.includes("/git/ref/heads/")) {
-      return calls.commits.length || !empty
+      return calls.contentsPut.length || !empty
         ? json({ object: { sha: "parent1" } })
         : json({ message: "Not Found" }, 404);
     }
     if (url.includes("/git/trees/")) {
-      if (empty && !calls.commits.length) {
+      if (empty && !calls.contentsPut.length) {
         return json({ message: "Git Repository is empty." }, 409);
       }
       return json({
@@ -82,9 +92,24 @@ async function run(browser, label, existing) {
       });
     }
 
+    // What GitHub really does, and what this mock used to get wrong:
+    // the Git Data API refuses everything until a repository has one
+    // commit. Believing otherwise is how "Git Repository is empty" first
+    // reached a user instead of this check.
+    const noCommitsYet = empty && !calls.contentsPut.length;
     if (url.includes("/git/blobs") && method === "POST") {
+      if (noCommitsYet) return json({ message: "Git Repository is empty." }, 409);
       calls.blobs.push(body());
       return json({ sha: `blob${calls.blobs.length}` });
+    }
+    // The one call that works on an empty repository: it creates the
+    // blob, the tree, the commit and the branch together.
+    if (url.includes("/contents/") && method === "PUT") {
+      const put = body();
+      const path = decodeURIComponent(url.split("/contents/")[1].split("?")[0]);
+      calls.contentsPut.push({ path, branch: put.branch });
+      contents.set(path, "(bootstrap)");
+      return json({ commit: { sha: "bootstrap1" } }, 201);
     }
     if (url.includes("/git/trees") && method === "POST") {
       const t = body();
@@ -143,6 +168,14 @@ async function run(browser, label, existing) {
     };
   });
 
+  if (!offer.shown) {
+    // Nothing more to drive: refusing to offer is the whole behaviour
+    // being checked here.
+    const said = await page.textContent("#status");
+    await page.close();
+    return { label, offer: { ...offer, says: said }, refused: true, errors };
+  }
+
   await page.click("#setup-repo");
   await page.waitForTimeout(200);
   const form = await page.evaluate(() => ({
@@ -164,8 +197,9 @@ async function run(browser, label, existing) {
     offer,
     form,
     added,
-    // An empty repo's first commit has no parent, and its branch is
-    // created rather than moved.
+    // An empty repository is bootstrapped through the Contents API,
+    // because the Git Data API refuses it outright.
+    bootstrapped: calls.contentsPut.map((c) => c.path),
     parents: calls.commits[0]?.parents ?? null,
     baseTree: calls.trees[0]?.base_tree ?? null,
     refCreated: calls.refPost.length,
@@ -181,11 +215,18 @@ async function run(browser, label, existing) {
 const browser = await chromium.launch({ channel: "msedge" });
 
 const emptyRepo = await run(browser, "no commits at all", new Map());
+
+// A token that cannot push must be told before a form is filled in, not
+// after the seed has been fetched and the first write has failed.
+const readOnly = await run(browser, "no push rights", new Map(), false);
 const withReadme = await run(
   browser,
   "a README somebody wrote",
   new Map([["README.md", "# Half made\n\nMine, not yours.\n"], [".gitignore", "*.pyc\n"]])
 );
+
+console.log(String.fromCharCode(10) + "--- read-only token ---");
+console.log("offer shown:", readOnly.offer.shown, "| said:", JSON.stringify(readOnly.offer.says));
 
 for (const r of [emptyRepo, withReadme]) {
   console.log(`\n--- ${r.label} ---`);
@@ -194,7 +235,8 @@ for (const r of [emptyRepo, withReadme]) {
   console.log("added:", r.added.length, "files");
   for (const p of r.added) console.log("   ", p);
   console.log(
-    "first commit parents:", JSON.stringify(r.parents),
+    "bootstrapped via contents:", JSON.stringify(r.bootstrapped),
+    "| parents:", JSON.stringify(r.parents),
     "| base_tree:", JSON.stringify(r.baseTree),
     "| ref created:", r.refCreated, "moved:", r.refMoved
   );
@@ -205,6 +247,10 @@ for (const r of [emptyRepo, withReadme]) {
 const failed =
   emptyRepo.errors.length > 0 ||
   withReadme.errors.length > 0 ||
+  readOnly.errors.length > 0 ||
+  // A token that cannot push must be told before any of this starts.
+  !readOnly.refused ||
+  !readOnly.offer.says.includes("cannot push") ||
   // The offer, not an error message.
   !emptyRepo.offer.shown || !emptyRepo.offer.clickable ||
   !withReadme.offer.shown ||
@@ -212,20 +258,24 @@ const failed =
   !emptyRepo.offer.label.includes("tester/half-made") ||
   !emptyRepo.form.repoFieldHidden ||
   !emptyRepo.form.button.includes("tester/half-made") ||
-  // An empty repo: first commit, so no parent and no base tree, and the
-  // branch is created rather than moved.
-  emptyRepo.parents === null || emptyRepo.parents.length !== 0 ||
-  emptyRepo.baseTree !== null ||
-  emptyRepo.refCreated !== 1 || emptyRepo.refMoved !== 0 ||
-  // A repo with a README: normal commit, and the README is left alone.
+  // An empty repo is bootstrapped through the Contents API first --
+  // exactly one file, because more would be one commit each -- and the
+  // rest then goes as an ordinary commit on top of it.
+  emptyRepo.bootstrapped.length !== 1 ||
+  emptyRepo.parents?.length !== 1 ||
+  emptyRepo.baseTree === null ||
+  emptyRepo.refMoved !== 1 ||
+  // A repo that already has a commit needs no bootstrap at all.
+  withReadme.bootstrapped.length !== 0 ||
   withReadme.parents?.length !== 1 ||
   withReadme.baseTree === null ||
   withReadme.refMoved !== 1 ||
   !withReadme.kept ||
   withReadme.added.includes("README.md") ||
   withReadme.added.includes(".gitignore") ||
-  // Both end up as libraries.
-  !emptyRepo.added.includes("README.md") ||
+  // Both end up as libraries. The empty one's README arrives through the
+  // bootstrap rather than the tree, which is the whole point of it.
+  ![...emptyRepo.added, ...emptyRepo.bootstrapped].includes("README.md") ||
   ![emptyRepo, withReadme].every(
     (r) =>
       r.added.includes("course.yaml") &&

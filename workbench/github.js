@@ -21,6 +21,17 @@ export class GitHubError extends Error {
   }
 }
 
+/** Base64 of a string, correct for anything outside ASCII. */
+function utf8ToBase64(text) {
+  const bytes = new TextEncoder().encode(String(text ?? ""));
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 export class GitHub {
   constructor(token) {
     this.token = token;
@@ -197,20 +208,59 @@ export class GitHub {
    * files: [{path, content}] where content is a string, or
    *        [{path, base64}] for binary (images).
    */
+  /**
+   * The one write that works on a repository with no commits.
+   *
+   * PUT /contents/<path> creates the blob, the tree, the commit and the
+   * branch in a single call -- which is exactly what the Git Data API
+   * cannot do until one commit exists.
+   */
+  async createInitialFile(owner, name, branch, file, message) {
+    return this.request(
+      `/repos/${owner}/${name}/contents/${file.path}`,
+      {
+        method: "PUT",
+        body: {
+          message,
+          branch,
+          content: file.base64 !== undefined ? file.base64 : utf8ToBase64(file.content),
+        },
+      }
+    );
+  }
+
   async commit(owner, name, branch, message, files) {
     if (!files.length) throw new GitHubError("nothing to commit", 0, "");
 
-    // A repository with no commits has no ref to build on. Its first
-    // commit has no parent and no base tree, and its branch is created
-    // rather than moved -- GitHub answers 404 for the ref and 409 for
-    // the tree, and both mean the same thing here. Everything else about
-    // writing a commit is identical, so this is a branch in two places
-    // rather than a second code path.
+    // A repository with no commits at all cannot be written through the
+    // Git Data API: POST /git/blobs answers
+    //
+    //   409  Git Repository is empty.
+    //
+    // Blobs, trees and commits all need a repository that already has
+    // one commit. The Contents API does not -- PUT /contents/<path>
+    // creates the initial commit and the branch with it. So an empty
+    // repository is bootstrapped with one small file through that, and
+    // everything after it goes the normal way.
+    //
+    // The cost is two commits rather than one, and it is worth being
+    // clear about what that means: if the second fails, the repository
+    // holds only the bootstrap file, which is the state it started in
+    // and which re-running simply fills.
     let parent = null;
     try {
       parent = await this.headSha(owner, name, branch);
     } catch (err) {
       if (err.status !== 404 && err.status !== 409) throw err;
+    }
+
+    if (parent === null) {
+      const first = files.find((f) => f.content !== undefined) ?? files[0];
+      await this.createInitialFile(owner, name, branch, first, message);
+      const rest = files.filter((f) => f !== first);
+      if (!rest.length) return this.headSha(owner, name, branch);
+      files = rest;
+      parent = await this.headSha(owner, name, branch);
     }
     const base = parent
       ? await this.request(`/repos/${owner}/${name}/git/commits/${parent}`)
