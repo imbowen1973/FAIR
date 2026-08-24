@@ -186,10 +186,31 @@ async function signInWithToken() {
   }
 }
 
+/**
+ * Tell the stylesheet how tall the header is.
+ *
+ * The status bar sticks below it, and a hard-coded offset would be wrong
+ * the moment the header wraps -- which it does on a narrow screen.
+ */
+function measureHeader() {
+  const header = document.querySelector("header");
+  if (!header) return;
+  document.documentElement.style.setProperty(
+    "--header-h",
+    `${Math.round(header.getBoundingClientRect().height)}px`
+  );
+}
+measureHeader();
+addEventListener("resize", measureHeader);
+
 async function afterSignIn(token, login) {
   state.gh = new GitHub(token);
   state.login = login;
   $("who").textContent = login;
+  // The button has existed since the beginning and nothing ever showed
+  // it, so there was no way out of a session but to clear site data.
+  $("signout").hidden = false;
+  measureHeader();
   $("signed-out").hidden = true;
   $("signed-in").hidden = false;
   status("");
@@ -2548,10 +2569,32 @@ $("pat-signin").addEventListener("click", signInWithToken);
 $("pat").addEventListener("keydown", (e) => {
   if (e.key === "Enter") signInWithToken();
 });
-$("signout").addEventListener("click", () => {
+/**
+ * Forget the token and ask for another.
+ *
+ * Everything the workbench holds is either in the repository or on its
+ * way there, except unsaved edits -- which live only in this tab and go
+ * with it. Signing out is the one action here that can lose work without
+ * touching a file, so it asks first.
+ *
+ * The reload is the point rather than laziness: it drops the in-memory
+ * GitHub client, the working copies, the pending uploads and the undo
+ * history in one go. Unpicking those by hand is how a signed-out tab
+ * ends up still holding the last user's draft.
+ */
+function signOutNow() {
+  if (
+    dirty() &&
+    !confirm(
+      "You have unsaved changes, and they are only in this tab. " +
+        "Sign out and lose them?"
+    )
+  ) return;
   signOut();
   location.reload();
-});
+}
+
+$("signout").addEventListener("click", signOutNow);
 $("open").addEventListener("click", () => openRepo($("repo").value));
 $("repo-switch").addEventListener("change", (e) => {
   if (dirty() && !confirm("You have unsaved changes. Switch library anyway?")) {

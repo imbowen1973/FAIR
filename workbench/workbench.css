@@ -49,9 +49,15 @@ body { margin: 0; background: var(--bg); color: var(--fg); }
   border-radius: 3px;
 }
 
+/* Sticky, because who you are signed in as and the way out of it must
+   not scroll away. revealEditor() scrolls the page on its own, so the
+   sign-out button spent most of a session above the viewport -- present,
+   visible by every DOM measure, and off the top of the screen. */
 header {
+  position: sticky; top: 0; z-index: 6;
   display: flex; align-items: center; gap: 12px;
   padding: 12px 18px; border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 .brand { width: 34px; height: 34px; }
 .titles h1 { margin: 0; font-size: 17px; }
@@ -86,9 +92,11 @@ button.link {
 button.link.danger { color: var(--danger); }
 
 /* Sticky: a render takes tens of seconds, and progress that scrolled out
-   of view was indistinguishable from the app having died. */
+   of view was indistinguishable from the app having died. Below the
+   header, which is sticky too, or the two would sit on top of each
+   other. */
 .status {
-  position: sticky; top: 0; z-index: 5;
+  position: sticky; top: var(--header-h, 60px); z-index: 5;
   margin: 0; padding: 8px 18px;
   border-bottom: 1px solid var(--border); background: var(--bg-sunken);
 }

@@ -287,6 +287,74 @@ const failed =
   !phonePanel.inFront ||
   !phonePanel.railClosed;
 
-console.log(failed ? "\nFAIL" : "\nPASS");
+// ---- signing out ------------------------------------------------------
+//
+// The button has been in the markup since the beginning and nothing ever
+// unhid it, so the only way out of a session was to clear site data.
+//
+// There are five files of unsaved work at this point, which is exactly
+// the state in which signing out costs something.
+const before = await page.evaluate(() => {
+  const b = document.getElementById("signout");
+  const r = b.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return {
+    visible: !b.hidden && r.width > 0,
+    clickable: hit === b || b.contains(hit),
+    coveredBy: hit ? `${hit.tagName}#${hit.id}.${hit.className}` : "nothing",
+    rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)],
+    who: document.getElementById("who").textContent,
+    token: sessionStorage.getItem("fair.wb.token") || localStorage.getItem("fair.wb.token"),
+  };
+});
+
+// No dialog handler registered: Playwright dismisses, which is Cancel.
+await page.click("#signout");
+await page.waitForTimeout(600);
+const cancelled = await page.evaluate(() => ({
+  // The workspace, not the picker: #signed-in is the library chooser and
+  // is legitimately hidden once a library is open.
+  stillIn: !document.getElementById("workspace").hidden,
+  token: Boolean(
+    sessionStorage.getItem("fair.wb.token") || localStorage.getItem("fair.wb.token")
+  ),
+}));
+
+page.once("dialog", (d) => d.accept());
+await page.click("#signout");
+await page.waitForLoadState("networkidle");
+await page.waitForTimeout(800);
+const after = await page.evaluate(() => ({
+  askedAgain: !document.getElementById("signed-out").hidden,
+  signedInHidden: document.getElementById("signed-in").hidden,
+  workspaceHidden: document.getElementById("workspace").hidden,
+  signoutHidden: document.getElementById("signout").hidden,
+  token: Boolean(
+    sessionStorage.getItem("fair.wb.token") || localStorage.getItem("fair.wb.token")
+  ),
+  who: document.getElementById("who").textContent,
+}));
+console.log("sign out button:", JSON.stringify(before));
+console.log("cancelled:", JSON.stringify(cancelled));
+console.log("after:", JSON.stringify(after));
+
+const signOutBroken =
+  !before.visible ||
+  !before.clickable ||
+  before.who !== "tester" ||
+  !before.token ||
+  // Cancel must keep both the session and the work.
+  !cancelled.stillIn ||
+  !cancelled.token ||
+  // And then it must really go: no token in either store, and the
+  // sign-in panel back rather than an empty workspace.
+  after.token ||
+  !after.askedAgain ||
+  !after.signedInHidden ||
+  !after.workspaceHidden ||
+  !after.signoutHidden ||
+  after.who !== "";
+
+console.log(failed || signOutBroken ? "\nFAIL" : "\nPASS");
 await browser.close();
-process.exit(failed ? 1 : 0);
+process.exit(failed || signOutBroken ? 1 : 0);
