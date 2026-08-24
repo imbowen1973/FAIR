@@ -18,6 +18,7 @@ import { BROKER_URL, CLIENT_ID } from "./config.js";
 import { draftBranch, GitHub, parseRepo } from "./github.js";
 import { decorate } from "./icons.js";
 import { needsAsking, relayoutPanel } from "./relayout.js";
+import { provisionLibrary, repoNameFrom } from "./provision.js";
 import {
   canRedo,
   canUndo,
@@ -2586,6 +2587,60 @@ document.addEventListener("keydown", (e) => {
   if (e.shiftKey) redo();
   else undo();
 });
+
+// ---- starting a library ------------------------------------------------
+//
+// Everything else here opens a repo that already exists. This makes one.
+
+const newTitle = $("new-title");
+const newRepo = $("new-repo");
+const newBlock = $("new-block");
+
+if (newTitle && newRepo) {
+  // The repository is named after the module until the author says
+  // otherwise -- and once they have, it stops following.
+  let repoEdited = false;
+  newRepo.addEventListener("input", () => {
+    repoEdited = newRepo.value.trim() !== "";
+  });
+  newTitle.addEventListener("input", () => {
+    if (!repoEdited) newRepo.value = repoNameFrom(newTitle.value);
+  });
+}
+
+$("create-library")?.addEventListener("click", () =>
+  busy("create-library", "Creating", async (say) => {
+    const title = newTitle.value.trim();
+    const name = (newRepo.value.trim() || repoNameFrom(title));
+    const blockTitle = newBlock.value.trim() || "Session one";
+    if (!title) {
+      status("Give the module a name.", "error");
+      return;
+    }
+    try {
+      const made = await provisionLibrary(state.gh, {
+        login: state.login,
+        name,
+        title,
+        description: "",
+        blockTitle,
+        isPrivate: $("new-private").checked,
+        status: say,
+      });
+      status(
+        `Created ${made.owner}/${made.repo} with ${made.files.length} files. Opening it…`,
+        "ok"
+      );
+      // Straight in, rather than telling somebody to go and open the
+      // thing that was just made for them.
+      await openRepo(`${made.owner}/${made.repo}`);
+      state.blockId = made.blockId;
+      $("new-library").open = false;
+    } catch (err) {
+      status(err.message, "error");
+    }
+  })
+);
 
 $("open-manual").addEventListener("click", () => openRepo($("manual-repo").value));
 $("validate").addEventListener("click", runValidate);

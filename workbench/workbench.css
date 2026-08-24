@@ -358,6 +358,18 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
 .relayout-from { font-size: 12px; }
 .relayout-arrow { color: var(--muted); }
 
+/* Starting a library. Folded away, because most visits are to continue
+   work rather than to begin it — but present, because before this there
+   was no way in at all. */
+#new-library {
+  margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px;
+}
+#new-library summary {
+  cursor: pointer; font-weight: 600; font-size: 13px; color: var(--accent);
+}
+#new-library[open] summary { margin-bottom: 8px; }
+#new-library .field input { width: 100%; box-sizing: border-box; }
+
 /* Icons sit on the text line and follow the theme through currentColor. */
 .icon { flex: none; vertical-align: -2px; }
 button.with-icon {

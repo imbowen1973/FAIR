@@ -45,8 +45,14 @@ Rendered files are **derived artifacts**. The commit is the fact.
 
 **<https://imbowen1973.github.io/FAIR/workbench/>**
 
-Nothing to install. Sign in with a GitHub token, open a library repo,
-and edit it: slides on a WYSIWYG canvas at the template's own geometry,
+Nothing to install. Sign in with a GitHub token and either open a
+library repo or **start one** — *Start a new library* creates the
+repository under your account and fills it with a working course: a
+template, a competency framework, and a first session with its outcomes
+and lesson plan. It builds and renders from the moment it exists, so
+there is no blank-repo stage to get wrong.
+
+Then edit it: slides on a WYSIWYG canvas at the template's own geometry,
 lesson plans and workbooks as documents, assessments as a question form.
 Save to a branch, submit a pull request. Review and merge happen on
 GitHub, where they belong.

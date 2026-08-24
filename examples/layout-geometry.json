@@ -1,0 +1,667 @@
+{
+  "slide": {
+    "widthEmu": 9144000,
+    "heightEmu": 6858000,
+    "aspect": 1.33333,
+    "widthPt": 720.0
+  },
+  "theme": {
+    "dk1": "#000000",
+    "lt1": "#FFFFFF",
+    "dk2": "#1F497D",
+    "lt2": "#EEECE1",
+    "accent1": "#4F81BD",
+    "accent2": "#C0504D",
+    "accent3": "#9BBB59",
+    "accent4": "#8064A2",
+    "accent5": "#4BACC6",
+    "accent6": "#F79646",
+    "hlink": "#0000FF",
+    "folHlink": "#800080",
+    "bg1": "#FFFFFF",
+    "tx1": "#000000",
+    "bg2": "#EEECE1",
+    "tx2": "#1F497D"
+  },
+  "layouts": {
+    "Title": {
+      "layoutName": "Title",
+      "regions": {
+        "title": {
+          "idx": 0,
+          "x": 0.075,
+          "y": 0.31065,
+          "w": 0.85,
+          "h": 0.21435,
+          "type": "center_title",
+          "style": {
+            "align": "ctr",
+            "sizePt": 44.0
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "subtitle": {
+          "idx": 1,
+          "x": 0.15,
+          "y": 0.56667,
+          "w": 0.7,
+          "h": 0.25556,
+          "type": "subtitle",
+          "style": {
+            "align": "ctr",
+            "sizePt": 32.0,
+            "colorSlot": "tx1",
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        }
+      }
+    },
+    "Full": {
+      "layoutName": "Full",
+      "regions": {
+        "title": {
+          "idx": 0,
+          "x": 0.05,
+          "y": 0.04005,
+          "w": 0.9,
+          "h": 0.16667,
+          "type": "title",
+          "style": {
+            "align": "ctr",
+            "sizePt": 44.0
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "full": {
+          "idx": 1,
+          "x": 0.05,
+          "y": 0.23333,
+          "w": 0.9,
+          "h": 0.65995,
+          "type": "object",
+          "style": {
+            "align": "l",
+            "sizePt": 32.0
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        }
+      }
+    },
+    "Section": {
+      "layoutName": "Section",
+      "regions": {
+        "title": {
+          "idx": 0,
+          "x": 0.07899,
+          "y": 0.64259,
+          "w": 0.85,
+          "h": 0.19861,
+          "type": "title",
+          "style": {
+            "align": "l",
+            "sizePt": 40.0,
+            "bold": true,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "subtitle": {
+          "idx": 1,
+          "x": 0.07899,
+          "y": 0.42384,
+          "w": 0.85,
+          "h": 0.21875,
+          "type": "body",
+          "style": {
+            "align": "l",
+            "sizePt": 20.0,
+            "colorSlot": "tx1",
+            "sizePt2": 18.0,
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        }
+      }
+    },
+    "Split": {
+      "layoutName": "Split",
+      "regions": {
+        "title": {
+          "idx": 0,
+          "x": 0.05,
+          "y": 0.04005,
+          "w": 0.9,
+          "h": 0.16667,
+          "type": "title",
+          "style": {
+            "align": "ctr",
+            "sizePt": 44.0
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "left": {
+          "idx": 1,
+          "x": 0.05,
+          "y": 0.23333,
+          "w": 0.44167,
+          "h": 0.65995,
+          "type": "object",
+          "style": {
+            "align": "l",
+            "sizePt": 28.0,
+            "sizePt2": 24.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "right": {
+          "idx": 2,
+          "x": 0.50833,
+          "y": 0.23333,
+          "w": 0.44167,
+          "h": 0.65995,
+          "type": "object",
+          "style": {
+            "align": "l",
+            "sizePt": 28.0,
+            "sizePt2": 24.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        }
+      }
+    },
+    "Comparison": {
+      "layoutName": "Comparison",
+      "regions": {
+        "title": {
+          "idx": 0,
+          "x": 0.05,
+          "y": 0.04005,
+          "w": 0.9,
+          "h": 0.16667,
+          "type": "title",
+          "style": {
+            "align": "ctr",
+            "sizePt": 44.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "left_head": {
+          "idx": 1,
+          "x": 0.05,
+          "y": 0.22384,
+          "w": 0.44184,
+          "h": 0.09329,
+          "type": "body",
+          "style": {
+            "align": "l",
+            "sizePt": 24.0,
+            "bold": true,
+            "sizePt2": 20.0,
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "left": {
+          "idx": 2,
+          "x": 0.05,
+          "y": 0.31713,
+          "w": 0.44184,
+          "h": 0.57616,
+          "type": "object",
+          "style": {
+            "align": "l",
+            "sizePt": 24.0,
+            "sizePt2": 20.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "right_head": {
+          "idx": 3,
+          "x": 0.50799,
+          "y": 0.22384,
+          "w": 0.44201,
+          "h": 0.09329,
+          "type": "body",
+          "style": {
+            "align": "l",
+            "sizePt": 24.0,
+            "bold": true,
+            "sizePt2": 20.0,
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "right": {
+          "idx": 4,
+          "x": 0.50799,
+          "y": 0.31713,
+          "w": 0.44201,
+          "h": 0.57616,
+          "type": "object",
+          "style": {
+            "align": "l",
+            "sizePt": 24.0,
+            "sizePt2": 20.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        }
+      }
+    },
+    "Caption": {
+      "layoutName": "Caption",
+      "regions": {
+        "title": {
+          "idx": 0,
+          "x": 0.05,
+          "y": 0.03981,
+          "w": 0.32899,
+          "h": 0.16944,
+          "type": "title",
+          "style": {
+            "align": "l",
+            "sizePt": 20.0,
+            "bold": true,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "content": {
+          "idx": 1,
+          "x": 0.39097,
+          "y": 0.03981,
+          "w": 0.55903,
+          "h": 0.85347,
+          "type": "object",
+          "style": {
+            "align": "l",
+            "sizePt": 32.0,
+            "sizePt2": 28.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "caption": {
+          "idx": 2,
+          "x": 0.05,
+          "y": 0.20926,
+          "w": 0.32899,
+          "h": 0.68403,
+          "type": "body",
+          "style": {
+            "align": "l",
+            "sizePt": 14.0,
+            "sizePt2": 12.0,
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        }
+      }
+    },
+    "Picture": {
+      "layoutName": "Picture",
+      "regions": {
+        "title": {
+          "idx": 0,
+          "x": 0.19601,
+          "y": 0.7,
+          "w": 0.6,
+          "h": 0.08264,
+          "type": "title",
+          "style": {
+            "align": "l",
+            "sizePt": 20.0,
+            "bold": true,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "picture": {
+          "idx": 1,
+          "x": 0.19601,
+          "y": 0.08935,
+          "w": 0.6,
+          "h": 0.6,
+          "type": "picture",
+          "style": {
+            "align": "l",
+            "sizePt": 32.0,
+            "sizePt2": 28.0,
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "caption": {
+          "idx": 2,
+          "x": 0.19601,
+          "y": 0.78264,
+          "w": 0.6,
+          "h": 0.11736,
+          "type": "body",
+          "style": {
+            "align": "l",
+            "sizePt": 14.0,
+            "sizePt2": 12.0,
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        }
+      }
+    },
+    "TitleOnly": {
+      "layoutName": "TitleOnly",
+      "regions": {
+        "title": {
+          "idx": 0,
+          "x": 0.05,
+          "y": 0.04005,
+          "w": 0.9,
+          "h": 0.16667,
+          "type": "title",
+          "style": {
+            "align": "ctr",
+            "sizePt": 44.0
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        }
+      }
+    },
+    "Cards": {
+      "layoutName": "Cards",
+      "regions": {
+        "title": {
+          "idx": 0,
+          "x": 0.05,
+          "y": 0.04005,
+          "w": 0.9,
+          "h": 0.16667,
+          "type": "title",
+          "style": {
+            "align": "ctr",
+            "sizePt": 44.0
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.00667,
+            "b": 0.00667
+          }
+        },
+        "head1": {
+          "idx": 1,
+          "x": 0.033,
+          "y": 0.24,
+          "w": 0.22075,
+          "h": 0.07333,
+          "type": "body",
+          "style": {
+            "align": "ctr",
+            "sizePt": 15.0,
+            "bold": true,
+            "colorSlot": "lt1",
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.0,
+            "b": 0.0
+          }
+        },
+        "card1": {
+          "idx": 5,
+          "x": 0.033,
+          "y": 0.31333,
+          "w": 0.22075,
+          "h": 0.63333,
+          "type": "body",
+          "style": {
+            "align": "l",
+            "sizePt": 13.0,
+            "sizePt2": 11.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.012,
+            "b": 0.012
+          }
+        },
+        "head2": {
+          "idx": 2,
+          "x": 0.27075,
+          "y": 0.24,
+          "w": 0.22075,
+          "h": 0.07333,
+          "type": "body",
+          "style": {
+            "align": "ctr",
+            "sizePt": 15.0,
+            "bold": true,
+            "colorSlot": "lt1",
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.0,
+            "b": 0.0
+          }
+        },
+        "card2": {
+          "idx": 6,
+          "x": 0.27075,
+          "y": 0.31333,
+          "w": 0.22075,
+          "h": 0.63333,
+          "type": "body",
+          "style": {
+            "align": "l",
+            "sizePt": 13.0,
+            "sizePt2": 11.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.012,
+            "b": 0.012
+          }
+        },
+        "head3": {
+          "idx": 3,
+          "x": 0.5085,
+          "y": 0.24,
+          "w": 0.22075,
+          "h": 0.07333,
+          "type": "body",
+          "style": {
+            "align": "ctr",
+            "sizePt": 15.0,
+            "bold": true,
+            "colorSlot": "lt1",
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.0,
+            "b": 0.0
+          }
+        },
+        "card3": {
+          "idx": 7,
+          "x": 0.5085,
+          "y": 0.31333,
+          "w": 0.22075,
+          "h": 0.63333,
+          "type": "body",
+          "style": {
+            "align": "l",
+            "sizePt": 13.0,
+            "sizePt2": 11.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.012,
+            "b": 0.012
+          }
+        },
+        "head4": {
+          "idx": 4,
+          "x": 0.74625,
+          "y": 0.24,
+          "w": 0.22075,
+          "h": 0.07333,
+          "type": "body",
+          "style": {
+            "align": "ctr",
+            "sizePt": 15.0,
+            "bold": true,
+            "colorSlot": "lt1",
+            "bulleted": false
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.0,
+            "b": 0.0
+          }
+        },
+        "card4": {
+          "idx": 8,
+          "x": 0.74625,
+          "y": 0.31333,
+          "w": 0.22075,
+          "h": 0.63333,
+          "type": "body",
+          "style": {
+            "align": "l",
+            "sizePt": 13.0,
+            "sizePt2": 11.0,
+            "bulleted": true
+          },
+          "inset": {
+            "l": 0.01,
+            "r": 0.01,
+            "t": 0.012,
+            "b": 0.012
+          }
+        }
+      }
+    }
+  }
+}

@@ -217,6 +217,41 @@ export class GitHub {
     return created.sha;
   }
 
+  // ---- provisioning ---------------------------------------------------
+
+  /**
+   * Create a repository under the signed-in account.
+   *
+   * `auto_init` is not optional in practice: a repository with no commit
+   * has no default branch, and every write path here -- headSha, trees,
+   * refs -- needs one to exist. Without it the first commit has to go
+   * through a different API and the seeding code forks in two.
+   */
+  async createRepo({ name, description = "", private: isPrivate = true }) {
+    return this.request("/user/repos", {
+      method: "POST",
+      body: {
+        name,
+        description,
+        private: isPrivate,
+        auto_init: true,
+        has_issues: true,
+        has_wiki: false,
+      },
+    });
+  }
+
+  /** Whether a name is already taken under this owner. */
+  async repoExists(owner, name) {
+    try {
+      await this.request(`/repos/${owner}/${name}`);
+      return true;
+    } catch (err) {
+      if (err.status === 404) return false;
+      throw err;
+    }
+  }
+
   // ---- pull requests --------------------------------------------------
 
   async openPull(owner, name, { head, base, title, body }) {

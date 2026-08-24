@@ -64,6 +64,40 @@
       <input id="manual-repo" placeholder="owner/repo"/>
       <button id="open-manual">Open by name</button>
     </div>
+
+    <!-- Starting is not the same as continuing. Without this the first
+         library anyone makes has to be assembled by hand from the format
+         docs, which is a poor introduction to a tool whose whole claim is
+         that content lives in git without ceremony. -->
+    <details id="new-library">
+      <summary>Start a new library</summary>
+      <p class="hint">
+        Creates a GitHub repository under your account and fills it with a
+        working course: a template, a competency framework, and a first
+        session with its outcomes and lesson plan. It builds and renders
+        from the moment it exists.
+      </p>
+      <div class="field">
+        <label for="new-title">Module name</label>
+        <input id="new-title" placeholder="Big data in veterinary practice"/>
+      </div>
+      <div class="field">
+        <label for="new-repo">Repository</label>
+        <input id="new-repo" placeholder="big-data-in-veterinary-practice" spellcheck="false"/>
+        <p class="hint" id="new-repo-hint">Named after the module unless you change it.</p>
+      </div>
+      <div class="field">
+        <label for="new-block">First session</label>
+        <input id="new-block" placeholder="Ways big data is misused"/>
+      </div>
+      <label class="check" for="new-private">
+        <input id="new-private" type="checkbox" checked/>
+        <span>Private repository</span>
+      </label>
+      <div class="row">
+        <button id="create-library" class="primary">Create it</button>
+      </div>
+    </details>
   </section>
 
   <!-- The workbench ------------------------------------------------- -->

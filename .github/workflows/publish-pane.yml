@@ -42,6 +42,11 @@ jobs:
           cp renderer/src/edufair_renderer/word/*.py _site/py/edufair_renderer/word/
           # The landing page offers these for download; they live a level up.
           cp assembler/manifest.web.xml assembler/manifest.word.xml _site/
+          # What a brand-new library is seeded from. Served from our own
+          # origin rather than fetched out of git, so provisioning does not
+          # depend on this repository's name or stay working by luck.
+          mkdir -p _site/seed
+          cp examples/template.pptx examples/layout-map.yaml              examples/layout-geometry.json examples/attribution.yaml _site/seed/
           # The workbench is the authoring SPA; same static hosting, same
           # /py/ modules, so it ships alongside the pane.
           mkdir -p _site/workbench
@@ -97,7 +102,7 @@ jobs:
           done
           # The Word pane renders through these; without them it loads and
           # then fails at the point of use, which is the worst place.
-          for f in py/edufair_renderer/word/render.py py/edufair_renderer/word/blocks.py; do
+          for f in py/edufair_renderer/word/render.py py/edufair_renderer/word/blocks.py                    seed/template.pptx seed/layout-map.yaml seed/layout-geometry.json; do
             [ -f "$f" ] || { echo "$f: missing from the build"; exit 1; }
           done
           echo "stamped build $V"
