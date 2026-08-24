@@ -56,10 +56,29 @@ class AttributionError(Exception):
     pass
 
 
-def load_attribution(path: Path) -> dict:
+def load_attribution(path: Path) -> dict | None:
+    """The funder credit to stamp on every slide, or None for no stamp.
+
+    No text means no stamp. That is what the workbench has always told
+    authors -- "leave the text empty and no stamp is applied at all" --
+    and it was not what happened: a file with no `text` raised, and the
+    whole deck failed to render over a credit that was not being asked
+    for. A missing funder credit is a thing to report, not a thing to
+    stop a build with.
+
+    A file that is not a mapping at all is still an error: that is a
+    broken file rather than an empty one.
+    """
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or not isinstance(data.get("text"), str):
-        raise AttributionError(f"{path}: attribution.yaml needs a 'text' string")
+    if data is None:
+        return None
+    if not isinstance(data, dict):
+        raise AttributionError(f"{path}: attribution.yaml must be a YAML mapping")
+    text = data.get("text")
+    if text is None or (isinstance(text, str) and not text.strip()):
+        return None
+    if not isinstance(text, str):
+        raise AttributionError(f"{path}: 'text' must be a string, got {type(text).__name__}")
     corner = data.get("corner", "bottom-right")
     if corner not in CORNERS:
         raise AttributionError(f"{path}: corner must be one of {sorted(CORNERS)}")

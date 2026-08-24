@@ -132,6 +132,10 @@ def _catalog_attribution(path: Path | None, out_dir: Path) -> dict | None:
     from .attribution import load_attribution
 
     config = load_attribution(path)
+    # No text means no stamp, so there is nothing to carry into the
+    # catalog either.
+    if config is None:
+        return None
     entry = {
         "text": config["text"],
         "corner": config["corner"],

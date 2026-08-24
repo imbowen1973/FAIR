@@ -60,7 +60,12 @@ function buildList(items, type, style, theme, scale, depth) {
   // the list resolves against the list's own. Leave them mismatched and
   // "10." is clipped by the region's edge.
   if (size) list.style.fontSize = `${size * scale}px`;
-  if (!style.bulleted) list.style.listStyle = "none";
+  // `false`, not merely absent. The geometry only carries `bulleted` when
+  // the template has a list style to report -- a template whose master
+  // has no bodyStyle produces no key at all, and treating that as "no
+  // bullets" hid every marker on the canvas while the rendered deck drew
+  // them. Absent means the template has no opinion, which is bulleted.
+  if (style.bulleted === false) list.style.listStyle = "none";
 
   for (const item of items) {
     const li = document.createElement("li");

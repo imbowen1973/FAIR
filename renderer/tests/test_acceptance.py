@@ -2424,3 +2424,54 @@ def test_a_template_that_defines_its_own_bullet_is_left_alone(tmp_path):
     slide = Presentation(str(deck)).slides[0]
     for one in (_bullet_props(p) for p in _body_paragraphs(slide)):
         assert one == [], f"the template's own bullet was overridden: {one}"
+
+
+# ---- an empty funder credit is not a build failure --------------------
+
+def test_attribution_with_no_text_means_no_stamp(tmp_path):
+    """What the workbench has always told authors it means.
+
+    "Leave the text empty and no stamp is applied at all" -- and instead
+    a file with no `text` raised AttributionError and the whole deck
+    failed to render, over a credit that was not being asked for. It
+    reached a user as a Pyodide traceback in the PowerPoint pane.
+    """
+    from edufair_renderer.attribution import load_attribution
+
+    path = tmp_path / "attribution.yaml"
+    for body in ("corner: bottom-right\n", 'text: ""\n', 'text: "   "\n', ""):
+        path.write_text(body, encoding="utf-8")
+        assert load_attribution(path) is None, body
+
+
+def test_attribution_that_is_not_a_mapping_is_still_refused(tmp_path):
+    """An empty credit is one thing; a broken file is another."""
+    from edufair_renderer.attribution import AttributionError, load_attribution
+
+    path = tmp_path / "attribution.yaml"
+    path.write_text("- one\n- two\n", encoding="utf-8")
+    with pytest.raises(AttributionError, match="mapping"):
+        load_attribution(path)
+
+
+def test_a_deck_renders_when_the_credit_is_empty(tmp_path):
+    """End to end: the slide is produced, simply without a stamp."""
+    lib = tmp_path / "lib"
+    (lib / "blocks" / "01-b").mkdir(parents=True)
+    shutil.copy(EXAMPLES / "template.pptx", lib / "template.pptx")
+    shutil.copy(EXAMPLES / "layout-map.yaml", lib / "layout-map.yaml")
+    (lib / "attribution.yaml").write_text("corner: bottom-right\n", encoding="utf-8")
+    (lib / "course.yaml").write_text("title: T\nstructure:\n  - block: 01-b\n", encoding="utf-8")
+    (lib / "blocks" / "01-b" / "block.yaml").write_text(
+        "title: B\nduration_minutes: 45\nresources: []\n", encoding="utf-8"
+    )
+    (lib / "blocks" / "01-b" / "slides.md").write_text(
+        "---\nsession: '01'\ntitle: T\nversion: 1.0.0\n---\n\n"
+        "--- slide\nid: s-01\nlayout: Full\ntitle: T\n"
+        "full:\n  type: ul\n  items:\n    - One\n---\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "build"
+    corpus_main([str(lib), "--out", str(out)])
+    deck = next((out / "sessions").rglob("*.pptx"))
+    assert deck.is_file()
