@@ -52,6 +52,11 @@ template, a competency framework, and a first session with its outcomes
 and lesson plan. It builds and renders from the moment it exists, so
 there is no blank-repo stage to get wrong.
 
+A repository that already exists works the same way. Open it by name and,
+if it is not a library yet — empty, or holding nothing but a README — the
+workbench offers to set it up, adding only what is missing and leaving
+everything already there alone.
+
 Then edit it: slides on a WYSIWYG canvas at the template's own geometry,
 lesson plans and workbooks as documents, assessments as a question form.
 Save to a branch, submit a pull request. Review and merge happen on

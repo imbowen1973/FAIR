@@ -18,7 +18,7 @@ import { BROKER_URL, CLIENT_ID } from "./config.js";
 import { draftBranch, GitHub, parseRepo } from "./github.js";
 import { decorate } from "./icons.js";
 import { needsAsking, relayoutPanel } from "./relayout.js";
-import { provisionLibrary, repoNameFrom } from "./provision.js";
+import { provisionInto, provisionLibrary, repoNameFrom } from "./provision.js";
 import {
   canRedo,
   canUndo,
@@ -245,14 +245,16 @@ async function openRepo(fullName) {
     // Reading a public repo needs no permission, so a token with no write
     // access opens a library happily and then fails at Save. Say so now.
     state.canWrite = Boolean(info.permissions?.push);
-    const paths = await state.gh.tree(owner, repo, defaultBranch);
+    // A repository with no commits has no tree at all, and GitHub says so
+    // with a 409. That is a repo waiting to be filled, not a failure.
+    const paths = await state.gh.pathsOrEmpty(owner, repo, defaultBranch);
     state.tree = paths;
 
     if (!isLibrary(paths)) {
-      status(
-        `${fullName} is not a library: it needs course.yaml and blocks/<id>/block.yaml.`,
-        "error"
-      );
+      // Not a dead end. An empty repo, or one with just a README, is
+      // exactly what "make it on GitHub first" produces, and the useful
+      // answer is to offer to fill it rather than to explain the format.
+      offerSetup(owner, repo, paths.length);
       return;
     }
 
@@ -2590,7 +2592,55 @@ document.addEventListener("keydown", (e) => {
 
 // ---- starting a library ------------------------------------------------
 //
-// Everything else here opens a repo that already exists. This makes one.
+// Two ways in, one form. Either the repository does not exist and gets
+// created, or it exists and is empty -- which is what somebody who made
+// it on GitHub first arrives with -- and only what is missing is added.
+
+/** The repo to fill, when setting one up rather than creating one. */
+let setupTarget = null;
+
+/** Offer to fill a repo that turned out not to be a library. */
+function offerSetup(owner, repo, fileCount) {
+  setupTarget = { owner, repo };
+  status(
+    fileCount === 0
+      ? `${owner}/${repo} is empty. It can be set up as a library.`
+      : `${owner}/${repo} is not a library yet. It can be set up as one, ` +
+        "keeping everything already in it.",
+    ""
+  );
+  $("setup-offer").hidden = false;
+  $("setup-repo").textContent = `Set up ${owner}/${repo}`;
+}
+
+/** Back to creating a new one. */
+function clearSetup() {
+  setupTarget = null;
+  $("setup-offer").hidden = true;
+  $("new-repo-field").hidden = false;
+  $("create-library").textContent = "Create it";
+}
+
+// Closing the form leaves setup mode, or a later "create a new one"
+// would silently write into the repo that was offered.
+$("new-library")?.addEventListener("toggle", () => {
+  if (!$("new-library").open && setupTarget) clearSetup();
+});
+
+$("setup-repo")?.addEventListener("click", () => {
+  if (!setupTarget) return;
+  const details = $("new-library");
+  details.open = true;
+  // The repository is decided, so asking for a name again would be a
+  // question with one answer.
+  $("new-repo-field").hidden = true;
+  $("new-repo").value = setupTarget.repo;
+  if (!$("new-title").value.trim()) {
+    $("new-title").value = setupTarget.repo.replace(/[-_]/g, " ");
+  }
+  $("create-library").textContent = `Set up ${setupTarget.owner}/${setupTarget.repo}`;
+  $("new-title").focus();
+});
 
 const newTitle = $("new-title");
 const newRepo = $("new-repo");
@@ -2618,19 +2668,32 @@ $("create-library")?.addEventListener("click", () =>
       return;
     }
     try {
-      const made = await provisionLibrary(state.gh, {
-        login: state.login,
-        name,
-        title,
-        description: "",
-        blockTitle,
-        isPrivate: $("new-private").checked,
-        status: say,
-      });
+      const made = setupTarget
+        ? await provisionInto(state.gh, {
+            owner: setupTarget.owner,
+            name: setupTarget.repo,
+            title,
+            blockTitle,
+            status: say,
+          })
+        : await provisionLibrary(state.gh, {
+            login: state.login,
+            name,
+            title,
+            description: "",
+            blockTitle,
+            isPrivate: $("new-private").checked,
+            status: say,
+          });
       status(
-        `Created ${made.owner}/${made.repo} with ${made.files.length} files. Opening it…`,
+        (setupTarget
+          ? `Set up ${made.owner}/${made.repo}: ${made.files.length} files added` +
+            (made.kept ? `, ${made.kept} already there and left alone` : "")
+          : `Created ${made.owner}/${made.repo} with ${made.files.length} files`) +
+          ". Opening it…",
         "ok"
       );
+      clearSetup();
       // Straight in, rather than telling somebody to go and open the
       // thing that was just made for them.
       await openRepo(`${made.owner}/${made.repo}`);

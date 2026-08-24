@@ -69,6 +69,13 @@
          library anyone makes has to be assembled by hand from the format
          docs, which is a poor introduction to a tool whose whole claim is
          that content lives in git without ceremony. -->
+    <!-- Shown when a repo opens and turns out not to be a library. The
+         message alone was a dead end: it said what was wrong and left the
+         author to go and fix it by hand somewhere else. -->
+    <div id="setup-offer" class="row" hidden>
+      <button id="setup-repo" class="primary">Set it up as a library</button>
+    </div>
+
     <details id="new-library">
       <summary>Start a new library</summary>
       <p class="hint">
@@ -81,7 +88,7 @@
         <label for="new-title">Module name</label>
         <input id="new-title" placeholder="Big data in veterinary practice"/>
       </div>
-      <div class="field">
+      <div class="field" id="new-repo-field">
         <label for="new-repo">Repository</label>
         <input id="new-repo" placeholder="big-data-in-veterinary-practice" spellcheck="false"/>
         <p class="hint" id="new-repo-hint">Named after the module unless you change it.</p>

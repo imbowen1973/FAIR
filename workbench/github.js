@@ -111,6 +111,23 @@ export class GitHub {
   }
 
   /** Every blob path at a ref, in one call. */
+  /**
+   * Every path in the repo, or [] if it has no commits yet.
+   *
+   * An empty repository is a legitimate thing to be handed -- it is what
+   * "create it on GitHub, then set it up" produces -- and GitHub reports
+   * it as 409, which is not an error here.
+   */
+  async pathsOrEmpty(owner, name, ref = "HEAD") {
+    try {
+      // tree() already returns paths, not entries.
+      return await this.tree(owner, name, ref);
+    } catch (err) {
+      if (err.status === 409 || err.status === 404) return [];
+      throw err;
+    }
+  }
+
   async tree(owner, name, ref = "HEAD") {
     const data = await this.request(
       `/repos/${owner}/${name}/git/trees/${encodeURIComponent(ref)}?recursive=1`
@@ -183,10 +200,21 @@ export class GitHub {
   async commit(owner, name, branch, message, files) {
     if (!files.length) throw new GitHubError("nothing to commit", 0, "");
 
-    const parent = await this.headSha(owner, name, branch);
-    const base = await this.request(
-      `/repos/${owner}/${name}/git/commits/${parent}`
-    );
+    // A repository with no commits has no ref to build on. Its first
+    // commit has no parent and no base tree, and its branch is created
+    // rather than moved -- GitHub answers 404 for the ref and 409 for
+    // the tree, and both mean the same thing here. Everything else about
+    // writing a commit is identical, so this is a branch in two places
+    // rather than a second code path.
+    let parent = null;
+    try {
+      parent = await this.headSha(owner, name, branch);
+    } catch (err) {
+      if (err.status !== 404 && err.status !== 409) throw err;
+    }
+    const base = parent
+      ? await this.request(`/repos/${owner}/${name}/git/commits/${parent}`)
+      : null;
 
     const blobs = [];
     for (const file of files) {
@@ -202,18 +230,25 @@ export class GitHub {
 
     const tree = await this.request(`/repos/${owner}/${name}/git/trees`, {
       method: "POST",
-      body: { base_tree: base.tree.sha, tree: blobs },
+      body: base ? { base_tree: base.tree.sha, tree: blobs } : { tree: blobs },
     });
 
     const created = await this.request(`/repos/${owner}/${name}/git/commits`, {
       method: "POST",
-      body: { message, tree: tree.sha, parents: [parent] },
+      body: { message, tree: tree.sha, parents: parent ? [parent] : [] },
     });
 
-    await this.request(
-      `/repos/${owner}/${name}/git/refs/heads/${encodeURIComponent(branch)}`,
-      { method: "PATCH", body: { sha: created.sha } }
-    );
+    if (parent) {
+      await this.request(
+        `/repos/${owner}/${name}/git/refs/heads/${encodeURIComponent(branch)}`,
+        { method: "PATCH", body: { sha: created.sha } }
+      );
+    } else {
+      await this.request(`/repos/${owner}/${name}/git/refs`, {
+        method: "POST",
+        body: { ref: `refs/heads/${branch}`, sha: created.sha },
+      });
+    }
     return created.sha;
   }
 

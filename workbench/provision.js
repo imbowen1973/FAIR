@@ -235,14 +235,89 @@ export async function fetchSeedAssets(assets = SEED_ASSETS, fetcher = fetch) {
 }
 
 /**
- * Create the repository and fill it, in one commit.
+ * What a repo is missing before it is a library.
+ *
+ * `existing` is every path already in it — empty for a repo with no
+ * commits. Nothing already there is ever included, so setting up a repo
+ * that someone has put a README or a licence in keeps both.
+ */
+export function missingFrom(existing, candidates) {
+  const there = new Set(existing);
+  return candidates.filter((file) => !there.has(file.path));
+}
+
+/** Whether these paths already describe a library. */
+export function looksLikeLibrary(paths) {
+  return (
+    paths.includes("course.yaml") &&
+    paths.some((p) => /^blocks\/[^/]+\/(block\.yaml|slides\.md)$/.test(p))
+  );
+}
+
+/**
+ * Fill a repository that already exists, in one commit.
+ *
+ * This is the general case and the other entry point is a wrapper on it.
+ * A repo can arrive here in three states and all three are ordinary:
+ * no commits at all, a README somebody made on GitHub, or a pile of
+ * unrelated files. Only what is missing is written, so nothing anybody
+ * put there is touched.
  *
  * One commit rather than several: a half-seeded library is not a
- * library, and a failure part way through would leave a repository the
- * workbench itself would refuse to open.
+ * library, and a failure part way would leave a repository the workbench
+ * itself would refuse to open.
+ */
+export async function provisionInto(
+  gh,
+  { owner, name, title, description = "", blockTitle, branch, status = () => {} }
+) {
+  status(`Reading ${owner}/${name}...`);
+  const existing = await gh.pathsOrEmpty(owner, name);
+  if (looksLikeLibrary(existing)) {
+    throw new Error(`${owner}/${name} is already a library. Open it instead.`);
+  }
+
+  // Before anything is written, so a seed that will not load fails while
+  // there is still nothing to undo.
+  status("Fetching the starting template...");
+  const assets = await fetchSeedAssets();
+
+  const blockId = blockIdFrom(blockTitle, 1);
+  const candidates = [
+    ...seedFiles({ title, description, blockTitle, blockId, author: owner }),
+    ...assets,
+  ];
+  const files = missingFrom(existing, candidates);
+  const kept = candidates.length - files.length;
+  if (!files.length) {
+    throw new Error(`${owner}/${name} already has all of these files.`);
+  }
+
+  status(`Adding ${files.length} files...`);
+  await gh.commit(
+    owner,
+    name,
+    branch || (await gh.defaultBranch(owner, name)) || "main",
+    `Set up ${title} as an eduFAIR library`,
+    files
+  );
+
+  return {
+    owner,
+    repo: name,
+    branch,
+    blockId,
+    files: files.map((f) => f.path),
+    kept,
+  };
+}
+
+/**
+ * Create the repository, then fill it.
  *
- * The seed assets are fetched *before* the repository is created, so a
- * missing one fails while there is still nothing to clean up.
+ * `auto_init` gives it a first commit and therefore a default branch,
+ * which every write path here needs; the README it creates is then one
+ * of the files provisionInto leaves alone.
  */
 export async function provisionLibrary(
   gh,
@@ -256,21 +331,16 @@ export async function provisionLibrary(
     throw new Error(`${login}/${name} already exists. Pick another name.`);
   }
 
-  status("Fetching the starting template...");
-  const assets = await fetchSeedAssets();
-
   status(`Creating ${login}/${name}...`);
   const repo = await gh.createRepo({ name, description, private: isPrivate });
-  const branch = repo.default_branch || "main";
 
-  const blockId = blockIdFrom(blockTitle, 1);
-  const files = [
-    ...seedFiles({ title, description, blockTitle, blockId, author: login }),
-    ...assets,
-  ];
-
-  status(`Filling it: ${files.length} files...`);
-  await gh.commit(login, name, branch, `Start the ${title} library`, files);
-
-  return { owner: login, repo: name, branch, blockId, files: files.map((f) => f.path) };
+  return provisionInto(gh, {
+    owner: login,
+    name,
+    title,
+    description,
+    blockTitle,
+    branch: repo.default_branch || "main",
+    status,
+  });
 }

@@ -369,6 +369,7 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
 }
 #new-library[open] summary { margin-bottom: 8px; }
 #new-library .field input { width: 100%; box-sizing: border-box; }
+#setup-offer { margin-top: 10px; }
 
 /* Icons sit on the text line and follow the theme through currentColor. */
 .icon { flex: none; vertical-align: -2px; }
