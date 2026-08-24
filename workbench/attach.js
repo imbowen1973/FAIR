@@ -24,7 +24,9 @@ const MAX_BYTES = 500_000;
 // Quality gives way before pixels do: a slide image at 0.7 is hard to
 // tell from one at 0.9, while halving the pixels is visible. So the
 // quality is searched first and the size only if that is not enough.
-const EDGE_STEPS = [1, 0.8, 0.64];
+const EDGE_STEPS = [1, 0.8, 0.64, 0.5, 0.4];
+// The last resort, so the loop cannot end without a picture.
+const FLOOR_EDGE = 640;
 // WebP is deliberately absent, and not for want of trying: python-pptx
 // refuses it outright -- "unsupported image format, expected one of
 // BMP, GIF, JPEG, PNG, TIFF, WMF" -- so a WebP on a slide fails the
@@ -112,83 +114,95 @@ export async function prepareImage(file) {
   const bitmap = await decode(file);
   const edge = Math.max(bitmap.width, bitmap.height);
   const base = edge > TARGET_EDGE ? TARGET_EDGE / edge : 1;
-
-  // The pixels decide, not the container.
   const alpha = usesAlpha(bitmap);
-  const mime = alpha ? "image/png" : "image/jpeg";
 
-  const encode = (scale, quality) => {
+  /** Draw at `scale`, optionally onto white, and encode. */
+  const encode = (scale, { mime, quality, flatten = false }) => {
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     const ctx = canvas.getContext("2d");
-    // Smooth downscaling: the default is fine for small steps and visibly
-    // aliased for the large ones a 4000px photograph needs.
+    // The default is visibly aliased at the ratios a 4000px source needs.
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
+    if (flatten) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return new Promise((resolve) =>
-      canvas.toBlob(resolve, mime, alpha ? undefined : quality)
-    );
+    return new Promise((resolve) => canvas.toBlob(resolve, mime, quality));
   };
 
-  let blob = null;
-  let last = null;
-
-  if (!alpha) {
-    // Binary search the quality rather than walking fixed steps: it
-    // reaches a better answer in about six encodes instead of sixteen,
-    // and sixteen re-encodes of a 4000px photograph is a frozen tab.
-    let lo = 0.4;
+  /** The best JPEG under the cap at this size, or null. */
+  const bestJpeg = async (scale, flatten) => {
+    let lo = 0.35;
     let hi = 0.92;
+    let best = null;
     for (let i = 0; i < 6; i += 1) {
       const mid = (lo + hi) / 2;
-      const candidate = await encode(base, mid);
-      if (!candidate) break;
-      last = candidate;
-      if (candidate.size <= MAX_BYTES) {
-        blob = candidate; // good enough, and try for better
+      const blob = await encode(scale, { mime: "image/jpeg", quality: mid, flatten });
+      if (!blob) break;
+      if (blob.size <= MAX_BYTES) {
+        best = blob; // fits, so try for better quality
         lo = mid;
       } else {
         hi = mid;
       }
     }
-    // Still over at the lowest quality worth using: fewer pixels then.
-    for (const shrink of EDGE_STEPS.slice(1)) {
-      if (blob) break;
-      last = await encode(base * shrink, lo);
-      if (last && last.size <= MAX_BYTES) blob = last;
-    }
-  } else {
-    // PNG has no quality knob, so size is the only lever.
+    return best;
+  };
+
+  let blob = null;
+  let flattened = false;
+
+  if (alpha) {
+    // A real cutout is worth keeping, so PNG gets first refusal at
+    // every size before transparency is given up.
     for (const shrink of EDGE_STEPS) {
-      last = await encode(base * shrink);
-      if (last && last.size <= MAX_BYTES) {
-        blob = last;
+      const candidate = await encode(base * shrink, { mime: "image/png" });
+      if (candidate && candidate.size <= MAX_BYTES) {
+        blob = candidate;
         break;
       }
     }
   }
 
-  blob = blob ?? last;
-  bitmap.close?.();
-  if (!blob) throw new Error(`${file.name} could not be re-encoded`);
-  if (blob.size > MAX_BYTES) {
-    throw new Error(
-      `${file.name} is still ${Math.round(blob.size / 1024)} KB after ` +
-        `compression, over the ${MAX_BYTES / 1000} KB the build allows. ` +
-        (alpha
-          ? "It has transparent areas, so it has to stay a PNG. Flatten it " +
-            "onto a background and it will compress as a photograph."
-          : "Crop it, or simplify it, and try again.")
-    );
+  if (!blob) {
+    // Photographs, screenshots, and anything whose transparency will not
+    // fit. Compression is this tool's job: a picture is never handed back
+    // with instructions to go and crop it.
+    for (const shrink of EDGE_STEPS) {
+      blob = await bestJpeg(base * shrink, alpha);
+      if (blob) break;
+    }
+    flattened = alpha && Boolean(blob);
   }
 
+  if (!blob) {
+    // Nothing has ever needed this: 640px at quality 0.35 is a few tens
+    // of kilobytes. It exists so the loop cannot end without a picture.
+    blob = await encode(Math.min(base, FLOOR_EDGE / Math.max(bitmap.width, bitmap.height)), {
+      mime: "image/jpeg",
+      quality: 0.5,
+      flatten: alpha,
+    });
+    flattened = alpha;
+  }
+
+  bitmap.close?.();
+  if (!blob) throw new Error(`${file.name} could not be read as an image`);
+
+  const png = blob.type === "image/png";
   const stem = safeName(file.name).replace(/\.[^.]+$/, "");
   return {
     bytes: new Uint8Array(await blob.arrayBuffer()),
-    name: `${stem}.${alpha ? "png" : "jpg"}`,
+    name: `${stem}.${png ? "png" : "jpg"}`,
     bytesIn: file.size,
+    // What was done to it, for the status line. Silence about losing
+    // transparency would be its own kind of failure.
+    note: flattened
+      ? "its transparent areas were filled with white to fit the size limit"
+      : "",
   };
 }
 
@@ -198,8 +212,8 @@ export async function prepareImage(file) {
  */
 export async function prepareUpload(file) {
   if (IMAGE_TYPES.test(file.type)) {
-    const { bytes, name } = await prepareImage(file);
-    return { bytes, name, dir: "media", isImage: true };
+    const { bytes, name, note } = await prepareImage(file);
+    return { bytes, name, note, dir: "media", isImage: true };
   }
   return {
     bytes: new Uint8Array(await file.arrayBuffer()),

@@ -1961,7 +1961,12 @@ function openMediaPicker(region, value, kind) {
           })
         );
         set({ type: "image", src: rel });
-        status(`${upload.name} added — resized and metadata stripped.`, "ok");
+        status(
+          `${upload.name} added — resized and metadata stripped` +
+            (upload.note ? `, and ${upload.note}` : "") +
+            ".",
+          "ok"
+        );
       } catch (err) {
         status(err.message, "error");
       }
