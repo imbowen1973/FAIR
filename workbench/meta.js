@@ -17,11 +17,27 @@ function el(tag, className, text) {
 
 /**
  * Build the metadata strip.
- * onChange(nextSlideData) fires on every edit.
+ *
+ * `onChange(patch, {rebuild})` sends **only what changed**, and a key
+ * whose value is `undefined` is removed. It used to send a whole slide
+ * built from `{...data}` — the slide as it was when this panel was
+ * constructed — and that lost content, constantly:
+ *
+ *   type on the canvas          working copy becomes S'
+ *   type a speaker note         onChange({...S, notes}) — S' is gone
+ *
+ * The panel is only rebuilt by renderCanvas, and a metadata edit
+ * deliberately does not redraw the canvas, so the stale copy survived a
+ * whole editing session and every field wrote over every other one.
+ *
+ * `live()` returns the slide as it stands now, for the same reason:
+ * toggling two outcome chips in a row read the first click's state from
+ * a snapshot taken before it, and dropped it.
  */
-export function slideMeta(host, { slide, competencies, outcomes, onChange }) {
+export function slideMeta(host, { slide, live, competencies, outcomes, onChange }) {
   host.innerHTML = "";
   const data = slide || {};
+  const now = typeof live === "function" ? live : () => data;
 
   const row = el("div", "meta-row");
 
@@ -33,7 +49,7 @@ export function slideMeta(host, { slide, competencies, outcomes, onChange }) {
   id.title =
     "Stable identity. Changing it changes the slide's creationId, so a deck " +
     "assembled from this slide before the change will not match it after.";
-  id.addEventListener("change", () => onChange({ ...data, id: id.value }));
+  id.addEventListener("change", () => onChange({ id: id.value }));
   idField.append(id);
   row.append(idField);
 
@@ -47,10 +63,7 @@ export function slideMeta(host, { slide, competencies, outcomes, onChange }) {
   }
   dok.value = data.dok != null ? String(data.dok) : "";
   dok.addEventListener("change", () => {
-    const next = { ...data };
-    if (dok.value) next.dok = Number(dok.value);
-    else delete next.dok;
-    onChange(next);
+    onChange({ dok: dok.value ? Number(dok.value) : undefined });
   });
   dokField.append(dok);
   row.append(dokField);
@@ -73,13 +86,15 @@ export function slideMeta(host, { slide, competencies, outcomes, onChange }) {
     chip.title = outcome.statement || oid;
     if (serves.includes(oid)) chip.classList.add("on");
     chip.addEventListener("click", () => {
-      const next = serves.includes(oid)
-        ? serves.filter((o) => o !== oid)
-        : [...serves, oid];
-      const slideNext = { ...data };
-      if (next.length) slideNext.outcomes = next;
-      else delete slideNext.outcomes;
-      onChange(slideNext);
+      // From the slide as it stands, not as it was drawn: two clicks in
+      // a row both read the same snapshot and the first was thrown away.
+      const held = (now().outcomes ?? []).map(String);
+      const next = held.includes(oid)
+        ? held.filter((o) => o !== oid)
+        : [...held, oid];
+      // The competencies below are derived from these, so the panel has
+      // to be rebuilt -- there is no caret to lose on a chip.
+      onChange({ outcomes: next.length ? next : undefined }, { rebuild: true });
     });
     outChips.appendChild(chip);
   }
@@ -121,13 +136,11 @@ export function slideMeta(host, { slide, competencies, outcomes, onChange }) {
     chip.title = label;
     if (direct.includes(cid)) chip.classList.add("on");
     chip.addEventListener("click", () => {
-      const next = direct.includes(cid)
-        ? direct.filter((c) => c !== cid)
-        : [...direct, cid];
-      const slideNext = { ...data };
-      if (next.length) slideNext.develops = next;
-      else delete slideNext.develops;
-      onChange(slideNext);
+      const held = (now().develops ?? []).filter((c) => !derived.includes(c));
+      const next = held.includes(cid)
+        ? held.filter((c) => c !== cid)
+        : [...held, cid];
+      onChange({ develops: next.length ? next : undefined }, { rebuild: true });
     });
     chips.appendChild(chip);
   }
@@ -152,18 +165,33 @@ export function slideMeta(host, { slide, competencies, outcomes, onChange }) {
   head.append(count);
   notes.append(head);
 
+  const countWords = (text) => {
+    const n = (text ?? "").trim().split(/\s+/).filter(Boolean).length;
+    count.textContent = n
+      ? `${n} words · about ${Math.max(1, Math.round(n / 130))} min`
+      : "";
+  };
+
   const field = el("div", "notes-field");
+  // No rebuild here: this fires on every keystroke and would take the
+  // caret with it.
   const rich = richText(
     field,
     data.notes ?? "",
-    (value) => onChange({ ...data, notes: value }),
+    (value) => {
+      onChange({ notes: value });
+      countWords(value);
+    },
     { multiline: true }
   );
   if (!rich) {
     const area = el("textarea", "source");
     area.rows = 6;
     area.value = data.notes ?? "";
-    area.addEventListener("input", () => onChange({ ...data, notes: area.value }));
+    area.addEventListener("input", () => {
+      onChange({ notes: area.value });
+      countWords(area.value);
+    });
     field.append(
       el("p", "warn", "These notes use markup the editor cannot show visually — editing as source."),
       area

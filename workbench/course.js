@@ -46,6 +46,14 @@ function field(label, control, hint) {
  * onAddSession(trail)  add a session, to the container at `trail`
  * onAddModule()     add a container
  */
+/**
+ * `onChange(patch, {structural})` sends only what changed.
+ *
+ * It used to send `{...course, field}` — the course as it was when this
+ * was built. Both fields write on every keystroke and neither rebuilds,
+ * so typing a module name and then a description sent the description
+ * merged into a course that still had no name, and the name was gone.
+ */
 export function courseHome(host, { course, rows, onChange, onOpen, onAddSession, onAddModule }) {
   host.innerHTML = "";
 
@@ -54,7 +62,7 @@ export function courseHome(host, { course, rows, onChange, onOpen, onAddSession,
   title.value = course.title ?? "";
   title.placeholder = "What is this module called?";
   title.addEventListener("input", () =>
-    onChange({ ...course, title: title.value }, { structural: false })
+    onChange({ title: title.value }, { structural: false })
   );
   host.append(field("Module", title));
 
@@ -64,7 +72,7 @@ export function courseHome(host, { course, rows, onChange, onOpen, onAddSession,
   description.placeholder =
     "Two or three sentences on what this module covers, and who it is for.";
   description.addEventListener("input", () =>
-    onChange({ ...course, description: description.value }, { structural: false })
+    onChange({ description: description.value }, { structural: false })
   );
   host.append(
     field("Description", description, "Shown wherever the module is offered.")
@@ -226,8 +234,12 @@ export function freeCompetencyId(taken, prefix = "C") {
 export function attributionEditor(host, { config, logos, resolve, onChange, onUpload, onClear }) {
   host.innerHTML = "";
   const data = config || {};
-  const change = (patch, structural = true) =>
-    onChange({ ...data, ...patch }, { structural });
+  // The patch goes up on its own. Merging it into `data` here meant
+  // merging into the configuration as it was when this was built: the
+  // text field writes on every keystroke and does not rebuild, so typing
+  // a funding statement and then picking a logo sent the logo merged
+  // into a configuration with no text in it.
+  const change = (patch, structural = true) => onChange(patch, { structural });
 
   host.append(
     el(
@@ -339,11 +351,10 @@ export function attributionEditor(host, { config, logos, resolve, onChange, onUp
     input.step = String(step);
     input.value = data[key] ?? fallback;
     input.addEventListener("input", () => {
-      const value = input.value === "" ? null : Number(input.value);
-      const next = { ...data };
-      if (value === null) delete next[key];
-      else next[key] = value;
-      onChange(next, { structural: false });
+      // undefined removes the key, so an emptied box does not leave one
+      // behind with nothing in it.
+      const value = input.value === "" ? undefined : Number(input.value);
+      onChange({ [key]: value }, { structural: false });
     });
     numbers.append(field(label_, input, hint));
   }

@@ -861,13 +861,47 @@ function renderCanvas({ redraw = true } = {}) {
       },
     });
   }
+  renderMeta();
+}
+
+/**
+ * The slide's identity, meaning and notes.
+ *
+ * The patch is merged into the slide *as it stands*, never into the copy
+ * this panel was built from. That copy goes stale the moment anything is
+ * typed on the canvas, and writing it back was silently undoing work.
+ */
+/**
+ * Apply a patch to a live object: `undefined` removes the key.
+ *
+ * Every editor sends what changed rather than a whole object, because a
+ * whole object is always the one the editor was built with — and writing
+ * that back throws away everything done since.
+ */
+function patched(current, patch) {
+  const next = { ...current };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+  }
+  return next;
+}
+
+function renderMeta() {
   slideMeta($("meta"), {
-    slide: data,
+    slide: slideData(state.slideIndex),
+    live: () => slideData(state.slideIndex),
     competencies: state.library.competencies,
     outcomes: catalogueDoc().outcomes || {},
-    onChange: (next) => {
-      commitSlide(next);
-      // Metadata never changes the canvas, so leave the caret where it is.
+    onChange: (patch, { rebuild = false } = {}) => {
+      const next = patched(slideData(state.slideIndex), patch);
+      // Notes coalesce into one undo step per burst, as canvas typing
+      // does; a chip or a select is its own step.
+      commitSlide(next, {
+        step: "notes" in patch ? `notes:${state.slideIndex}` : null,
+      });
+      // Metadata never changes the canvas, so the caret stays put.
+      if (rebuild) renderMeta();
     },
   });
 }
@@ -1608,8 +1642,8 @@ function renderCourse() {
     courseHome(body, {
       course: courseDoc(),
       rows: courseRows(),
-      onChange: (next, opts) => {
-        writeCourse(next);
+      onChange: (patch, opts) => {
+        writeCourse(patched(courseDoc(), patch));
         updateActions();
         if (opts?.structural !== false) draw();
       },
@@ -1746,8 +1780,8 @@ function renderFunding(host) {
           uploads: state.uploads,
           urls: state.mediaUrls,
         }),
-      onChange: (next, opts) => {
-        write(next);
+      onChange: (patch, opts) => {
+        write(patched(read(), patch));
         if (opts?.structural !== false) draw();
       },
       onClear: () => {
