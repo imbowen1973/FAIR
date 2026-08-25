@@ -158,15 +158,23 @@ function status(message, kind = "") {
 /** Run work with the button disabled and the status bar showing progress. */
 async function busy(button, label, work) {
   const el = $(button);
-  const original = el.textContent;
-  el.disabled = true;
-  el.textContent = label;
+  // An icon button says what it is with a drawing, not with its text.
+  // Replacing the text would delete the icon and leave a word in a
+  // 28-pixel square.
+  const isIcon = Boolean(el?.querySelector(".icon"));
+  const original = isIcon ? null : el?.textContent;
+  if (el) {
+    el.disabled = true;
+    if (!isIcon) el.textContent = label;
+  }
   status(`${label}…`, "busy");
   try {
     return await work((message) => status(message || `${label}…`, "busy"));
   } finally {
-    el.disabled = false;
-    el.textContent = original;
+    if (el) {
+      el.disabled = false;
+      if (!isIcon) el.textContent = original;
+    }
   }
 }
 
@@ -970,8 +978,9 @@ function renderRibbon({ slides = true } = {}) {
   const data = slides ? slideData(state.slideIndex) : {};
   ribbon($("ribbon"), {
     slides,
-    onSave: () => $("save").click(),
-    onSubmit: () => $("submit").click(),
+    onSave: save,
+    onSubmit: submit,
+    onHistory: showHistory,
     layouts: slides ? layoutKeys(state.library.layoutMap) : [],
     layout: data.layout,
     onCommand: () => {
@@ -1084,7 +1093,6 @@ function renderRibbon({ slides = true } = {}) {
   paintSwatches($("ribbon"), state.library.geometry?.theme);
   paintListType($("ribbon"), regionType(activeRegion));
   updateHistoryButtons();
-  paintCommitButtons();
   measureHeader();
 }
 
@@ -1426,8 +1434,7 @@ function renderBlock() {
   // slide editor.
   if (!slides) {
     renderRibbon({ slides: false });
-    paintCommitButtons();
-  }
+    }
   $("sidebar").hidden = !slides;
 
   if (slides) {
@@ -2568,35 +2575,24 @@ function updateActions() {
     ? `${changed.length} file${changed.length === 1 ? "" : "s"} changed`
     : "no changes";
   const writable = state.canWrite !== false;
-  $("save").disabled = changed.length === 0 || !writable;
   const blocking = state.problems.filter((p) => p.level !== "warning").length;
-  $("submit").disabled = changed.length === 0 || blocking > 0 || !writable;
   const why = !writable ? "This token cannot push to this repository." : "";
-  $("save").title = why;
-  $("submit").title = why;
-  paintCommitButtons();
+  // The toolbar is drawn only once a library is open, so these are
+  // absent for the whole of the sign-in screen.
+  const saveButton = document.getElementById("save");
+  const submitButton = document.getElementById("submit");
+  if (saveButton) {
+    saveButton.disabled = changed.length === 0 || !writable;
+    saveButton.classList.toggle("urgent", !saveButton.disabled);
+    if (why) saveButton.title = why;
+  }
+  if (submitButton) {
+    submitButton.disabled = changed.length === 0 || blocking > 0 || !writable;
+    if (why) submitButton.title = why;
+  }
   renderBranchNote();
 }
 
-/**
- * Mirror Save and Submit onto their toolbar copies.
- *
- * The ribbon rebuilds its buttons every time it is drawn, and a fresh
- * button is enabled -- so Save offered itself on a deck with nothing to
- * commit until something else happened to call updateActions.
- */
-function paintCommitButtons() {
-  for (const [id, from] of [["save-ribbon", "save"], ["submit-ribbon", "submit"]]) {
-    const button = document.getElementById(id);
-    const source = document.getElementById(from);
-    if (!button || !source) continue;
-    button.disabled = source.disabled;
-    if (source.title) button.title = source.title;
-    // Save is disabled far more often than not, so it should read as
-    // available the moment there is something to commit.
-    button.classList.toggle("urgent", id === "save-ribbon" && !source.disabled);
-  }
-}
 
 // ---- validate and preview ---------------------------------------------
 
@@ -2696,7 +2692,8 @@ async function save() {
   const branch = draftBranch(state.login);
 
   try {
-    $("save").disabled = true;
+    const saveButton = document.getElementById("save");
+    if (saveButton) saveButton.disabled = true;
     status(`Saving to ${branch}…`);
     const created = await state.gh.ensureBranch(owner, repo, branch, defaultBranch);
     const message =
@@ -2997,12 +2994,10 @@ $("repo-switch").addEventListener("change", (e) => {
   openRepo(e.target.value);
 });
 
+// Save, History and Submit draw their own icons in the toolbar.
 for (const [id, name] of [
   ["validate", "check"],
   ["preview", "preview"],
-  ["history", "history"],
-  ["save", "save"],
-  ["submit", "submit"],
   ["open", "open"],
   ["open-manual", "open"],
 ]) {
@@ -3158,8 +3153,5 @@ $("create-library")?.addEventListener("click", () =>
 $("open-manual").addEventListener("click", () => openRepo($("manual-repo").value));
 $("validate").addEventListener("click", runValidate);
 $("preview").addEventListener("click", previewDeck);
-$("save").addEventListener("click", save);
-$("submit").addEventListener("click", submit);
-$("history").addEventListener("click", showHistory);
 
 boot();

@@ -414,9 +414,10 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
    arrives underneath them with its heading and first control hidden. */
 #panels > *, #problems { scroll-margin-top: calc(var(--toolbar-h, 160px) + 8px); }
 
-/* Save, in the toolbar. It is disabled far more often than not, so it
-   has to read as available the moment there is something to commit. */
+/* Save, first in the toolbar. It is disabled far more often than not, so
+   it has to read as available the moment there is something to commit. */
 .mark.with-icon.urgent { color: var(--accent); }
+.mark.with-icon:disabled { opacity: 0.4; }
 .ribbon-group.right { margin-left: auto; }
 
 /* Which branch is open. Only shown when it is not the published one, so

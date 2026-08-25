@@ -56,33 +56,41 @@ function button(label, title, onDown, className = "mark", id = null) {
  */
 export function ribbon(host, {
   layouts, layout, onCommand, onLayout, onColour, onListType, onMedia,
-  onUndo, onRedo, onAddSlide, onImport, onSave, onSubmit, slides = true,
+  onUndo, onRedo, onAddSlide, onImport, onSave, onSubmit, onHistory,
+  slides = true,
 }) {
   host.innerHTML = "";
 
-  // Committing work is not a slide-editing action, so it is here on
-  // every tab, at the end of the toolbar where it stays put. It used to
-  // live only in the bar below, which on a narrow screen scrolled away
-  // with the page.
+  // Save is the first thing in the toolbar, before undo and redo, with
+  // History beside it. Both are instant actions on the work as a whole
+  // rather than on a slide, and both used to be text buttons in the bar
+  // below -- which is not where a hand goes for them.
+  //
+  // These carry the ids `save`, `history` and `submit` because they *are*
+  // those controls now, not copies of them: everything that enables,
+  // disables or presses them goes on working unchanged.
   const commit = document.createElement("div");
-  commit.className = "ribbon-group right";
+  commit.className = "ribbon-group";
   commit.appendChild(
     button(icon("save2", { size: 16 }), "Save to the draft branch",
-      () => onSave?.(), "mark with-icon", "save-ribbon")
+      () => onSave?.(), "mark with-icon", "save")
+  );
+  commit.appendChild(
+    button(icon("history", { size: 16 }), "History: load an earlier version",
+      () => onHistory?.(), "mark with-icon", "history")
   );
   commit.appendChild(
     button(icon("submit", { size: 16 }), "Submit for review",
-      () => onSubmit?.(), "mark with-icon", "submit-ribbon")
+      () => onSubmit?.(), "mark with-icon", "submit")
   );
+  host.appendChild(commit);
 
   if (!slides) {
     // A document tab: nothing else here applies to it.
-    host.appendChild(commit);
     return;
   }
 
-  // First, and on their own: undo is what you reach for after the change
-  // you did not mean, and it has to be somewhere you already are.
+  // Then stepping back and forward through the work.
   const steps = document.createElement("div");
   steps.className = "ribbon-group";
   steps.appendChild(
@@ -100,22 +108,12 @@ export function ribbon(host, {
   const deck = document.createElement("div");
   deck.className = "ribbon-group";
   deck.appendChild(
-    button(
-      icon("slide", { size: 16 }),
-      "Add a slide after this one",
-      () => onAddSlide?.(),
-      "mark with-icon",
-      "add-slide-ribbon"
-    )
+    button(icon("slide", { size: 16 }), "Add a slide after this one",
+      () => onAddSlide?.(), "mark with-icon", "add-slide-ribbon")
   );
   deck.appendChild(
-    button(
-      icon("import", { size: 16 }),
-      "Import slides written elsewhere",
-      () => onImport?.(),
-      "mark with-icon",
-      "import-ribbon"
-    )
+    button(icon("import", { size: 16 }), "Import slides written elsewhere",
+      () => onImport?.(), "mark with-icon", "import-ribbon")
   );
   host.appendChild(deck);
 
@@ -211,7 +209,6 @@ export function ribbon(host, {
   select.addEventListener("change", () => onLayout?.(select.value));
   right.append(label, select);
   host.appendChild(right);
-  host.appendChild(commit);
 }
 
 /** Paint the swatches from the library's own theme. */

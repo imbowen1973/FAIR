@@ -265,7 +265,7 @@ const edit = async (tabText, words) => {
   await page.keyboard.press("Control+A");
   await page.keyboard.type(words);
   await page.waitForTimeout(400);
-  await page.click("#save-ribbon");
+  await page.click("#save");
   await page.waitForTimeout(1200);
 };
 

@@ -177,6 +177,46 @@ const reach = await page.evaluate(() => {
 });
 console.log("import reachable:", JSON.stringify(reach));
 
+// The toolbar's order, which has been asked for explicitly: Save first,
+// then History, before undo and redo. And neither may be a text button
+// in the bar below.
+const toolbar = await page.evaluate(() => {
+  const icons = [...document.querySelectorAll("#ribbon button.with-icon")].map(
+    (b) => b.id || b.getAttribute("aria-label")
+  );
+  const inTextBar = [...document.querySelectorAll(".actions button")].map((b) => b.id);
+  const save = document.getElementById("save");
+  const history = document.getElementById("history");
+  const place = (b) => {
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return {
+      inToolbar: Boolean(b.closest("#ribbon")),
+      hasIcon: Boolean(b.querySelector("svg.icon")),
+      onScreen: r.top >= 0 && r.bottom <= innerHeight,
+      clickable: hit === b || b.contains(hit),
+      x: Math.round(r.left),
+    };
+  };
+  return { icons, inTextBar, save: place(save), history: place(history) };
+});
+console.log("toolbar:", JSON.stringify(toolbar));
+
+const toolbarWrong =
+  toolbar.icons[0] !== "save" ||
+  toolbar.icons[1] !== "history" ||
+  toolbar.icons.indexOf("undo") < toolbar.icons.indexOf("history") ||
+  !toolbar.save?.inToolbar || !toolbar.save.hasIcon ||
+  !toolbar.save.onScreen || !toolbar.save.clickable ||
+  !toolbar.history?.inToolbar || !toolbar.history.hasIcon ||
+  !toolbar.history.clickable ||
+  // Save sits to the left of History, which is to the left of undo.
+  toolbar.save.x >= toolbar.history.x ||
+  // And neither is left behind as a text button.
+  toolbar.inTextBar.includes("save") ||
+  toolbar.inTextBar.includes("history");
+
 // And it works: paste a deck written elsewhere and add it.
 await page.click("#import-ribbon");
 await page.waitForSelector(".import-panel", { timeout: 5000 });
@@ -275,6 +315,7 @@ const failed =
   !reach.clickable ||
   !reach.drawn ||
   !reach.labelled ||
+  toolbarWrong ||
   !imported.canAdd ||
   !afterImport.panelGone ||
   !afterImport.titles.includes("Brought in") ||

@@ -273,7 +273,7 @@ const afterLoad = await page.evaluate(() => ({
   thumb: document.querySelector(".slide-row .thumb")?.textContent?.trim() ?? "",
   status: document.getElementById("status").textContent,
   dirty: document.getElementById("dirty").textContent,
-  saveEnabled: !document.getElementById("save-ribbon").disabled,
+  saveEnabled: !document.getElementById("save").disabled,
 }));
 console.log("before:", JSON.stringify(beforeLoad));
 console.log("after: ", JSON.stringify(afterLoad));

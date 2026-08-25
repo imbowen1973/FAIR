@@ -232,7 +232,7 @@ await page.locator('.canvas .region[data-region="title"]').first().click();
 await page.keyboard.press("Control+A");
 await page.keyboard.type("Edited on a draft");
 await page.waitForTimeout(500);
-await page.click("#save-ribbon");
+await page.click("#save");
 await page.waitForTimeout(1200);
 
 const saved = await page.evaluate(() => ({
