@@ -36,7 +36,7 @@ const NUMBERED = /^\s*\d+[.)]\s+(.+)$/;
  * `problems` entries are `{where, message, fatal}`; a fatal one means
  * the import cannot proceed.
  */
-export function readImport(text, { layoutMap, existingIds = [] } = {}) {
+export function readImport(text, { layoutMap, geometry, existingIds = [] } = {}) {
   const source = String(text ?? "").trim();
   if (!source) return { slides: [], problems: [], kind: "empty" };
 
@@ -45,14 +45,18 @@ export function readImport(text, { layoutMap, existingIds = [] } = {}) {
     ? { slides: parseSlides(source).slides.map((s) => s.data), kind: "grammar" }
     : { slides: slidesFromMarkdown(source, { layoutMap }), kind: "markdown" };
 
-  return { slides, kind, problems: checkSlides(slides, { layoutMap, existingIds }) };
+  return {
+    slides,
+    kind,
+    problems: checkSlides(slides, { layoutMap, geometry, existingIds }),
+  };
 }
 
 /**
  * Every reason an import should not proceed, and every reason to look
  * twice at one that can.
  */
-export function checkSlides(slides, { layoutMap, existingIds = [] } = {}) {
+export function checkSlides(slides, { layoutMap, geometry, existingIds = [] } = {}) {
   const problems = [];
   const layouts = Object.keys(layoutMap || {}).filter((k) => !k.startsWith("_"));
   const seen = new Set(existingIds);
@@ -81,6 +85,18 @@ export function checkSlides(slides, { layoutMap, existingIds = [] } = {}) {
         `unknown layout ${slide.layout}. This template offers ${layouts.join(", ")}`
       );
     } else if (layouts.length) {
+      // A layout can be in layout-map.yaml and have no rectangles in
+      // layout-geometry.json. The slide is valid and cannot be drawn, so
+      // this is worth saying at import rather than leaving somebody to
+      // find a blank canvas -- but it is not a reason to refuse: the
+      // workbench can read the geometry from the template.
+      if (geometry?.layouts && !geometry.layouts[slide.layout]) {
+        add(
+          `${slide.layout} has no geometry in this library, so it will not ` +
+            "draw until it is read from the template",
+          false
+        );
+      }
       // Regions are only checkable once the layout is known to exist.
       const allowed = layoutRegions(layoutMap, slide.layout);
       for (const key of Object.keys(slide)) {
@@ -217,7 +233,7 @@ function el(tag, className, text) {
  * onAdd(slides)      put them after the current slide
  * onReplace(slides)  make them the deck
  */
-export function importPanel(host, { layoutMap, existingIds = [], mark = 0, onAdd, onReplace, onClose }) {
+export function importPanel(host, { layoutMap, geometry, existingIds = [], mark = 0, onAdd, onReplace, onClose }) {
   host.innerHTML = "";
   const panel = el("div", "import-panel");
   panel.append(el("h4", null, "Import slides"));
@@ -263,7 +279,7 @@ export function importPanel(host, { layoutMap, existingIds = [], mark = 0, onAdd
   let ready = [];
 
   const review = () => {
-    const result = readImport(area.value, { layoutMap, existingIds });
+    const result = readImport(area.value, { layoutMap, geometry, existingIds });
     summary.innerHTML = "";
     ready = [];
 

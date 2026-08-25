@@ -117,6 +117,8 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
+const GEOMETRY_PATH = "layout-geometry.json";
+
 const state = {
   gh: null,
   login: null,
@@ -514,6 +516,7 @@ function openImport() {
 
   importPanel(panel, {
     layoutMap: state.library.layoutMap,
+    geometry: state.library.geometry,
     existingIds: working().map((entry) => entry.data?.id).filter(Boolean),
     mark: slideMark(state.library.blocks.get(state.blockId)?.parsed, working()),
     onAdd: (slides) => place(slides, false),
@@ -952,7 +955,53 @@ function renderCanvas({ redraw = true } = {}) {
       },
     });
   }
+  offerGeometry();
   renderMeta();
+}
+
+/**
+ * Offer to read the template's geometry when a layout has none.
+ *
+ * A library can name a layout in layout-map.yaml and have no rectangles
+ * for it in layout-geometry.json -- an import validates against the map,
+ * so the slide arrives fine and then cannot be drawn. Everything needed
+ * to fix that is already here.
+ */
+function offerGeometry() {
+  const note = $("canvas").querySelector("[data-missing-geometry]");
+  if (!note || note.querySelector("button")) return;
+  if (!state.canWrite) return;
+
+  const row = document.createElement("p");
+  const build = document.createElement("button");
+  build.type = "button";
+  build.id = "build-geometry";
+  build.className = "primary";
+  build.textContent = "Read it from the template";
+  build.addEventListener("click", () =>
+    busy("build-geometry", "Reading the template", async (say) => {
+      try {
+        const files = await withBinaries(say);
+        const { buildGeometry } = await import("./preview.js");
+        const json = await buildGeometry(files, say);
+        state.edits.set(GEOMETRY_PATH, json);
+        state.library = readLibrary(pendingFiles());
+        updateActions();
+        renderOutline();
+        renderSlide();
+        const count = Object.keys(JSON.parse(json).layouts ?? {}).length;
+        status(
+          `Read ${count} layouts from the template. Save to commit ` +
+            "layout-geometry.json.",
+          "ok"
+        );
+      } catch (err) {
+        status(`Could not read the template: ${err.message}`, "error");
+      }
+    })
+  );
+  row.appendChild(build);
+  note.after(row);
 }
 
 /**

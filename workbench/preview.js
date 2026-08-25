@@ -183,3 +183,44 @@ export async function renderDeck(files, blockId, status) {
 export function runtimeReady() {
   return pyodidePromise !== null;
 }
+
+/**
+ * Read a template's own geometry, in the browser.
+ *
+ * A library whose layout-geometry.json is missing a layout cannot draw
+ * it: the canvas has no rectangles to put anything in. The message used
+ * to say "run edufair-template", which is a dead end in a tool whose
+ * whole claim is that nothing needs installing -- and the renderer is
+ * already here, running the same Python.
+ */
+const GEOMETRY = `
+import json, sys, traceback
+from pathlib import Path
+if "/py" not in sys.path:
+    sys.path.insert(0, "/py")
+# The result is assigned, then named on the last line: runPythonAsync
+# hands back the last *expression*, and a try block is not one.
+out = None
+try:
+    from edufair_renderer.template_inspect import inspect_template, layout_geometry
+    template = Path("${LIB_DIR}/template.pptx")
+    results = inspect_template(template)
+    out = json.dumps(layout_geometry(template, results), indent=2, sort_keys=True)
+except Exception as exc:
+    out = json.dumps({"error": f"{type(exc).__name__}: {exc}",
+                      "trace": traceback.format_exc()[-800:]})
+out
+`;
+
+export async function buildGeometry(files, status = () => {}) {
+  const py = await ensurePyodide(status);
+  mount(py, files);
+  status("Reading the template's layouts…");
+  const text = await py.runPythonAsync(GEOMETRY);
+  const parsed = JSON.parse(text);
+  if (parsed.error) throw new Error(parsed.error);
+  if (!parsed.layouts || !Object.keys(parsed.layouts).length) {
+    throw new Error("the template reported no layouts at all");
+  }
+  return JSON.stringify(parsed, null, 2) + String.fromCharCode(10);
+}

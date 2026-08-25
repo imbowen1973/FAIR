@@ -600,10 +600,19 @@ export function drawSlide(
   const theme = geometry?.theme ?? {};
 
   if (!layout) {
-    host.innerHTML =
-      '<p class="empty">No geometry for this layout. Run ' +
-      "<code>edufair-template &lt;template&gt; --geometry layout-geometry.json</code> " +
-      "in the library and commit the result.</p>";
+    // The caller offers to build it. Telling somebody to install a
+    // command-line tool is a dead end in a workbench whose whole claim
+    // is that nothing needs installing -- and the renderer that reads a
+    // template is already running here.
+    host.innerHTML = "";
+    const note = document.createElement("p");
+    note.className = "empty";
+    note.dataset.missingGeometry = layoutKey ?? "";
+    note.textContent =
+      `This library's layout-geometry.json has nothing for ${layoutKey}, so ` +
+      "there is nothing to draw the slide into. The template knows; it just " +
+      "has not been read.";
+    host.appendChild(note);
     return new Set(Object.keys(slide || {}));
   }
 
