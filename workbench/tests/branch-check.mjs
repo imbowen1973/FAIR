@@ -55,24 +55,6 @@ const FILES = {
     "  type: ul",
     "  items:",
     "    - The original bullet",
-    "    - text: A line with no bullet",
-    "      bullet: false",
-    "    - text: A numbered line in a bulleted list",
-    "      marker: number",
-    "    - text: A centred close",
-    "      marker: none",
-    "      align: center",
-    "---",
-    "",
-    "--- slide",
-    "id: s-02",
-    "layout: Full",
-    "title: Numbered",
-    "full:",
-    "  type: ol",
-    "  items:",
-    "    - First step",
-    "    - Second step",
     "---",
     "",
   ].join("\n"),
@@ -115,15 +97,48 @@ page.on("console", (m) => {
   errors.push(t);
 });
 
+const branches = new Set(["main"]);
+const onBranch = { main: new Map(Object.entries(FILES)) };
+let lastCommitBranch = null;
+
 await page.route("https://api.github.com/**", (route) => {
-  const url = route.request().url();
-  const json = (b) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+  const req = route.request();
+  const url = req.url();
+  const method = req.method();
+  const body = () => {
+    try { return JSON.parse(req.postData() || "{}"); } catch { return {}; }
+  };
+  const json = (b, status = 200) =>
+    route.fulfill({ status, contentType: "application/json", body: JSON.stringify(b) });
   if (url.endsWith("/user")) return json({ login: "tester" });
+
+  const refMatch = /\/git\/refs?\/heads\/(.+?)(\?|$)/.exec(url);
+  if (refMatch && method === "GET") {
+    const name = decodeURIComponent(refMatch[1]);
+    return branches.has(name)
+      ? json({ object: { sha: `sha-${name}` } })
+      : json({ message: "Not Found" }, 404);
+  }
+  if (url.includes("/git/refs") && method === "POST") {
+    branches.add(body().ref.replace("refs/heads/", ""));
+    return json({});
+  }
+  if (url.includes("/git/blobs") && method === "POST") {
+    const blob = body();
+    return json({ sha: `blob-${blob.content?.length ?? 0}-${Math.round(performance.now())}` });
+  }
+  if (url.includes("/git/trees") && method === "POST") {
+    lastCommitBranch = null;
+    return json({ sha: "tree1", _entries: body().tree });
+  }
+  if (url.includes("/git/commits") && method === "POST") return json({ sha: "commit1" });
+  if (url.includes("/git/commits/")) return json({ tree: { sha: "base" } });
   if (url.includes("/git/trees/")) {
+    const which = decodeURIComponent(url.split("/git/trees/")[1].split("?")[0]);
+    const files = onBranch[which] ?? onBranch.main;
     return json({
       truncated: false,
-      tree: Object.keys(FILES).map((path) => ({ path, type: "blob" })),
+      tree: [...files.keys()].map((path) => ({ path, type: "blob" })),
     });
   }
   if (/\/repos\/[^/]+\/[^/]+$/.test(url)) {
@@ -133,11 +148,15 @@ await page.route("https://api.github.com/**", (route) => {
   return json({});
 });
 await page.route("https://raw.githubusercontent.com/**", (route) => {
-  const path = decodeURIComponent(route.request().url().split("/main/")[1] ?? "");
-  const body = FILES[path];
-  return body === undefined
-    ? route.fulfill({ status: 404, body: "" })
-    : route.fulfill({ status: 200, contentType: "text/plain", body });
+  // .../<owner>/<repo>/<branch>/<path>
+  const rest = route.request().url().split("raw.githubusercontent.com/")[1] ?? "";
+  const bits = rest.split("/");
+  const which = decodeURIComponent(bits[2] ?? "main");
+  const path = decodeURIComponent(bits.slice(3).join("/"));
+  const files = onBranch[which] ?? onBranch.main;
+  return files.has(path)
+    ? route.fulfill({ status: 200, contentType: "text/plain", body: files.get(path) })
+    : route.fulfill({ status: 404, body: "" });
 });
 
 await page.goto(BASE, { waitUntil: "networkidle" });
@@ -201,59 +220,62 @@ const slideNow = () =>
     };
   });
 
-// ---- markers have to be on the canvas, not only in the deck ----------
+// ---- a reload opens what you were working on ---------------------------
 //
-// The geometry carries `bulleted` only when the template has a list
-// style to report. A template whose master has no bodyStyle produces no
-// key at all, and the canvas read absent as "no bullets" -- so every
-// marker was hidden here while the rendered deck drew them. Two views of
-// one slide, disagreeing.
-const markers = async (row) => {
-  // nth-of-type counts every sibling div, and .deck-actions is one, so
-  // it matches the wrong element -- or none at all.
-  await page.locator(".slide-row .slide-pick").nth(row - 1).click();
-  await page.waitForTimeout(500);
-  return page.evaluate(() => {
-    const list = document.querySelector(".canvas .region ul, .canvas .region ol");
-    if (!list) return { none: true };
-    const items = [...list.children];
-    return {
-      tag: list.tagName.toLowerCase(),
-      listStyle: getComputedStyle(list).listStyleType,
-      perItem: items.map((li) => ({
-        text: li.textContent.trim().slice(0, 22),
-        style: getComputedStyle(li).listStyleType,
-        align: getComputedStyle(li).textAlign,
-      })),
-    };
-  });
-};
+// Save writes to draft/<login>/<block>. Opening the repository read the
+// *default* branch, so a reload showed the published version and the
+// morning's work looked lost -- it was on a branch nothing was looking
+// at.
 
-const bulleted = await markers(1);
-const numbered = await markers(2);
-console.log("bulleted slide:", JSON.stringify(bulleted));
-console.log("numbered slide:", JSON.stringify(numbered));
+// Edit, then save.
+await page.locator('.canvas .region[data-region="title"]').first().click();
+await page.keyboard.press("Control+A");
+await page.keyboard.type("Edited on a draft");
+await page.waitForTimeout(500);
+await page.click("#save-ribbon");
+await page.waitForTimeout(1200);
+
+const saved = await page.evaluate(() => ({
+  status: document.getElementById("status").textContent,
+  branchNote: document.getElementById("branch-note")?.textContent ?? "",
+  remembered: localStorage.getItem("fair.wb.branch"),
+}));
+console.log("after save:", JSON.stringify(saved));
+
+// What git now holds on the draft branch.
+const draft = [...branches].find((b) => b.startsWith("draft/"));
+if (draft) {
+  onBranch[draft] = new Map(onBranch.main);
+  onBranch[draft].set(
+    "blocks/01-misuse/slides.md",
+    onBranch.main.get("blocks/01-misuse/slides.md").replace("Opening", "Edited on a draft")
+  );
+}
+
+// Reload, exactly as an author would tomorrow.
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForTimeout(1500);
+const reopened = await page.evaluate(() => ({
+  workspace: !document.getElementById("workspace").hidden,
+  branchNote: document.getElementById("branch-note")?.textContent ?? "",
+  thumb: document.querySelector(".slide-row .thumb")?.textContent?.trim() ?? "",
+}));
+console.log("branch created:", JSON.stringify(draft));
+console.log("after reload:", JSON.stringify(reopened));
 
 if (errors.length) console.log("errors:", errors.slice(0, 4));
 
 const failed =
   errors.length > 0 ||
-  bulleted.none || numbered.none ||
-  bulleted.tag !== "ul" ||
-  numbered.tag !== "ol" ||
-  // The list draws markers...
-  bulleted.listStyle === "none" ||
-  numbered.listStyle === "none" ||
-  // ...on the items that asked for one...
-  bulleted.perItem[0]?.style === "none" ||
-  numbered.perItem.some((i) => i.style === "none") ||
-  // ...and not on the one that opted out...
-  bulleted.perItem[1]?.style !== "none" ||
-  // ...a numbered line inside a bulleted list is numbered...
-  bulleted.perItem[2]?.style !== "decimal" ||
-  // ...and one line can be centred without centring the rest.
-  bulleted.perItem[3]?.align !== "center" ||
-  bulleted.perItem[1]?.align === "center";
+  !draft ||
+  !saved.remembered?.includes("draft/") ||
+  !saved.branchNote.includes("draft/") ||
+  !reopened.workspace ||
+  // The draft's content, not the published version.
+  !reopened.thumb.includes("Edited on a draft") ||
+  // And it says so, with a way back to the published branch.
+  !reopened.branchNote.includes("draft/") ||
+  !reopened.branchNote.includes("main");
 
 console.log(failed ? String.fromCharCode(10) + "FAIL" : String.fromCharCode(10) + "PASS");
 await browser.close();

@@ -55,24 +55,6 @@ const FILES = {
     "  type: ul",
     "  items:",
     "    - The original bullet",
-    "    - text: A line with no bullet",
-    "      bullet: false",
-    "    - text: A numbered line in a bulleted list",
-    "      marker: number",
-    "    - text: A centred close",
-    "      marker: none",
-    "      align: center",
-    "---",
-    "",
-    "--- slide",
-    "id: s-02",
-    "layout: Full",
-    "title: Numbered",
-    "full:",
-    "  type: ol",
-    "  items:",
-    "    - First step",
-    "    - Second step",
     "---",
     "",
   ].join("\n"),
@@ -115,15 +97,67 @@ page.on("console", (m) => {
   errors.push(t);
 });
 
+// What the repository looked like at an older commit.
+const HISTORIC = new Map(Object.entries(FILES));
+HISTORIC.set(
+  "blocks/01-misuse/slides.md",
+  FILES["blocks/01-misuse/slides.md"].replace("Opening", "What it said last Tuesday")
+);
+
+const branches = new Set(["main"]);
+const onBranch = { main: new Map(Object.entries(FILES)) };
+let lastCommitBranch = null;
+
 await page.route("https://api.github.com/**", (route) => {
-  const url = route.request().url();
-  const json = (b) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+  const req = route.request();
+  const url = req.url();
+  const method = req.method();
+  const body = () => {
+    try { return JSON.parse(req.postData() || "{}"); } catch { return {}; }
+  };
+  const json = (b, status = 200) =>
+    route.fulfill({ status, contentType: "application/json", body: JSON.stringify(b) });
   if (url.endsWith("/user")) return json({ login: "tester" });
+
+  const refMatch = /\/git\/refs?\/heads\/(.+?)(\?|$)/.exec(url);
+  if (refMatch && method === "GET") {
+    const name = decodeURIComponent(refMatch[1]);
+    return branches.has(name)
+      ? json({ object: { sha: `sha-${name}` } })
+      : json({ message: "Not Found" }, 404);
+  }
+  if (url.includes("/git/refs") && method === "POST") {
+    branches.add(body().ref.replace("refs/heads/", ""));
+    return json({});
+  }
+  if (url.includes("/git/blobs") && method === "POST") {
+    const blob = body();
+    return json({ sha: `blob-${blob.content?.length ?? 0}-${Math.round(performance.now())}` });
+  }
+  if (url.includes("/git/trees") && method === "POST") {
+    lastCommitBranch = null;
+    return json({ sha: "tree1", _entries: body().tree });
+  }
+  if (url.includes("/git/commits") && method === "POST") return json({ sha: "commit1" });
+  if (url.includes("/commits?")) {
+    return json([
+      {
+        sha: "aaaaaaaaaaaaaaaa",
+        html_url: "https://github.com/x/y/commit/aaaaaaa",
+        commit: {
+          message: "An earlier version" + String.fromCharCode(10) + "body",
+          author: { name: "Someone", date: "2026-08-01T09:00:00Z" },
+        },
+      },
+    ]);
+  }
+  if (url.includes("/git/commits/")) return json({ tree: { sha: "base" } });
   if (url.includes("/git/trees/")) {
+    const which = decodeURIComponent(url.split("/git/trees/")[1].split("?")[0]);
+    const files = which === "aaaaaaaaaaaaaaaa" ? HISTORIC : (onBranch[which] ?? onBranch.main);
     return json({
       truncated: false,
-      tree: Object.keys(FILES).map((path) => ({ path, type: "blob" })),
+      tree: [...files.keys()].map((path) => ({ path, type: "blob" })),
     });
   }
   if (/\/repos\/[^/]+\/[^/]+$/.test(url)) {
@@ -133,11 +167,15 @@ await page.route("https://api.github.com/**", (route) => {
   return json({});
 });
 await page.route("https://raw.githubusercontent.com/**", (route) => {
-  const path = decodeURIComponent(route.request().url().split("/main/")[1] ?? "");
-  const body = FILES[path];
-  return body === undefined
-    ? route.fulfill({ status: 404, body: "" })
-    : route.fulfill({ status: 200, contentType: "text/plain", body });
+  // .../<owner>/<repo>/<branch>/<path>
+  const rest = route.request().url().split("raw.githubusercontent.com/")[1] ?? "";
+  const bits = rest.split("/");
+  const which = decodeURIComponent(bits[2] ?? "main");
+  const path = decodeURIComponent(bits.slice(3).join("/"));
+  const files = which === "aaaaaaaaaaaaaaaa" ? HISTORIC : (onBranch[which] ?? onBranch.main);
+  return files.has(path)
+    ? route.fulfill({ status: 200, contentType: "text/plain", body: files.get(path) })
+    : route.fulfill({ status: 404, body: "" });
 });
 
 await page.goto(BASE, { waitUntil: "networkidle" });
@@ -201,59 +239,60 @@ const slideNow = () =>
     };
   });
 
-// ---- markers have to be on the canvas, not only in the deck ----------
+// ---- history loads a version, rather than linking away -----------------
 //
-// The geometry carries `bulleted` only when the template has a list
-// style to report. A template whose master has no bodyStyle produces no
-// key at all, and the canvas read absent as "no bullets" -- so every
-// marker was hidden here while the rendered deck drew them. Two views of
-// one slide, disagreeing.
-const markers = async (row) => {
-  // nth-of-type counts every sibling div, and .deck-actions is one, so
-  // it matches the wrong element -- or none at all.
-  await page.locator(".slide-row .slide-pick").nth(row - 1).click();
-  await page.waitForTimeout(500);
-  return page.evaluate(() => {
-    const list = document.querySelector(".canvas .region ul, .canvas .region ol");
-    if (!list) return { none: true };
-    const items = [...list.children];
-    return {
-      tag: list.tagName.toLowerCase(),
-      listStyle: getComputedStyle(list).listStyleType,
-      perItem: items.map((li) => ({
-        text: li.textContent.trim().slice(0, 22),
-        style: getComputedStyle(li).listStyleType,
-        align: getComputedStyle(li).textAlign,
-      })),
-    };
-  });
-};
+// A link to github.com is not history, it is a way of leaving. What an
+// author wants is the version itself: to read what a slide said last
+// Tuesday, or take back a change made three commits ago.
+await page.click("#history");
+await page.waitForTimeout(900);
 
-const bulleted = await markers(1);
-const numbered = await markers(2);
-console.log("bulleted slide:", JSON.stringify(bulleted));
-console.log("numbered slide:", JSON.stringify(numbered));
+const listed = await page.evaluate(() => {
+  const rows = [...document.querySelectorAll("#problems .commit")];
+  const first = rows[0];
+  const open = first?.querySelector(".commit-open");
+  const r = open?.getBoundingClientRect();
+  const hit = r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
+  return {
+    rows: rows.length,
+    // A button that loads it, not only a link that leaves.
+    hasLoader: Boolean(open),
+    clickable: Boolean(open) && (hit === open || open.contains(hit)),
+    stillLinksOut: Boolean(first?.querySelector("a[href*='github.com']")),
+    text: first?.textContent?.trim() ?? "",
+  };
+});
+console.log("history:", JSON.stringify(listed));
+
+const beforeLoad = await page.evaluate(
+  () => document.querySelector(".slide-row .thumb")?.textContent?.trim() ?? ""
+);
+await page.click("#problems .commit-open");
+await page.waitForTimeout(1500);
+const afterLoad = await page.evaluate(() => ({
+  thumb: document.querySelector(".slide-row .thumb")?.textContent?.trim() ?? "",
+  status: document.getElementById("status").textContent,
+  dirty: document.getElementById("dirty").textContent,
+  saveEnabled: !document.getElementById("save-ribbon").disabled,
+}));
+console.log("before:", JSON.stringify(beforeLoad));
+console.log("after: ", JSON.stringify(afterLoad));
 
 if (errors.length) console.log("errors:", errors.slice(0, 4));
 
 const failed =
   errors.length > 0 ||
-  bulleted.none || numbered.none ||
-  bulleted.tag !== "ul" ||
-  numbered.tag !== "ol" ||
-  // The list draws markers...
-  bulleted.listStyle === "none" ||
-  numbered.listStyle === "none" ||
-  // ...on the items that asked for one...
-  bulleted.perItem[0]?.style === "none" ||
-  numbered.perItem.some((i) => i.style === "none") ||
-  // ...and not on the one that opted out...
-  bulleted.perItem[1]?.style !== "none" ||
-  // ...a numbered line inside a bulleted list is numbered...
-  bulleted.perItem[2]?.style !== "decimal" ||
-  // ...and one line can be centred without centring the rest.
-  bulleted.perItem[3]?.align !== "center" ||
-  bulleted.perItem[1]?.align === "center";
+  listed.rows !== 1 ||
+  !listed.hasLoader ||
+  !listed.clickable ||
+  // The way out to GitHub is still there, just not the only thing.
+  !listed.stillLinksOut ||
+  // The old version is in the editor now...
+  !afterLoad.thumb.includes("What it said last Tuesday") ||
+  // ...as unsaved changes, not as something already written.
+  !/file/.test(afterLoad.dirty) ||
+  !afterLoad.saveEnabled ||
+  !/Nothing is written until you Save/.test(afterLoad.status);
 
 console.log(failed ? String.fromCharCode(10) + "FAIL" : String.fromCharCode(10) + "PASS");
 await browser.close();

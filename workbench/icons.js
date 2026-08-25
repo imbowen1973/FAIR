@@ -25,6 +25,8 @@ const PATHS = {
   add: "M3 3h10v10H3z M8 6v4M6 8h4",
   // Chevron for the picker.
   chevron: "M4 6l4 4 4-4",
+  // A floppy: still the one thing everybody reads as "save".
+  save2: "M3 3h8l2 2v8H3z M5.5 3v3.5h5V3M5.5 13V9h5v4",
   // A sheet with a plus: add a slide.
   slide: "M2.5 3.5h11v9h-11z M8 6v4M6 8h4",
   // An arrow coming down into a tray: bring slides in from outside.

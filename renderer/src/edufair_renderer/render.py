@@ -120,6 +120,29 @@ def _defines_a_bullet(placeholder, level: int) -> bool:
     return False
 
 
+ALIGNMENTS = {
+    "left": "l",
+    "center": "ctr",
+    "right": "r",
+    "justify": "just",
+}
+
+
+def _apply_alignment(paragraph, align: str) -> None:
+    """Align one paragraph, leaving the rest of the placeholder alone.
+
+    A centred heading above left-aligned points is one placeholder in
+    every real deck, and alignment was a property of the whole region.
+    """
+    value = ALIGNMENTS.get(align)
+    if not value:
+        return
+    pPr = paragraph._pPr
+    if pPr is None:
+        pPr = paragraph._p.get_or_add_pPr()
+    pPr.set("algn", value)
+
+
 def _apply_bullet(paragraph, char: str = "•") -> None:
     """Put a bullet on a paragraph the template left bare."""
     pPr = _clear_bullet_props(paragraph)
@@ -155,14 +178,18 @@ def _fill_list(placeholder, region: Region, numbered: bool, code_typeface: str) 
                 color=item.color or region.color,
                 code_typeface=code_typeface,
             )
-            if not item.bullet:
-                # A plain line inside a list: the lead-in before the
-                # points, or the sentence that closes them.
+            # Per line. The region says what the list is; a line may say
+            # otherwise, which is how one placeholder holds a lead-in,
+            # then the points, then the sentence that closes them.
+            marker = item.marker or ("number" if numbered else "bullet")
+            if marker == "none":
                 _suppress_bullet(paragraph)
-            elif numbered:
+            elif marker == "number":
                 _apply_auto_numbering(paragraph)
-            elif not numbered and needs_bullet(level):
+            elif needs_bullet(level):
                 _apply_bullet(paragraph)
+            if item.align:
+                _apply_alignment(paragraph, item.align)
             if item.children:
                 write_items(item.children, level + 1)
 

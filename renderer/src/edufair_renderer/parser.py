@@ -52,12 +52,19 @@ class ListItem:
     text: str
     children: list["ListItem"] = field(default_factory=list)
     color: str | None = None  # theme colour slot, e.g. "accent2"
-    # A line inside a list that carries no bullet. One placeholder often
-    # has to hold a lead-in sentence, then the points, then a closing
-    # line -- splitting that across regions is not possible when the
-    # layout offers one, and inventing a second region would be a layout
-    # decision made by the content.
-    bullet: bool = True
+    # What this line is marked with: "bullet", "number", or "none".
+    # `None` means "whatever the region is", which is the ordinary case.
+    #
+    # Per line, because one placeholder often has to hold a lead-in
+    # sentence, then the points, then a closing line. Splitting that
+    # across regions is not possible when the layout offers one, and
+    # inventing a second region would be a layout decision taken by the
+    # content.
+    marker: str | None = None
+    # "left", "center", "right" or "justify" -- again per line, because a
+    # centred heading above left-aligned points is one placeholder in
+    # every real deck.
+    align: str | None = None
 
 
 @dataclass
@@ -143,6 +150,44 @@ def _split_blocks(text: str, path: Path) -> tuple[str, list[tuple[int, str]]]:
     return frontmatter, blocks
 
 
+MARKERS = ("bullet", "number", "none")
+ALIGNMENTS = ("left", "center", "right", "justify")
+
+
+def _check_marker(entry: dict, where: str) -> str | None:
+    """What this line is marked with, or None to follow the region.
+
+    `bullet: false` came first and is kept: it is already written into
+    libraries and into the authoring prompt, and it means exactly
+    `marker: none`.
+    """
+    marker = entry.get("marker")
+    if marker is None:
+        bullet = entry.get("bullet")
+        if bullet is None:
+            return None
+        if not isinstance(bullet, bool):
+            raise SessionParseError(
+                f"{where}: 'bullet' must be true or false, got {bullet!r}"
+            )
+        return None if bullet else "none"
+    if marker not in MARKERS:
+        raise SessionParseError(
+            f"{where}: 'marker' must be one of {', '.join(MARKERS)}, got {marker!r}"
+        )
+    return marker
+
+
+def _check_align(align, where: str) -> str | None:
+    if align is None:
+        return None
+    if align not in ALIGNMENTS:
+        raise SessionParseError(
+            f"{where}: 'align' must be one of {', '.join(ALIGNMENTS)}, got {align!r}"
+        )
+    return align
+
+
 def _parse_list_items(raw, where: str, depth: int = 0) -> list[ListItem]:
     if depth >= MAX_LIST_DEPTH:
         raise SessionParseError(f"{where}: list nesting exceeds {MAX_LIST_DEPTH} levels")
@@ -154,17 +199,13 @@ def _parse_list_items(raw, where: str, depth: int = 0) -> list[ListItem]:
             items.append(ListItem(text=entry))
         elif isinstance(entry, dict) and "text" in entry:
             children = _parse_list_items(entry.get("items", []), where, depth + 1)
-            bullet = entry.get("bullet", True)
-            if not isinstance(bullet, bool):
-                raise SessionParseError(
-                    f"{where}: 'bullet' must be true or false, got {bullet!r}"
-                )
             items.append(
                 ListItem(
                     text=str(entry["text"]),
                     children=children,
                     color=_check_color(entry.get("color"), where),
-                    bullet=bullet,
+                    marker=_check_marker(entry, where),
+                    align=_check_align(entry.get("align"), where),
                 )
             )
         else:

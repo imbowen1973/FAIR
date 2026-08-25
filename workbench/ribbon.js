@@ -56,9 +56,30 @@ function button(label, title, onDown, className = "mark", id = null) {
  */
 export function ribbon(host, {
   layouts, layout, onCommand, onLayout, onColour, onListType, onMedia,
-  onUndo, onRedo, onAddSlide, onImport,
+  onUndo, onRedo, onAddSlide, onImport, onSave, onSubmit, slides = true,
 }) {
   host.innerHTML = "";
+
+  // Committing work is not a slide-editing action, so it is here on
+  // every tab, at the end of the toolbar where it stays put. It used to
+  // live only in the bar below, which on a narrow screen scrolled away
+  // with the page.
+  const commit = document.createElement("div");
+  commit.className = "ribbon-group right";
+  commit.appendChild(
+    button(icon("save2", { size: 16 }), "Save to the draft branch",
+      () => onSave?.(), "mark with-icon", "save-ribbon")
+  );
+  commit.appendChild(
+    button(icon("submit", { size: 16 }), "Submit for review",
+      () => onSubmit?.(), "mark with-icon", "submit-ribbon")
+  );
+
+  if (!slides) {
+    // A document tab: nothing else here applies to it.
+    host.appendChild(commit);
+    return;
+  }
 
   // First, and on their own: undo is what you reach for after the change
   // you did not mean, and it has to be somewhere you already are.
@@ -190,6 +211,7 @@ export function ribbon(host, {
   select.addEventListener("change", () => onLayout?.(select.value));
   right.append(label, select);
   host.appendChild(right);
+  host.appendChild(commit);
 }
 
 /** Paint the swatches from the library's own theme. */

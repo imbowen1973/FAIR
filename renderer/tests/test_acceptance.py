@@ -2475,3 +2475,58 @@ def test_a_deck_renders_when_the_credit_is_empty(tmp_path):
     corpus_main([str(lib), "--out", str(out)])
     deck = next((out / "sessions").rglob("*.pptx"))
     assert deck.is_file()
+
+
+def test_each_line_chooses_its_own_marker_and_alignment(tmp_path):
+    """A layout offers the regions it offers.
+
+    Where it offers one, a centred lead-in cannot go in a region of its
+    own, and inventing a second region would be a layout decision taken
+    by the content. So the line decides.
+    """
+    slide = _render_one(
+        tmp_path,
+        "full:\n  type: ul\n  items:\n"
+        "    - text: A centred heading\n      marker: none\n      align: center\n"
+        "    - A plain bullet\n"
+        "    - text: A numbered line\n      marker: number\n"
+        "    - text: Right-aligned close\n      marker: none\n      align: right\n",
+    )
+    got = [
+        (p.text, _bullet_props(p), p._p.find(f"{{{A_NS}}}pPr").get("algn"))
+        for p in _body_paragraphs(slide)
+    ]
+    assert got == [
+        ("A centred heading", ["buNone"], "ctr"),
+        ("A plain bullet", ["buChar"], None),
+        ("A numbered line", ["buAutoNum"], None),
+        ("Right-aligned close", ["buNone"], "r"),
+    ]
+
+
+def test_bullet_false_still_means_marker_none(tmp_path):
+    """It is already in libraries and in the authoring prompt."""
+    slide = _render_one(
+        tmp_path,
+        "full:\n  type: ul\n  items:\n"
+        "    - text: Lead in\n      bullet: false\n    - A point\n",
+    )
+    got = [(p.text, _bullet_props(p)) for p in _body_paragraphs(slide)]
+    assert got[0][1] == ["buNone"]
+    assert "buChar" in got[1][1]
+
+
+def test_a_marker_or_alignment_it_does_not_know_is_refused(tmp_path):
+    """Named wrong is better caught here than rendered as silence."""
+    from edufair_renderer.parser import SessionParseError, parse_session
+
+    for bad in ("marker: star", "align: middle"):
+        path = tmp_path / f"{bad.split(':')[0]}.md"
+        path.write_text(
+            "---\nsession: '01'\ntitle: T\nversion: 1.0.0\n---\n\n"
+            "--- slide\nid: s-01\nlayout: Full\ntitle: T\n"
+            f"full:\n  type: ul\n  items:\n    - text: x\n      {bad}\n---\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(SessionParseError):
+            parse_session(path)

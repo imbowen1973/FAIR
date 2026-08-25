@@ -16,6 +16,13 @@ import {
 } from "./auth.js";
 import { BROKER_URL, CLIENT_ID } from "./config.js";
 import { draftBranch, GitHub, parseRepo } from "./github.js";
+import {
+  forgetBranch,
+  lastBranch,
+  lastRepo,
+  rememberBranch,
+  rememberRepo,
+} from "./prefs.js";
 import { decorate } from "./icons.js";
 import { needsAsking, relayoutPanel } from "./relayout.js";
 import { provisionInto, provisionLibrary, repoNameFrom } from "./provision.js";
@@ -212,6 +219,13 @@ function measureHeader() {
   root.setProperty("--header-h", `${Math.round(head)}px`);
   root.setProperty("--chrome-h", `${Math.round(head + shown)}px`);
   root.setProperty("--sticky-h", `${Math.round(head + shown + barHeight)}px`);
+  const toolbar = document.getElementById("ribbon");
+  const toolbarHeight =
+    toolbar && !toolbar.hidden ? toolbar.getBoundingClientRect().height : 0;
+  root.setProperty(
+    "--toolbar-h",
+    `${Math.round(head + shown + barHeight + toolbarHeight)}px`
+  );
 }
 measureHeader();
 addEventListener("resize", measureHeader);
@@ -302,9 +316,22 @@ async function openRepo(fullName) {
     // Reading a public repo needs no permission, so a token with no write
     // access opens a library happily and then fails at Save. Say so now.
     state.canWrite = Boolean(info.permissions?.push);
+
+    // Reopen where the work is. Save writes to a draft branch, and this
+    // used to read the default one -- so a reload showed the published
+    // version and the morning's work looked lost. It was not lost; it
+    // was on a branch nothing was looking at.
+    const remembered = lastBranch(owner, repo);
+    const branch =
+      remembered && remembered !== defaultBranch &&
+      (await state.gh.branchExists(owner, repo, remembered))
+        ? remembered
+        : defaultBranch;
+    if (remembered && branch === defaultBranch) forgetBranch(owner, repo);
+
     // A repository with no commits has no tree at all, and GitHub says so
     // with a 409. That is a repo waiting to be filled, not a failure.
-    const paths = await state.gh.pathsOrEmpty(owner, repo, defaultBranch);
+    const paths = await state.gh.pathsOrEmpty(owner, repo, branch);
     state.tree = paths;
 
     if (!isLibrary(paths)) {
@@ -319,11 +346,12 @@ async function openRepo(fullName) {
     const files = new Map();
     let done = 0;
     for (const path of wanted) {
-      files.set(path, await state.gh.file(owner, repo, path, defaultBranch));
+      files.set(path, await state.gh.file(owner, repo, path, branch));
       status(`Reading ${fullName}… ${++done}/${wanted.length}`);
     }
 
-    state.repo = { owner, repo, defaultBranch };
+    state.repo = { owner, repo, defaultBranch, branch };
+    rememberRepo(`${owner}/${repo}`);
     state.files = files;
     state.library = readLibrary(files);
     state.edits = new Map();
@@ -337,6 +365,7 @@ async function openRepo(fullName) {
     $("signed-in").hidden = true;
     $("course-title").textContent = state.library.course.title || fullName;
     renderRepoSwitch(fullName);
+    renderBranchNote();
     renderOutline();
     renderSlide();
     if (state.canWrite) {
@@ -937,10 +966,13 @@ function regionType(region) {
   return typeof value === "object" && value !== null ? value.type : null;
 }
 
-function renderRibbon() {
-  const data = slideData(state.slideIndex);
+function renderRibbon({ slides = true } = {}) {
+  const data = slides ? slideData(state.slideIndex) : {};
   ribbon($("ribbon"), {
-    layouts: layoutKeys(state.library.layoutMap),
+    slides,
+    onSave: () => $("save").click(),
+    onSubmit: () => $("submit").click(),
+    layouts: slides ? layoutKeys(state.library.layoutMap) : [],
     layout: data.layout,
     onCommand: () => {
       // The canvas listens for input, but execCommand does not always
@@ -1052,6 +1084,8 @@ function renderRibbon() {
   paintSwatches($("ribbon"), state.library.geometry?.theme);
   paintListType($("ribbon"), regionType(activeRegion));
   updateHistoryButtons();
+  paintCommitButtons();
+  measureHeader();
 }
 
 // ---- new lessons and modules -------------------------------------------
@@ -1386,7 +1420,14 @@ function renderBlock() {
 
   $("slidesview").hidden = !slides;
   $("document").hidden = slides;
-  $("ribbon").hidden = !slides;
+  $("ribbon").hidden = false;
+  // Rendered either way: on a document tab it carries only Save and
+  // Submit, which are not slide actions and must not disappear with the
+  // slide editor.
+  if (!slides) {
+    renderRibbon({ slides: false });
+    paintCommitButtons();
+  }
   $("sidebar").hidden = !slides;
 
   if (slides) {
@@ -2383,7 +2424,7 @@ function renderAttachment(host, doc) {
     `${doc.path} — carried with the block and linked from its documents. ` +
     "Binary files are not edited here.";
   const link = document.createElement("a");
-  link.href = `https://github.com/${owner}/${repo}/blob/${defaultBranch}/${doc.path}`;
+  link.href = `https://github.com/${owner}/${repo}/blob/${workingBranch()}/${doc.path}`;
   link.target = "_blank";
   link.rel = "noopener";
   link.textContent = `Open ${name} on GitHub`;
@@ -2483,6 +2524,44 @@ function changedFiles() {
   return changed;
 }
 
+/** The branch being worked on: a draft once saved, else the published one. */
+function workingBranch() {
+  return state.repo?.branch || state.repo?.defaultBranch;
+}
+
+/**
+ * Say which branch is open, and offer the way back.
+ *
+ * Reopening on a draft is what an author wants and is also a thing they
+ * have to be able to see -- otherwise "why does this not match GitHub"
+ * has no answer on screen.
+ */
+function renderBranchNote() {
+  const host = document.getElementById("branch-note");
+  if (!host || !state.repo) return;
+  const { owner, repo, defaultBranch } = state.repo;
+  const branch = workingBranch();
+  host.innerHTML = "";
+  if (branch === defaultBranch) {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  const name = document.createElement("code");
+  name.textContent = branch;
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "link";
+  back.textContent = `open ${defaultBranch}`;
+  back.title = `Discard nothing — reopen the published ${defaultBranch}`;
+  back.addEventListener("click", () => {
+    if (dirty() && !confirm("You have unsaved changes. Switch branch anyway?")) return;
+    forgetBranch(owner, repo);
+    openRepo(`${owner}/${repo}`);
+  });
+  host.append(document.createTextNode("editing "), name, back);
+}
+
 function updateActions() {
   const changed = changedFiles();
   $("dirty").textContent = changed.length
@@ -2495,6 +2574,28 @@ function updateActions() {
   const why = !writable ? "This token cannot push to this repository." : "";
   $("save").title = why;
   $("submit").title = why;
+  paintCommitButtons();
+  renderBranchNote();
+}
+
+/**
+ * Mirror Save and Submit onto their toolbar copies.
+ *
+ * The ribbon rebuilds its buttons every time it is drawn, and a fresh
+ * button is enabled -- so Save offered itself on a deck with nothing to
+ * commit until something else happened to call updateActions.
+ */
+function paintCommitButtons() {
+  for (const [id, from] of [["save-ribbon", "save"], ["submit-ribbon", "submit"]]) {
+    const button = document.getElementById(id);
+    const source = document.getElementById(from);
+    if (!button || !source) continue;
+    button.disabled = source.disabled;
+    if (source.title) button.title = source.title;
+    // Save is disabled far more often than not, so it should read as
+    // available the moment there is something to commit.
+    button.classList.toggle("urgent", id === "save-ribbon" && !source.disabled);
+  }
 }
 
 // ---- validate and preview ---------------------------------------------
@@ -2537,9 +2638,10 @@ async function runValidate() {
  * state so a second preview does not re-download the template.
  */
 async function withBinaries(report) {
-  const { owner, repo, defaultBranch } = state.repo;
+  const { owner, repo } = state.repo;
+  const branch = workingBranch();
   const files = pendingFiles();
-  const paths = await state.gh.tree(owner, repo, defaultBranch);
+  const paths = await state.gh.tree(owner, repo, branch);
   const binaries = libraryPaths(paths).filter((p) => !files.has(p));
 
   let done = 0;
@@ -2549,7 +2651,7 @@ async function withBinaries(report) {
     } else {
       report(`Fetching ${path.split("/").pop()} (${++done}/${binaries.length})`);
       const res = await fetch(
-        `https://raw.githubusercontent.com/${owner}/${repo}/${defaultBranch}/${path}`
+        `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`
       );
       if (!res.ok) throw new Error(`cannot fetch ${path} (${res.status})`);
       const bytes = new Uint8Array(await res.arrayBuffer());
@@ -2609,8 +2711,13 @@ async function save() {
     state.edits = new Map();
     state.library = readLibrary(state.files);
 
+    // So the next visit opens here rather than on the published version.
+    rememberBranch(owner, repo, branch);
+    state.repo.branch = branch;
+
     renderOutline();
     renderSlide();
+    renderBranchNote();
     status(
       `Saved to ${branch} (${sha.slice(0, 7)})${created ? " — branch created" : ""}.`,
       "ok"
@@ -2653,30 +2760,149 @@ async function submit() {
   }
 }
 
+/**
+ * What has happened to this session, and a way back into any of it.
+ *
+ * A link to github.com was not history, it was a way of leaving. What an
+ * author wants is the version itself: to read what a slide said last
+ * Tuesday, or to take back a change made three commits ago. So each
+ * entry loads that commit's files into the editor, as unsaved changes --
+ * nothing is written and nothing is reverted in the repository. Saving
+ * is still the only thing that writes, which makes looking safe.
+ */
 async function showHistory() {
   const { owner, repo } = state.repo;
   const block = state.library.blocks.get(state.blockId);
+  const host = $("problems");
   try {
-    // The document on screen, or the whole block when it has no deck.
     const commits = await state.gh.commits(owner, repo, {
+      branch: workingBranch(),
       path: block.slidesPath ?? `blocks/${block.id}`,
       limit: 20,
     });
-    const host = $("problems");
-    host.innerHTML = "<h3>History</h3>";
+    host.innerHTML = "";
+    const heading = document.createElement("h3");
+    heading.textContent = `History of ${block.meta?.title || block.id}`;
+    host.appendChild(heading);
+    if (!commits.length) {
+      host.appendChild(
+        Object.assign(document.createElement("p"), {
+          className: "hint",
+          textContent: "Nothing committed here yet.",
+        })
+      );
+      return;
+    }
+    host.appendChild(
+      Object.assign(document.createElement("p"), {
+        className: "hint",
+        textContent:
+          "Open one to load it into the editor as unsaved changes. Nothing " +
+          "is written until you Save, so looking costs nothing — and Undo " +
+          "takes you back to where you were.",
+      })
+    );
+
     for (const commit of commits) {
-      const row = document.createElement("p");
+      const row = document.createElement("div");
       row.className = "commit";
       const when = new Date(commit.commit.author.date).toLocaleString();
-      row.innerHTML =
-        `<a href="${commit.html_url}" target="_blank" rel="noopener">` +
-        `${commit.sha.slice(0, 7)}</a> ${commit.commit.message.split("\n")[0]} ` +
-        `<span class="muted">${commit.commit.author.name} · ${when}</span>`;
+
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "link commit-open";
+      open.textContent = commit.sha.slice(0, 7);
+      open.title = "Load this version into the editor";
+      open.addEventListener("click", () => loadVersion(commit));
+      row.appendChild(open);
+
+      row.appendChild(
+        Object.assign(document.createElement("span"), {
+          className: "commit-message",
+          textContent: " " + commit.commit.message.split(String.fromCharCode(10))[0],
+        })
+      );
+      row.appendChild(
+        Object.assign(document.createElement("span"), {
+          className: "muted",
+          textContent: ` ${commit.commit.author.name} · ${when} `,
+        })
+      );
+
+      const away = document.createElement("a");
+      away.href = commit.html_url;
+      away.target = "_blank";
+      away.rel = "noopener";
+      away.className = "muted";
+      away.textContent = "on GitHub";
+      row.appendChild(away);
       host.appendChild(row);
     }
+    // Pressing History should show you the history. The panel lives
+    // below the panes, so without this it opened off the bottom of the
+    // screen and nothing appeared to happen.
+    host.scrollIntoView({ block: "start", behavior: "smooth" });
   } catch (err) {
     status(err.message, "error");
   }
+}
+
+/**
+ * Load one commit's version of this session into the editor.
+ *
+ * As unsaved changes, deliberately. A history that reverted the
+ * repository would make reading it dangerous; this way the worst that
+ * can happen is a Save you did not mean, and Undo is already there.
+ */
+async function loadVersion(commit) {
+  const { owner, repo } = state.repo;
+  const block = state.library.blocks.get(state.blockId);
+  const sha = commit.sha;
+  await busy("history", "Loading", async (say) => {
+    try {
+      // Only this session's files: a commit may touch the whole library,
+      // and pulling all of it back would undo work in other sessions.
+      const prefix = `blocks/${block.id}/`;
+      const paths = (await state.gh.tree(owner, repo, sha)).filter((p) =>
+        p.startsWith(prefix)
+      );
+      if (!paths.length) {
+        status(`${sha.slice(0, 7)} has nothing for this session.`, "error");
+        return;
+      }
+      let done = 0;
+      const loaded = new Map();
+      for (const path of paths) {
+        loaded.set(path, await state.gh.file(owner, repo, path, sha));
+        say(`Loading ${sha.slice(0, 7)}… ${++done}/${paths.length}`);
+      }
+
+      // Into the pending edits, which is what the editor reads and what
+      // a Save would send. state.files stays as the branch has it, so
+      // the change count is honest about what would be written.
+      for (const [path, text] of loaded) {
+        if (state.files.get(path) === text) state.edits.delete(path);
+        else state.edits.set(path, text);
+      }
+      state.working.delete(state.blockId);
+      state.library = readLibrary(pendingFiles());
+      state.slideIndex = 0;
+      renderTabs();
+      renderOutline();
+      renderSlide();
+      updateActions();
+      const changed = [...loaded.keys()].filter((p) => state.edits.has(p)).length;
+      status(
+        changed
+          ? `Loaded ${sha.slice(0, 7)}: ${changed} file${changed === 1 ? "" : "s"} ` +
+            "differ from the branch. Nothing is written until you Save."
+          : `${sha.slice(0, 7)} is identical to what you have.`,
+        "ok"
+      );
+    } catch (err) {
+      status(`Could not load ${sha.slice(0, 7)}: ${err.message}`, "error");
+    }
+  });
 }
 
 // ---- wiring ------------------------------------------------------------
@@ -2702,6 +2928,10 @@ async function boot() {
   const token = storedToken();
   if (token) {
     await afterSignIn(token, storedLogin() || "signed in");
+    // Straight back to work. Signing in and then being asked which
+    // library, every time, is a question with the same answer.
+    const previous = lastRepo();
+    if (previous) await openRepo(previous);
   }
 }
 
@@ -2752,6 +2982,7 @@ function signOutNow() {
     )
   ) return;
   signOut();
+  rememberRepo(null);
   location.reload();
 }
 

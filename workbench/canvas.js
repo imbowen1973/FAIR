@@ -54,6 +54,55 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+/** Relative luminance, for deciding whether text can be read. */
+function luminance(hex) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+  const [r, g, b] = rgb.map((c) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrast(a, b) {
+  const la = luminance(a);
+  const lb = luminance(b);
+  if (la === null || lb === null) return null;
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * A text colour that can actually be read on this canvas.
+ *
+ * The Cards layout puts white headings on accent-coloured tabs. The deck
+ * is right, because PowerPoint paints the placeholder's fill. The canvas
+ * paints it too now -- but only if the library's layout-geometry.json
+ * carries it, and one generated before that was captured does not. So a
+ * library with an older geometry drew white on white and the headings
+ * were simply not there.
+ *
+ * Rather than require every library to regenerate its geometry, the
+ * canvas refuses to draw text it could not read: where the contrast
+ * against what is actually behind it is hopeless, it falls back to the
+ * slide's own foreground. The deck keeps the template's colour, which is
+ * the one that is correct there.
+ */
+function legible(colour, background, theme) {
+  if (!colour) return colour;
+  const behind = background || theme?.bg1 || "#ffffff";
+  const ratio = contrast(colour, behind);
+  // 2 is well below the 4.5 of a reading standard: this is for text that
+  // has all but disappeared, not for text that is merely low contrast,
+  // because the template's choice is the template's to make.
+  if (ratio === null || ratio >= 2) return colour;
+  const dark = theme?.tx1 || "#000000";
+  const light = theme?.bg1 || "#ffffff";
+  const onDark = contrast(light, behind);
+  const onLight = contrast(dark, behind);
+  return (onDark ?? 0) > (onLight ?? 0) ? light : dark;
+}
+
 /**
  * PowerPoint's shrink-on-overflow, emulated: it reduces type size and
  * line spacing together, so doing only one reaches a fit later than the
@@ -111,14 +160,27 @@ function buildList(items, type, style, theme, scale, depth) {
     const colour = themeColour(theme, typeof item === "object" ? item.color : null);
     if (colour) li.style.color = colour;
 
-    // A line inside a list that carries no bullet -- the lead-in before
-    // the points, or the sentence that closes them. The canvas has to
-    // show it the way the deck will, or the two disagree about the same
-    // slide.
-    if (typeof item === "object" && item.bullet === false) {
-      li.style.listStyle = "none";
-      li.style.marginLeft = "-1em";
-      li.dataset.bullet = "none";
+    // Per line: what it is marked with, and how it is aligned. The
+    // region says what the list is; a line may say otherwise, which is
+    // how one placeholder holds a lead-in, then the points, then the
+    // sentence that closes them. The canvas has to show it the way the
+    // deck will, or the two disagree about the same slide.
+    if (typeof item === "object") {
+      const marker =
+        item.marker ?? (item.bullet === false ? "none" : null);
+      if (marker === "none") {
+        li.style.listStyleType = "none";
+        li.style.marginLeft = "-1em";
+      } else if (marker === "number") {
+        li.style.listStyleType = "decimal";
+      } else if (marker === "bullet") {
+        li.style.listStyleType = "disc";
+      }
+      if (marker) li.dataset.marker = marker;
+      if (item.align) {
+        li.style.textAlign = item.align === "justify" ? "justify" : item.align;
+        li.dataset.align = item.align;
+      }
     }
 
     const children = typeof item === "object" ? item.items ?? [] : [];
@@ -266,7 +328,7 @@ function paragraph(text, sizePx) {
  * Fill a region box and, when it holds text, make it editable.
  * `commit(value)` is called with the region's new value on every edit.
  */
-function fillRegion(box, value, style, theme, scale, commit, editable, media0 = {}, onMedia) {
+function fillRegion(box, value, style, theme, scale, commit, editable, media0 = {}, onMedia, painted = null) {
   const size = style.sizePt ? style.sizePt * scale : null;
   // On the box as well as on each paragraph. The per-element size is what
   // the template says; this is what anything the *browser* creates
@@ -276,12 +338,14 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
   if (size) box.style.fontSize = `${size}px`;
   box.style.textAlign = ALIGN[style.align] ?? "left";
   if (style.bold) box.style.fontWeight = "700";
-  const colour = themeColour(theme, style.colorSlot) ?? style.color;
+  const colour = legible(themeColour(theme, style.colorSlot) ?? style.color, painted, theme);
   if (colour) box.style.color = colour;
 
   const isString = typeof value === "string" || value == null;
   const type = isString ? "text" : value.type;
-  const regionColour = !isString ? themeColour(theme, value.color) : null;
+  const regionColour = !isString
+    ? legible(themeColour(theme, value.color), painted, theme)
+    : null;
   if (regionColour) box.style.color = regionColour;
 
   if (type === "text" || type === "p") {
@@ -516,7 +580,10 @@ export function drawSlide(
       (next) => onChange?.(region, next),
       editable && !fromLibrary,
       media,
-      (value_, kind) => onMedia?.(region, value_, kind)
+      (value_, kind) => onMedia?.(region, value_, kind),
+      // What was actually painted behind it, so the text colour can be
+      // judged against the thing it will sit on.
+      paint
     );
 
     if (editable && !fromLibrary) {

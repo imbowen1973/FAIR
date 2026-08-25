@@ -155,8 +155,36 @@ placeholder either way.
 a mapping with `text:` and optionally `items:` for nesting, `color:` for
 a theme slot, and `bullet: false`.
 
-`bullet: false` is how one placeholder holds both prose and points — a
-lead-in, the points, and the line that closes them:
+Each line decides for itself. `marker:` is `bullet`, `number` or `none`,
+and `align:` is `left`, `center`, `right` or `justify`. Both default to
+whatever the region is, which is the ordinary case — they exist for the
+one placeholder that has to hold more than one kind of line:
+
+```yaml
+full:
+  type: ul
+  items:
+    - text: What to check before sharing
+      marker: none
+      align: center
+    - Who can be re-identified
+    - What was consented to
+    - text: Ask the data controller first
+      marker: number
+    - text: Then record the decision
+      marker: number
+    - text: If anything is unclear, do not share.
+      marker: none
+```
+
+`bullet: false` still works and means `marker: none`.
+
+A layout offers the regions it offers. Where it offers one, splitting a
+lead-in into a region of its own is not possible, and inventing a second
+region would be a layout decision taken by the content — which is also
+why alignment is per line rather than per placeholder.
+
+The older form, kept for the same reason:
 
 ```yaml
 full:

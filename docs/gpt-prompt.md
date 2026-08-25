@@ -122,8 +122,9 @@ notes: |
 A region is a plain string, or a mapping with a `type`:
 
 - `ul` / `ol` with `items:` — a list; items nest via `text:` and `items:`
-  - an item may carry `bullet: false`, which is how one placeholder holds
-    a lead-in sentence, then the points, then a closing line
+  - each item may carry `marker:` (`bullet`, `number` or `none`) and
+    `align:` (`left`, `center`, `right`) — how one placeholder holds a
+    centred lead-in, then the points, then a closing line
 - `p` with `text:` — a paragraph
 - `image` with `src:` and optionally `fit:` (`cover`, `contain`, `width`, `height`)
 - `video` with `url:` — hosted, never a file
