@@ -215,12 +215,19 @@ function readBlocks(box) {
     const tag = node.nodeName.toLowerCase();
     if (tag === "br") continue;
     if (tag === "ul" || tag === "ol") continue; // read as a list instead
-    const text = fromElement(node);
-    // Browsers leave empty wrappers behind while rewrapping what was
-    // typed. They are artefacts, not blank lines anybody asked for, and
-    // they would render as empty paragraphs on the slide.
-    if (text.trim()) out.push(text);
+    // An empty paragraph is held open by a lone <br>, which fromElement
+    // reads as a newline -- and the join adds another, so one blank line
+    // typed came back as two. It is an empty line, not a line break.
+    out.push(node.textContent.trim() ? fromElement(node) : "");
   }
+
+  // Browsers leave empty wrappers behind while rewrapping what was
+  // typed, and those are artefacts. A blank line *between* two lines is
+  // not: somebody pressed Enter twice on purpose, and dropping it
+  // rewrote what they wrote. So the ends are trimmed and the middle is
+  // left alone.
+  while (out.length && !out[0].trim()) out.shift();
+  while (out.length && !out[out.length - 1].trim()) out.pop();
   return out;
 }
 

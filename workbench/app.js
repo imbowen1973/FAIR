@@ -1129,33 +1129,43 @@ function renderRibbon({ slides = true } = {}) {
     onRedo: redo,
     onAddSlide: addSlide,
     onImport: openImport,
+    // The whole placeholder: is this region a list, and of what kind.
     onListType: (kind) => {
       const region = activeRegion;
       if (!region) return;
       const current = slideData(state.slideIndex);
-      const value = current[region];
-
-      // The lines the selection touches, when the region is already a
-      // list. One placeholder holding a lead-in, then points, then a
-      // closing line is the ordinary case, and it could not be built
-      // here -- only the whole placeholder could be converted.
-      const box = $("canvas").querySelector(`.region[data-region="${region}"]`);
-      const paths = box && value?.items ? selectedItemPaths(box) : [];
-      if (paths.length) {
-        let items = value.items;
-        for (const path of paths) {
-          items = markItem(items, path, kind === "none" ? "none" : kind === "ol" ? "number" : "bullet");
-        }
-        commitSlide({ ...current, [region]: { ...value, items } });
-        renderCanvas();
-        return;
-      }
-
-      const next = asListType(value, kind);
-      if (next === value) return; // already that, or not text
+      const next = asListType(current[region], kind);
+      if (next === current[region]) return; // already that, or not text
       commitSlide({ ...current, [region]: next });
       renderCanvas();
       paintListType($("ribbon"), kind);
+    },
+
+    // The lines the selection touches, which is how one placeholder
+    // holds a lead-in, then the points, then the line that closes them.
+    // Separate from onListType because one control doing both was
+    // ambiguous, and it broke the other: choosing "no list" marked a
+    // single line rather than turning the placeholder back into plain
+    // text, and there was then no way to do the latter at all.
+    onLineMarker: (marker) => {
+      const region = activeRegion;
+      if (!region) return;
+      const current = slideData(state.slideIndex);
+      const value = current[region];
+      if (!value?.items) {
+        status("Make the placeholder a list first, then mark its lines.", "");
+        return;
+      }
+      const box = $("canvas").querySelector(`.region[data-region="${region}"]`);
+      const paths = box ? selectedItemPaths(box) : [];
+      if (!paths.length) {
+        status("Put the caret in a line first.", "");
+        return;
+      }
+      let items = value.items;
+      for (const path of paths) items = markItem(items, path, marker);
+      commitSlide({ ...current, [region]: { ...value, items } });
+      renderCanvas();
     },
   });
   paintSwatches($("ribbon"), state.library.geometry?.theme);

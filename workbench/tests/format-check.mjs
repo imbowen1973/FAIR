@@ -245,7 +245,10 @@ const markers = () =>
 console.log("markers before:", JSON.stringify(await markers()));
 await page.locator('.canvas .region[data-region="card1"] li').nth(1).click();
 await page.waitForTimeout(300);
-await page.locator('#ribbon .mark.list[data-list="ol"]').first().click();
+// The line control, not the region one: the two are separate now,
+// because one control meaning both was ambiguous and broke region
+// conversion outright.
+await page.locator('#ribbon .mark.line-marker[data-marker="number"]').first().click();
 await page.waitForTimeout(600);
 const markersAfter = await markers();
 console.log("markers after: ", JSON.stringify(markersAfter));

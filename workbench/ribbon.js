@@ -22,6 +22,13 @@ const COMMANDS = {
 
 const THEME_SLOTS = ["accent1", "accent2", "accent3", "accent4", "accent5", "accent6"];
 
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
 function button(label, title, onDown, className = "mark", id = null) {
   const b = document.createElement("button");
   b.type = "button";
@@ -57,7 +64,7 @@ function button(label, title, onDown, className = "mark", id = null) {
 export function ribbon(host, {
   layouts, layout, onCommand, onLayout, onColour, onListType, onMedia,
   onUndo, onRedo, onAddSlide, onImport, onSave, onSubmit, onHistory,
-  slides = true,
+  onLineMarker, slides = true,
 }) {
   host.innerHTML = "";
 
@@ -154,12 +161,30 @@ export function ribbon(host, {
     ["ol", "1.", "Numbered list"],
     [null, "¶", "No list: plain lines"],
   ];
+  lists.appendChild(el("span", "ribbon-label", "list"));
   for (const [kind, label, title] of LISTS) {
-    const b = button(label, title, () => onListType?.(kind), "mark list");
+    const b = button(label, `${title} — the whole placeholder`,
+      () => onListType?.(kind), "mark list");
     b.dataset.list = kind ?? "none";
     lists.appendChild(b);
   }
   host.appendChild(lists);
+
+  // The same three, for the lines the selection touches. One control
+  // doing both was ambiguous and broke the other: choosing "no list"
+  // marked a single line instead of turning the placeholder back into
+  // plain text, and there was then no way to do the latter at all.
+  const lines = document.createElement("div");
+  lines.className = "ribbon-group";
+  lines.appendChild(el("span", "ribbon-label", "line"));
+  for (const [kind, label, title] of LISTS) {
+    const marker = kind === "ul" ? "bullet" : kind === "ol" ? "number" : "none";
+    const b = button(label, `${title} — the selected lines only`,
+      () => onLineMarker?.(marker), "mark line-marker");
+    b.dataset.marker = marker;
+    lines.appendChild(b);
+  }
+  host.appendChild(lines);
 
   // Media acts on the selected region, like colour and list type do.
   // Without this a picture could only go where a placeholder happened to

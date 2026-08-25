@@ -179,6 +179,12 @@ full:
 
 `bullet: false` still works and means `marker: none`.
 
+In the workbench these are two controls, not one: **list** sets what the
+whole placeholder is, and **line** marks only the lines the selection
+touches. One control meaning both was ambiguous — choosing "no list"
+marked a single line rather than turning the placeholder back into plain
+text, and there was then no way to do the latter at all.
+
 A layout offers the regions it offers. Where it offers one, splitting a
 lead-in into a region of its own is not possible, and inventing a second
 region would be a layout decision taken by the content — which is also
