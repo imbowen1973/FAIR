@@ -272,22 +272,56 @@ export function blankSlide(layout, id) {
  * others untouched in review. Anything edited, new, or whose neighbours
  * changed around it is re-emitted from its data.
  */
+/**
+ * The frontmatter a new deck starts with.
+ *
+ * `session`, `title` and `version` are what the renderer requires. The
+ * session id comes from the block's own number where it has one, because
+ * that is what names the rendered file.
+ */
+function frontmatterFor(block, nl) {
+  const id = String(block?.id ?? "");
+  const number = /^(\d+)/.exec(id);
+  // `||` not `??`: an empty string is as absent as undefined here, and
+  // the renderer requires all three to be present and non-empty.
+  const session = String(block?.meta?.code || number?.[1] || id || "01");
+  const title = String(block?.meta?.title || id || "Session");
+  return [
+    "---",
+    `session: ${JSON.stringify(session)}`,
+    `title: ${JSON.stringify(title)}`,
+    "version: 0.1.0",
+    "---",
+    "",
+    "",
+  ].join(nl);
+}
+
 /** The line ending this file already uses — a repo may hold either. */
 function newlineOf(text) {
   return text.includes("\r\n") ? "\r\n" : "\n";
 }
 
-export function renderSlidesFile(parsed, working) {
+export function renderSlidesFile(parsed, working, block = null) {
   // A block that had no deck: there is no original text to splice into,
   // so every slide is emitted fresh. Everything below still holds.
   if (!parsed) parsed = { text: "", slides: [] };
   const nl = newlineOf(parsed.text);
   const hasSlides = parsed.slides.length > 0;
-  const header = hasSlides
+  let header = hasSlides
     ? parsed.text.slice(0, parsed.slides[0].start)
     : parsed.text.endsWith(nl)
       ? parsed.text
       : parsed.text + nl;
+
+  // A deck written from nothing needs frontmatter. Without it the file
+  // parses here -- this reader is lenient -- and the renderer refuses it
+  // outright: "file must begin with '---' frontmatter". So slides
+  // imported into a session that had no deck looked perfectly fine in
+  // the rail and broke the moment they were saved.
+  if (!FRONTMATTER.test(header)) {
+    header = frontmatterFor(block, nl) + header.replace(/^\s+/, "");
+  }
 
   const bodies = working.map((entry) => {
     // Untouched, wherever it now sits: its own bytes, moved or not.

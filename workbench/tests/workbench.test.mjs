@@ -1519,3 +1519,57 @@ test("a branch that cannot exist says why, not 422", async () => {
     /draft\/ada\/01-intro.*branch and a folder of branches/s
   );
 });
+
+// ---- a deck written from nothing needs frontmatter ---------------------
+//
+// Slides imported into a session that had no deck looked right in the
+// rail, rendered on the canvas, and broke on save. The file this reader
+// produced had no frontmatter at all -- and this reader is lenient, so
+// it went on parsing its own broken output. The renderer is not:
+//
+//   file must begin with '---' frontmatter
+//
+// So the slides were fine, the screen was fine, and the committed file
+// could not be built.
+
+test("a deck with no original file still gets frontmatter", () => {
+  const working = [blankSlide("Full", "s-01")];
+  const block = { id: "03-profiles", meta: { title: "Occupational profiles" } };
+  const file = renderSlidesFile(null, working, block);
+
+  assert.ok(file.startsWith("---"), "the renderer requires it first");
+  const parsed = parseSlides(file);
+  assert.equal(parsed.frontmatter.session, "03", "the block's own number");
+  assert.equal(parsed.frontmatter.title, "Occupational profiles");
+  assert.ok(parsed.frontmatter.version, "version is required too");
+  assert.equal(parsed.slides.length, 1, "and the slide survived");
+});
+
+test("frontmatter falls back rather than emitting an empty key", () => {
+  // The renderer wants all three present *and* non-empty, so an empty
+  // string is as absent as undefined.
+  const file = renderSlidesFile(null, [blankSlide("Full", "s-01")], {
+    id: "",
+    meta: { title: "" },
+  });
+  const { frontmatter } = parseSlides(file);
+  for (const key of ["session", "title", "version"]) {
+    assert.ok(String(frontmatter[key] ?? "").trim(), `${key} is empty`);
+  }
+});
+
+test("a deck that already has frontmatter keeps its own", () => {
+  const text =
+    "---\nsession: '07'\ntitle: Mine\nversion: 2.1.0\ndc:\n  creator: Ada\n---\n\n" +
+    "--- slide\nid: s-01\nlayout: Full\n---\n";
+  const parsed = parseSlides(text);
+  const file = renderSlidesFile(parsed, workingSlides(parsed), {
+    id: "01-other",
+    meta: { title: "Something else" },
+  });
+  const after = parseSlides(file);
+  assert.equal(after.frontmatter.session, "07");
+  assert.equal(after.frontmatter.title, "Mine");
+  assert.equal(after.frontmatter.version, "2.1.0");
+  assert.deepEqual(after.frontmatter.dc, { creator: "Ada" });
+});

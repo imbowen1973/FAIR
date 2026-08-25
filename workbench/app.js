@@ -2780,7 +2780,7 @@ function pendingFiles() {
     // writing an empty one would commit a file nobody asked for.
     if (!block.slidesPath && !list.length) continue;
     const path = block.slidesPath ?? `blocks/${blockId}/slides.md`;
-    out.set(path, renderSlidesFile(block.parsed, list));
+    out.set(path, renderSlidesFile(block.parsed, list, block));
   }
   for (const [path, text] of state.edits) out.set(path, text);
   return out;

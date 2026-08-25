@@ -128,10 +128,38 @@ page.on("console", (m) => {
   errors.push(t);
 });
 
+const sentBlobs = [];
+const branchNames = new Set(["main"]);
+
 await page.route("https://api.github.com/**", (route) => {
-  const url = route.request().url();
-  const json = (b) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+  const req = route.request();
+  const url = req.url();
+  const method = req.method();
+  const body = () => {
+    try { return JSON.parse(req.postData() || "{}"); } catch { return {}; }
+  };
+  const json = (b, status = 200) =>
+    route.fulfill({ status, contentType: "application/json", body: JSON.stringify(b) });
+
+  // Enough of git to let a Save through, and to keep what it wrote.
+  if (url.includes("/git/matching-refs/heads/")) return json({ message: "Not Found" }, 404);
+  if (url.includes("/git/ref/heads/") || url.includes("/git/refs/heads/")) {
+    const name = decodeURIComponent(url.split("/heads/")[1].split("?")[0]);
+    return branchNames.has(name)
+      ? json({ object: { sha: "parent1" } })
+      : json({ message: "Not Found" }, 404);
+  }
+  if (url.includes("/git/refs") && method === "POST") {
+    branchNames.add(body().ref.replace("refs/heads/", ""));
+    return json({});
+  }
+  if (url.includes("/git/blobs") && method === "POST") {
+    sentBlobs.push(body());
+    return json({ sha: `blob${sentBlobs.length}` });
+  }
+  if (url.includes("/git/trees") && method === "POST") return json({ sha: "tree1" });
+  if (url.includes("/git/commits") && method === "POST") return json({ sha: "commit1" });
+  if (url.includes("/git/commits/")) return json({ tree: { sha: "base" } });
   if (url.endsWith("/user")) return json({ login: "tester" });
   if (url.includes("/git/trees/")) {
     return json({
@@ -264,6 +292,22 @@ const after = await page.evaluate(() => {
   };
 });
 console.log("after import:", JSON.stringify(after, null, 1));
+// And what a Save would actually commit: the slides were fine and the
+// file was not, which is why they only broke on save.
+sentBlobs.length = 0;
+await page.click("#save");
+await page.waitForTimeout(1600);
+const written = (() => {
+  for (const blob of sentBlobs) {
+    const text = blob.encoding === "base64"
+      ? Buffer.from(blob.content, "base64").toString("utf8")
+      : blob.content ?? "";
+    if (text.includes("--- slide")) return text;
+  }
+  return "";
+})();
+console.log("committed head:", JSON.stringify(written.slice(0, 90)));
+
 if (errors.length) console.log("errors:", errors.slice(0, 4));
 
 const NL = String.fromCharCode(10);
@@ -277,7 +321,14 @@ const failed =
   after.slides !== 2 ||
   !after.ids.includes("profile-climate-regenerative-agriculture") ||
   after.geometryNote !== null ||
-  after.regions < 4;
+  after.regions < 4 ||
+  // The committed file must be one the renderer will accept: it begins
+  // with frontmatter carrying session, title and version.
+  !written.startsWith("---") ||
+  !/^session:/m.test(written) ||
+  !/^title:/m.test(written) ||
+  !/^version:/m.test(written) ||
+  !written.includes("profile-climate-regenerative-agriculture");
 
 console.log(failed ? NL + "FAIL" : NL + "PASS");
 await browser.close();
