@@ -2569,3 +2569,49 @@ def test_a_break_does_not_lose_the_emphasis_around_it(tmp_path):
         if etree.QName(child).localname in ("r", "br")
     ]
     assert "br" in kinds
+
+
+def test_a_word_can_be_coloured_without_colouring_the_line(tmp_path):
+    """Markdown carries inline colour; the region and the line do not
+    have to agree with it.
+
+    Colour was a property of the region, then of the line. A word was
+    never an option, and a word is what an author reaches for.
+    """
+    nl = chr(10)
+    slide = _render_one(
+        tmp_path,
+        "full:" + nl + "  type: ul" + nl + "  items:" + nl
+        + "    - a [coloured word]{accent2} in an ordinary line" + nl,
+    )
+    paragraph = next(_body_paragraphs(slide))
+    got = []
+    for run in paragraph.runs:
+        slot = run._r.find(f".//{{{A_NS}}}schemeClr")
+        got.append((run.text, slot.get("val") if slot is not None else None))
+    assert got == [
+        ("a ", None),
+        ("coloured word", "accent2"),
+        (" in an ordinary line", None),
+    ]
+
+
+def test_an_inline_colour_keeps_the_emphasis_inside_it(tmp_path):
+    nl = chr(10)
+    slide = _render_one(
+        tmp_path,
+        "full:" + nl + "  type: ul" + nl + "  items:" + nl
+        + "    - '[**bold and coloured**]{accent1} then plain'" + nl,
+    )
+    paragraph = next(_body_paragraphs(slide))
+    first = paragraph.runs[0]
+    assert first.font.bold is True
+    assert first._r.find(f".//{{{A_NS}}}schemeClr").get("val") == "accent1"
+    assert paragraph.runs[1]._r.find(f".//{{{A_NS}}}schemeClr") is None
+
+
+def test_plain_text_drops_the_colour_marker(tmp_path):
+    """The index and search see words, not markup."""
+    from edufair_renderer.runs import plain_text
+
+    assert plain_text("a [red word]{accent2} here") == "a red word here"

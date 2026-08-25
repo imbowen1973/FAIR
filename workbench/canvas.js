@@ -278,6 +278,21 @@ export function selectedItemPaths(box) {
  * to attach a colour or a marker to. The index says which line the
  * caret is on, which is what turns "this placeholder" into "this line".
  */
+/**
+ * Paint every inline colour span from the theme.
+ *
+ * The slot travels in the markdown and through the DOM; only here is
+ * there a theme to turn accent2 into a colour. Doing it at draw time
+ * rather than at parse time is what lets a rebrand recolour a deck
+ * without touching a word of it.
+ */
+export function paintTints(root, theme) {
+  for (const tint of root.querySelectorAll("span.tint[data-colour]")) {
+    const colour = themeColour(theme, tint.dataset.colour);
+    if (colour) tint.style.color = colour;
+  }
+}
+
 export function activeBlockIndex(box) {
   const selection = box.ownerDocument.getSelection?.();
   if (!selection || !selection.anchorNode) return null;
@@ -670,6 +685,7 @@ export function drawSlide(
       // judged against the thing it will sit on.
       paint
     );
+    paintTints(box, theme);
 
     if (editable && !fromLibrary) {
       box.setAttribute("aria-label", `${region}: ${plainText(

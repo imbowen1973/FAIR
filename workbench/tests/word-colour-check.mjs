@@ -97,15 +97,61 @@ page.on("console", (m) => {
   errors.push(t);
 });
 
+// What a repository looks like after the older per-session scheme:
+// refs/heads/draft/tester/ is a directory, so refs/heads/draft/tester
+// cannot also be a file. Creating it answers 422.
+const sentBlobs = [];
+const branches = new Set(["main", "draft/tester/01-misuse"]);
+const onBranch = { main: new Map(Object.entries(FILES)) };
+let lastCommitBranch = null;
+
 await page.route("https://api.github.com/**", (route) => {
-  const url = route.request().url();
-  const json = (b) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+  const req = route.request();
+  const url = req.url();
+  const method = req.method();
+  const body = () => {
+    try { return JSON.parse(req.postData() || "{}"); } catch { return {}; }
+  };
+  const json = (b, status = 200) =>
+    route.fulfill({ status, contentType: "application/json", body: JSON.stringify(b) });
   if (url.endsWith("/user")) return json({ login: "tester" });
+
+  if (url.includes("/git/matching-refs/heads/")) {
+    const prefix = decodeURIComponent(url.split("/git/matching-refs/heads/")[1]);
+    const hits = [...branches].filter((b) => b.startsWith(prefix));
+    return hits.length
+      ? json(hits.map((b) => ({ ref: `refs/heads/${b}` })))
+      : json({ message: "Not Found" }, 404);
+  }
+
+  const refMatch = /\/git\/refs?\/heads\/(.+?)(\?|$)/.exec(url);
+  if (refMatch && method === "GET") {
+    const name = decodeURIComponent(refMatch[1]);
+    return branches.has(name)
+      ? json({ object: { sha: `sha-${name}` } })
+      : json({ message: "Not Found" }, 404);
+  }
+  if (url.includes("/git/refs") && method === "POST") {
+    branches.add(body().ref.replace("refs/heads/", ""));
+    return json({});
+  }
+  if (url.includes("/git/blobs") && method === "POST") {
+    const blob = body();
+    sentBlobs.push(blob);
+    return json({ sha: `blob-${blob.content?.length ?? 0}-${Math.round(performance.now())}` });
+  }
+  if (url.includes("/git/trees") && method === "POST") {
+    lastCommitBranch = null;
+    return json({ sha: "tree1", _entries: body().tree });
+  }
+  if (url.includes("/git/commits") && method === "POST") return json({ sha: "commit1" });
+  if (url.includes("/git/commits/")) return json({ tree: { sha: "base" } });
   if (url.includes("/git/trees/")) {
+    const which = decodeURIComponent(url.split("/git/trees/")[1].split("?")[0]);
+    const files = onBranch[which] ?? onBranch.main;
     return json({
       truncated: false,
-      tree: Object.keys(FILES).map((path) => ({ path, type: "blob" })),
+      tree: [...files.keys()].map((path) => ({ path, type: "blob" })),
     });
   }
   if (/\/repos\/[^/]+\/[^/]+$/.test(url)) {
@@ -115,11 +161,15 @@ await page.route("https://api.github.com/**", (route) => {
   return json({});
 });
 await page.route("https://raw.githubusercontent.com/**", (route) => {
-  const path = decodeURIComponent(route.request().url().split("/main/")[1] ?? "");
-  const body = FILES[path];
-  return body === undefined
-    ? route.fulfill({ status: 404, body: "" })
-    : route.fulfill({ status: 200, contentType: "text/plain", body });
+  // .../<owner>/<repo>/<branch>/<path>
+  const rest = route.request().url().split("raw.githubusercontent.com/")[1] ?? "";
+  const bits = rest.split("/");
+  const which = decodeURIComponent(bits[2] ?? "main");
+  const path = decodeURIComponent(bits.slice(3).join("/"));
+  const files = onBranch[which] ?? onBranch.main;
+  return files.has(path)
+    ? route.fulfill({ status: 200, contentType: "text/plain", body: files.get(path) })
+    : route.fulfill({ status: 404, body: "" });
 });
 
 await page.goto(BASE, { waitUntil: "networkidle" });
@@ -183,98 +233,85 @@ const slideNow = () =>
     };
   });
 
-// ---- the rail's own controls -------------------------------------------
+const NL = String.fromCharCode(10);
+const committed = () => {
+  for (const blob of sentBlobs) {
+    const text = blob.encoding === "base64"
+      ? Buffer.from(blob.content, "base64").toString("utf8")
+      : blob.content ?? "";
+    if (text.includes("--- slide")) return text;
+  }
+  return null;
+};
+
+// ---- colour a word, not a line ----------------------------------------
 //
-// Reorder and delete sit beside the thumbnail in each slide row. They
-// were reported as "gone". They were drawn, visible, and not clickable:
-// drawSlide falls back to a 150px stage when its host has not been laid
-// out yet, which is wider than the 110px thumbnail, and the overflow sat
-// on top of them. Every DOM assertion passed while the buttons could not
-// be pressed.
-page.on("dialog", (d) => d.accept());
+// Markdown carries inline colour as `[words]{accent1}`, so two words in
+// the middle of a sentence are as colourable as the line or the
+// placeholder. Colour used to be a property of the region, then of the
+// line; a word was never an option.
 
-// Three slides, so moving and deleting both have somewhere to go.
-await page.click("#add-slide-ribbon");
-await page.click("#add-slide-ribbon");
+await page.locator('.canvas .region[data-region="full"]').first().click();
+await page.waitForTimeout(200);
+await page.locator('#ribbon .mark.list[data-list="none"]').first().click();
+await page.waitForTimeout(500);
+await page.locator('.canvas .region[data-region="full"]').first().click();
+await page.keyboard.press("Control+A");
+await page.keyboard.type("The quick brown fox jumps");
 await page.waitForTimeout(500);
 
-const ids = () => page.$$eval(".slide-row", (n) => n.map((x) => x.dataset.slideId));
-const reach = () =>
-  page.evaluate(() => {
-    const rows = [...document.querySelectorAll(".slide-row")];
-    return rows.map((row) => {
-      const buttons = [...row.querySelectorAll(".slide-tools button")];
-      return buttons.map((b) => {
-        const r = b.getBoundingClientRect();
-        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-        return {
-          label: b.getAttribute("aria-label"),
-          onScreen: r.top >= 0 && r.bottom <= innerHeight,
-          clickable: hit === b || b.contains(hit),
-          over: hit ? hit.className : "nothing",
-        };
-      });
-    });
-  });
-
-const before = await ids();
-const reachable = (await reach()).flat();
-const unreachable = reachable.filter((b) => b.onScreen && !b.clickable);
-console.log("rows:", before.length, "| tool buttons:", reachable.length);
-console.log("unreachable:", JSON.stringify(unreachable));
-
-// Duplicate the first, which must get an id of its own: two slides
-// sharing one is a file the renderer refuses outright.
-await page.click('button[aria-label="duplicate: slide 1"]');
-await page.waitForTimeout(500);
-const afterCopy = await ids();
-console.log("after duplicating slide 1:", JSON.stringify(afterCopy));
-
-// Move the last slide up, by pressing the button rather than calling in.
-await page.click('button[aria-label="move up: slide 4"]');
-await page.waitForTimeout(400);
-const afterMove = await ids();
-
-// Then delete the first.
-await page.click('button[aria-label="delete: slide 1"]');
-await page.waitForTimeout(500);
-const afterDelete = await ids();
-
-// The thumbnail must still select its slide, having been made
-// click-through so it would stop swallowing the buttons beside it.
-await page.click(".slide-row:last-of-type .thumb");
-await page.waitForTimeout(300);
-const picked = await page.evaluate(() => {
-  const on = document.querySelector(".slide-row.on");
-  const rows = [...document.querySelectorAll(".slide-row")];
-  return { index: rows.indexOf(on), total: rows.length };
+// Select "brown" alone.
+await page.evaluate(() => {
+  const box = document.querySelector('.canvas .region[data-region="full"]');
+  const node = [...box.querySelectorAll("p, li")][0].firstChild;
+  const text = node.textContent;
+  const from = text.indexOf("brown");
+  const range = document.createRange();
+  range.setStart(node, from);
+  range.setEnd(node, from + "brown".length);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
 });
+await page.waitForTimeout(200);
+await page.locator("#ribbon button.swatch").nth(0).click();
+await page.waitForTimeout(700);
 
-console.log("ids before:", JSON.stringify(before));
-console.log("after move up:", JSON.stringify(afterMove));
-console.log("after delete: ", JSON.stringify(afterDelete));
-console.log("thumb selects:", JSON.stringify(picked));
+const painted = await page.evaluate(() => {
+  const box = document.querySelector('.canvas .region[data-region="full"]');
+  const tint = box.querySelector("span.tint");
+  const line = box.querySelector("p, li");
+  return {
+    tinted: tint ? tint.textContent : null,
+    slot: tint ? tint.dataset.colour : null,
+    tintColour: tint ? getComputedStyle(tint).color : null,
+    lineColour: line ? getComputedStyle(line).color : null,
+    lineText: line ? line.textContent : null,
+  };
+});
+console.log("on the canvas:", JSON.stringify(painted));
+
+sentBlobs.length = 0;
+await page.click("#save");
+await page.waitForTimeout(1400);
+const file = committed() ?? "";
+const region = file.split("full:")[1]?.split(NL + "---")[0] ?? "(none)";
+console.log("committed:", JSON.stringify(region.trim()));
 
 if (errors.length) console.log("errors:", errors.slice(0, 4));
 
 const failed =
   errors.length > 0 ||
-  before.length !== 3 ||
-  // A copy, with a new id and nothing reused.
-  afterCopy.length !== 4 ||
-  afterCopy[1] === afterCopy[0] ||
-  new Set(afterCopy).size !== 4 ||
-  reachable.length !== 12 ||
-  unreachable.length > 0 ||
-  // Moved, not merely re-rendered.
-  JSON.stringify(afterMove) === JSON.stringify(before) ||
-  afterMove.length !== 4 ||
-  // Deleted, and the right one.
-  afterDelete.length !== 3 ||
-  afterDelete.includes(before[0]) ||
-  // And the thumbnail still picks its slide.
-  picked.index !== picked.total - 1;
+  // Exactly the selected word, and only it.
+  painted.tinted !== "brown" ||
+  painted.slot !== "accent1" ||
+  painted.lineText !== "The quick brown fox jumps" ||
+  // The word is coloured and the line around it is not.
+  painted.tintColour === painted.lineColour ||
+  // And the markdown says so.
+  !file.includes("[brown]{accent1}") ||
+  !file.includes("The quick [brown]{accent1} fox jumps");
 
-console.log(failed ? String.fromCharCode(10) + "FAIL" : String.fromCharCode(10) + "PASS");
+console.log(failed ? NL + "FAIL" : NL + "PASS");
 await browser.close();
 process.exit(failed ? 1 : 0);

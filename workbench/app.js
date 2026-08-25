@@ -54,6 +54,7 @@ import {
   activeBlockIndex,
   activeItemPath,
   drawSlide,
+  paintTints,
   selectedItemPaths,
 } from "./canvas.js";
 import { slideMeta } from "./meta.js";
@@ -543,6 +544,29 @@ function addSlide() {
   revealEditor();
 }
 
+/**
+ * Copy a slide, with an id of its own.
+ *
+ * The id is minted rather than copied: two slides sharing one is a file
+ * the renderer refuses outright, and slide-id-map.json is a mapping, so
+ * the duplicate would silently take the original's place in every deck
+ * already built from it.
+ */
+function duplicateSlide(index) {
+  const list = working();
+  const source = list[index];
+  if (!source) return;
+  const copy = structuredClone(source.data);
+  copy.id = newSlideIds(1)[0];
+  list.splice(index + 1, 0, { sourceIndex: null, data: copy, dirty: true });
+  state.slideIndex = index + 1;
+  remember();
+  renderOutline();
+  renderSlide();
+  updateActions();
+  status(`Duplicated as ${copy.id}.`, "ok");
+}
+
 function deleteSlide(index) {
   const list = working();
   if (list.length <= 1) {
@@ -751,6 +775,7 @@ function renderOutline() {
         for (const [label, title, fn] of [
           ["↑", "move up", () => moveSlide(index, -1)],
           ["↓", "move down", () => moveSlide(index, 1)],
+          ["⧉", "duplicate", () => duplicateSlide(index)],
           ["×", "delete", () => deleteSlide(index)],
         ]) {
           const b = document.createElement("button");
@@ -1008,6 +1033,42 @@ function caretLine(box, value) {
   return at === null ? null : [at];
 }
 
+/**
+ * Colour the selected words in place, or report that nothing is selected.
+ *
+ * Wrapping the selection in a span is how every other inline mark works
+ * here: the DOM is edited, the `input` handler reads it back, and the
+ * markdown that comes out carries `[words]{accent2}`.
+ */
+function colourSelection(box, slot) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
+  const range = selection.getRangeAt(0);
+  if (!box.contains(range.commonAncestorContainer)) return false;
+
+  // Anything already coloured inside the selection is replaced, or
+  // colouring over a coloured word would nest and the inner would win.
+  const fragment = range.extractContents();
+  for (const nested of fragment.querySelectorAll?.("span.tint") ?? []) {
+    nested.replaceWith(...nested.childNodes);
+  }
+  if (slot) {
+    const tint = document.createElement("span");
+    tint.className = "tint";
+    tint.dataset.colour = slot;
+    tint.appendChild(fragment);
+    range.insertNode(tint);
+    // Keep the words selected, so a second colour replaces the first.
+    selection.removeAllRanges();
+    const after = document.createRange();
+    after.selectNodeContents(tint);
+    selection.addRange(after);
+  } else {
+    range.insertNode(fragment);
+  }
+  return true;
+}
+
 /** A copy of `items` with the one at `path` given a marker. */
 function markItem(items, path, marker) {
   const [head, ...rest] = path;
@@ -1120,6 +1181,23 @@ function renderRibbon({ slides = true } = {}) {
       // single bullet and picking a colour recoloured every line in the
       // placeholder -- change one, change them all.
       const box = $("canvas").querySelector(`.region[data-region="${region}"]`);
+
+      // Words first. Markdown carries an inline colour, so a selection
+      // of two words in the middle of a line is exactly as colourable as
+      // the line or the placeholder -- and it is the thing an author
+      // reaches for most.
+      if (box && colourSelection(box, slot)) {
+        // Painted here rather than at the next draw: an inline edit does
+        // not redraw the canvas, so the span would carry its slot and no
+        // colour until something else happened.
+        paintTints(box, state.library.geometry?.theme);
+        // The canvas is the truth for the region's text; read it back
+        // the way typing does.
+        const editable = box.closest("[data-editable]") ?? box;
+        editable.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+      }
+
       const path = caretLine(box, value);
       const lined = path ? asLines(value) : null;
       if (lined) {

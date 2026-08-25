@@ -75,6 +75,14 @@ export function fromElement(root) {
         spans.push({ text: "\n", ...marks });
         continue;
       }
+      // A coloured span carries its theme slot, not a colour: the
+      // theme decides what accent2 looks like, and a literal value in
+      // the content would survive a rebrand and be wrong after it.
+      const slot = child.dataset ? child.dataset.colour : null;
+      if (slot) {
+        walk(child, { ...marks, color: slot });
+        continue;
+      }
       // A browser may express a mark as a style rather than a tag.
       const style = child.getAttribute?.("style") || "";
       const inferred = [];

@@ -303,6 +303,20 @@ Inline marks inside any text:
 | strikethrough | `~~text~~` | ~~withdrawn~~ |
 | underline | `__text__` | __underlined__ |
 | inline code | `` `text` `` | run `edufair-corpus` |
+| colour | `[text]{accent2}` | a [coloured phrase]{accent2} |
+
+**Colour is inline**, so a word or a phrase can differ from the line
+around it without the line differing from the placeholder. The value
+names a **theme slot** — `accent1` to `accent6`, `tx1`, `bg1` — and never
+a hex value: naming the slot is what lets a rebrand recolour every deck,
+and a literal `#C0504D` in the content would survive the rebrand and be
+wrong afterwards.
+
+The shape is Pandoc's bracketed span, borrowed rather than invented
+because markdown has no colour of its own.
+
+Three levels, innermost first: a run's own colour wins over the line's,
+and the line's over the region's.
 
 **Marks nest**: `**CO~2~ uptake**` is bold throughout with a subscript 2.
 

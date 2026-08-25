@@ -49,6 +49,21 @@ function emptyMarks() {
   return Object.fromEntries(MARKS.map((m) => [m, false]));
 }
 
+/**
+ * Inline colour: `[some words]{accent2}`.
+ *
+ * Pandoc's bracketed-span shape, because markdown has no colour of its
+ * own and inventing a third bracket style would be worse than borrowing
+ * a known one. The value is a theme slot, never a hex value -- the point
+ * of naming the slot is that a rebrand recolours every deck at once, and
+ * a literal #C0504D in the content would survive the rebrand and be
+ * wrong afterwards.
+ *
+ * Colour is not in MARKS because it is not a boolean: a span carries at
+ * most one, and the innermost wins.
+ */
+const COLOUR = /^\[([^\]]+)\]\{([a-zA-Z][a-zA-Z0-9]*)\}/;
+
 function parseInto(text, marks, out) {
   let literal = "";
   let i = 0;
@@ -61,6 +76,15 @@ function parseInto(text, marks, out) {
   };
 
   outer: while (i < text.length) {
+    if (text[i] === "[") {
+      const match = COLOUR.exec(text.slice(i));
+      if (match) {
+        flush();
+        parseInto(match[1], { ...marks, color: match[2] }, out);
+        i += match[0].length;
+        continue outer;
+      }
+    }
     for (const [delimiter, names] of DELIMITERS) {
       if (!text.startsWith(delimiter, i)) continue;
       const close = text.indexOf(delimiter, i + delimiter.length);
@@ -115,28 +139,42 @@ function wrap(inner, marks) {
  * "**CO~2~ uptake**" into "**CO****~2~**** uptake**" — same meaning to the
  * parser, unreadable in a diff.
  */
-function emit(spans, applied) {
+function emit(spans, applied, colour = null) {
   if (spans.length === 0) return "";
+
+  // Colour first, outermost, so `[**bold words**]{accent2}` reads the way
+  // it nests. A run of spans sharing a colour is wrapped once.
+  if (!colour) {
+    const shared = spans[0].color;
+    if (shared) {
+      let n = 1;
+      while (n < spans.length && spans[n].color === shared) n += 1;
+      return (
+        `[${emit(spans.slice(0, n), applied, shared)}]{${shared}}` +
+        emit(spans.slice(n), applied)
+      );
+    }
+  }
 
   const common = WRAP_ORDER.filter(
     (m) => !applied.has(m) && spans.every((s) => s[m])
   );
   if (common.length) {
     const next = new Set([...applied, ...common]);
-    return wrap(emit(spans, next), common);
+    return wrap(emit(spans, next, colour), common);
   }
 
   const [first, ...others] = spans;
   const outstanding = WRAP_ORDER.filter((m) => !applied.has(m) && first[m]);
   if (outstanding.length === 0) {
-    return first.text + emit(others, applied);
+    return first.text + emit(others, applied, colour);
   }
 
   // Longest prefix still carrying this mark, so the run wraps once.
   const mark = outstanding[0];
   let n = 1;
   while (n < spans.length && spans[n][mark]) n += 1;
-  return emit(spans.slice(0, n), applied) + emit(spans.slice(n), applied);
+  return emit(spans.slice(0, n), applied, colour) + emit(spans.slice(n), applied, colour);
 }
 
 /** [{text, marks...}] -> markdown, merging neighbours that match. */
@@ -145,7 +183,11 @@ export function serializeMarks(spans) {
   for (const span of spans) {
     if (!span.text) continue;
     const last = merged[merged.length - 1];
-    if (last && MARKS.every((m) => !!last[m] === !!span[m])) {
+    if (
+      last &&
+      MARKS.every((m) => !!last[m] === !!span[m]) &&
+      (last.color ?? null) === (span.color ?? null)
+    ) {
       last.text += span.text;
     } else {
       merged.push({ ...span });

@@ -133,6 +133,9 @@ Inside any text, these marks and no others:
 
 `**bold**` · `*italic*` · `H~2~O` · `x^2^` · `~~struck~~` · `__underlined__` · `` `code` ``
 
+Colour a word or phrase with `[these words]{accent2}` — a theme slot,
+never a hex value.
+
 **Choose the layout from what the content is**, never for variety. Two
 things contrasted want a comparison layout; a list of points wants a
 full-width one. Reaching for a different layout because the last slide

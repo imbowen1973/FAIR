@@ -23,6 +23,7 @@ from `_style.code_typeface` in layout-map.yaml.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, fields
 from pathlib import Path
 
@@ -47,9 +48,12 @@ class RunSpec:
     strike: bool = False
     underline: bool = False
     code: bool = False
+    # A theme slot, e.g. "accent2". Not a mark: it is not a boolean, a
+    # run carries at most one, and the innermost wins.
+    color: str | None = None
 
 
-_MARKS = tuple(f.name for f in fields(RunSpec) if f.name != "text")
+_MARKS = tuple(f.name for f in fields(RunSpec) if f.name not in ("text", "color"))
 
 # Longest delimiter first, so ** is not read as two *, and ~~ is tried
 # before ~ — otherwise strikethrough would swallow subscript.
@@ -65,17 +69,32 @@ _DELIMITERS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def _parse(text: str, marks: dict[str, bool]) -> list[RunSpec]:
+# Inline colour: `[some words]{accent2}`. Pandoc's bracketed-span shape,
+# because markdown has no colour of its own and inventing a third bracket
+# style would be worse than borrowing a known one. The value names a
+# theme slot -- a literal #C0504D in the content would survive a rebrand
+# and be wrong afterwards, which is the whole reason slots exist.
+_COLOR = re.compile(r"\[([^\]]+)\]\{([A-Za-z][A-Za-z0-9]*)\}")
+
+
+def _parse(text: str, marks: dict[str, bool], color: str | None = None) -> list[RunSpec]:
     runs: list[RunSpec] = []
     literal: list[str] = []
     i, n = 0, len(text)
 
     def flush() -> None:
         if literal:
-            runs.append(RunSpec("".join(literal), **marks))
+            runs.append(RunSpec("".join(literal), color=color, **marks))
             literal.clear()
 
     while i < n:
+        if text[i] == "[":
+            match = _COLOR.match(text, i)
+            if match:
+                flush()
+                runs.extend(_parse(match.group(1), marks, match.group(2)))
+                i = match.end()
+                continue
         for delimiter, names in _DELIMITERS:
             if not text.startswith(delimiter, i):
                 continue
@@ -89,9 +108,9 @@ def _parse(text: str, marks: dict[str, bool]) -> list[RunSpec]:
             applied = {**marks, **{name: True for name in names}}
             if "code" in names:
                 # A code span is literal: markers inside it are content.
-                runs.append(RunSpec(inner, **applied))
+                runs.append(RunSpec(inner, color=color, **applied))
             else:
-                runs.extend(_parse(inner, applied))
+                runs.extend(_parse(inner, applied, color))
             i = close + len(delimiter)
             break
         else:
@@ -166,8 +185,11 @@ def write_runs(
             run = paragraph.add_run()
             run.text = piece
             _apply_marks(run, spec, code_typeface)
-            if color:
-                _apply_scheme_color(run, color)
+            # The run's own colour wins: `[words]{accent2}` inside a
+            # region coloured accent1 means those words are accent2.
+            slot = spec.color or color
+            if slot:
+                _apply_scheme_color(run, slot)
 
 
 def plain_text(text: str) -> str:
