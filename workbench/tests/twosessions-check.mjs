@@ -126,6 +126,14 @@ await page.route("https://api.github.com/**", (route) => {
     route.fulfill({ status, contentType: "application/json", body: JSON.stringify(b) });
   if (url.endsWith("/user")) return json({ login: "tester" });
 
+  if (url.includes("/git/matching-refs/heads/")) {
+    const prefix = decodeURIComponent(url.split("/git/matching-refs/heads/")[1]);
+    const hits = [...branches].filter((b) => b.startsWith(prefix));
+    return hits.length
+      ? json(hits.map((b) => ({ ref: `refs/heads/${b}` })))
+      : json({ message: "Not Found" }, 404);
+  }
+
   const refMatch = /\/git\/refs?\/heads\/(.+?)(\?|$)/.exec(url);
   if (refMatch && method === "GET") {
     const name = decodeURIComponent(refMatch[1]);

@@ -15,7 +15,7 @@ import {
   storedToken,
 } from "./auth.js";
 import { BROKER_URL, CLIENT_ID } from "./config.js";
-import { draftBranch, GitHub, parseRepo } from "./github.js";
+import { draftBranch, GitHub, parseRepo, resolveDraftBranch } from "./github.js";
 import {
   forgetBranch,
   lastBranch,
@@ -50,7 +50,7 @@ import {
   slideMark,
   workingSlides,
 } from "./library.js";
-import { drawSlide } from "./canvas.js";
+import { activeItemPath, drawSlide, selectedItemPaths } from "./canvas.js";
 import { slideMeta } from "./meta.js";
 import { paintListType, paintSwatches, ribbon } from "./ribbon.js";
 import { renderDeck, validate } from "./preview.js";
@@ -967,6 +967,41 @@ function renderMeta() {
   });
 }
 
+/** A copy of `items` with the one at `path` given a marker. */
+function markItem(items, path, marker) {
+  const [head, ...rest] = path;
+  return items.map((item, i) => {
+    if (i !== head) return item;
+    const asObject = typeof item === "string" ? { text: item } : { ...item };
+    if (rest.length) {
+      return { ...asObject, items: markItem(asObject.items ?? [], rest, marker) };
+    }
+    // The older spelling, so a file does not end up carrying both.
+    delete asObject.bullet;
+    asObject.marker = marker;
+    return asObject;
+  });
+}
+
+/** A copy of `items` with the one at `path` recoloured. */
+function colourItem(items, path, slot) {
+  const [head, ...rest] = path;
+  return items.map((item, i) => {
+    if (i !== head) return item;
+    const asObject = typeof item === "string" ? { text: item } : { ...item };
+    if (rest.length) {
+      return { ...asObject, items: colourItem(asObject.items ?? [], rest, slot) };
+    }
+    if (slot) asObject.color = slot;
+    else delete asObject.color;
+    // A string that carries nothing but words stays a string: the file
+    // should not gain a mapping for a colour that was just cleared.
+    return Object.keys(asObject).length === 1 && "text" in asObject
+      ? asObject.text
+      : asObject;
+  });
+}
+
 /** The content type of a region on the current slide, or null. */
 function regionType(region) {
   if (!region) return null;
@@ -1039,6 +1074,21 @@ function renderRibbon({ slides = true } = {}) {
       const current = slideData(state.slideIndex);
       const value = current[region];
 
+      // One line if the caret is in one, the whole placeholder if it is
+      // not. Colour was always a property of the region, so selecting a
+      // single bullet and picking a colour recoloured every line in the
+      // placeholder -- change one, change them all.
+      const box = $("canvas").querySelector(`.region[data-region="${region}"]`);
+      const path = box ? activeItemPath(box) : null;
+      if (path && typeof value === "object" && Array.isArray(value.items)) {
+        commitSlide({
+          ...current,
+          [region]: { ...value, items: colourItem(value.items, path, slot) },
+        });
+        renderCanvas();
+        return;
+      }
+
       // Colour belongs to the region, not to a run: the grammar has no
       // inline colour, precisely so a rebrand can recolour every deck.
       // A bare string has nowhere to carry one, so colouring a title
@@ -1083,8 +1133,26 @@ function renderRibbon({ slides = true } = {}) {
       const region = activeRegion;
       if (!region) return;
       const current = slideData(state.slideIndex);
-      const next = asListType(current[region], kind);
-      if (next === current[region]) return; // already that, or not text
+      const value = current[region];
+
+      // The lines the selection touches, when the region is already a
+      // list. One placeholder holding a lead-in, then points, then a
+      // closing line is the ordinary case, and it could not be built
+      // here -- only the whole placeholder could be converted.
+      const box = $("canvas").querySelector(`.region[data-region="${region}"]`);
+      const paths = box && value?.items ? selectedItemPaths(box) : [];
+      if (paths.length) {
+        let items = value.items;
+        for (const path of paths) {
+          items = markItem(items, path, kind === "none" ? "none" : kind === "ol" ? "number" : "bullet");
+        }
+        commitSlide({ ...current, [region]: { ...value, items } });
+        renderCanvas();
+        return;
+      }
+
+      const next = asListType(value, kind);
+      if (next === value) return; // already that, or not text
       commitSlide({ ...current, [region]: next });
       renderCanvas();
       paintListType($("ribbon"), kind);
@@ -2689,7 +2757,7 @@ async function save() {
   const changed = changedFiles();
   if (!changed.length) return;
   const { owner, repo, defaultBranch } = state.repo;
-  const branch = draftBranch(state.login);
+  const branch = await resolveDraftBranch(state.gh, owner, repo, state.login);
 
   try {
     const saveButton = document.getElementById("save");
@@ -2730,7 +2798,7 @@ async function save() {
 
 async function submit() {
   const { owner, repo, defaultBranch } = state.repo;
-  const branch = draftBranch(state.login);
+  const branch = await resolveDraftBranch(state.gh, owner, repo, state.login);
   try {
     // No point asking for a pull request against a branch that never landed.
     if (changedFiles().length && !(await save())) return;

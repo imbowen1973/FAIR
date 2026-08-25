@@ -189,14 +189,54 @@ export class GitHub {
     return ref.object.sha;
   }
 
-  /** Create `branch` at `from`'s tip, or leave it alone if it exists. */
+  /**
+   * Create `branch` at `from`'s tip, or leave it alone if it exists.
+   *
+   * Refs are paths, so a branch name cannot also be a directory of other
+   * branches: with `draft/ada/01-intro` present, creating `draft/ada`
+   * fails. GitHub says only
+   *
+   *   422: Reference update failed
+   *
+   * which is true and tells nobody anything. The conflict is knowable
+   * before the attempt, so it is checked -- and if the attempt still
+   * fails, the message says which branches are in the way and what to do
+   * about it. A raw status code reaching an author is the fault here,
+   * not the naming.
+   */
   async ensureBranch(owner, name, branch, from) {
     if (await this.branchExists(owner, name, branch)) return false;
+
+    const blocking = await branchesUnder(this, owner, name, `${branch}/`);
+    if (blocking.length) {
+      throw new GitHubError(
+        `${branch} cannot be created: ${blocking.slice(0, 3).join(", ")}` +
+          (blocking.length > 3 ? ` and ${blocking.length - 3} more` : "") +
+          ` already exist beneath that name. Git stores branches as paths, ` +
+          "so one cannot be both a branch and a folder of branches.",
+        422,
+        ""
+      );
+    }
+
     const sha = await this.headSha(owner, name, from);
-    await this.request(`/repos/${owner}/${name}/git/refs`, {
-      method: "POST",
-      body: { ref: `refs/heads/${branch}`, sha },
-    });
+    try {
+      await this.request(`/repos/${owner}/${name}/git/refs`, {
+        method: "POST",
+        body: { ref: `refs/heads/${branch}`, sha },
+      });
+    } catch (err) {
+      if (err.status === 422) {
+        throw new GitHubError(
+          `${branch} could not be created (${err.message}). A branch of that ` +
+            "name may have appeared since, or the name collides with one " +
+            "that already exists.",
+          422,
+          ""
+        );
+      }
+      throw err;
+    }
     return true;
   }
 
@@ -388,6 +428,47 @@ export function parseRepo(input) {
  * A person editing a course is doing one piece of work, and it belongs
  * on one branch. It is also what makes a single pull request possible.
  */
+/**
+ * Branch names under a prefix, e.g. every `draft/ada/...`.
+ *
+ * GitHub answers 404 when nothing matches, which is not an error here.
+ */
+export async function branchesUnder(gh, owner, name, prefix) {
+  try {
+    const refs = await gh.request(
+      `/repos/${owner}/${name}/git/matching-refs/heads/${prefix}`
+    );
+    return (Array.isArray(refs) ? refs : []).map((r) =>
+      String(r.ref).replace("refs/heads/", "")
+    );
+  } catch (err) {
+    if (err.status === 404) return [];
+    throw err;
+  }
+}
+
+/**
+ * The draft branch to use, given what the repository already has.
+ *
+ * `draft/<login>` is the name wanted: one branch for one person's work in
+ * a library. It cannot always be created, and the reason is git's rather
+ * than ours -- refs are paths, so `draft/ada` is a file where
+ * `draft/ada/01-intro` makes `draft/ada` a directory. A repository
+ * carrying branches from the older per-session scheme answers:
+ *
+ *   POST /git/refs 422: Reference update failed
+ *
+ * So: use `draft/<login>` when it exists or can exist, and step aside to
+ * `draft/<login>/work` when the older branches are in the way. Nothing is
+ * deleted -- those branches still hold work somebody may want.
+ */
+export async function resolveDraftBranch(gh, owner, name, login) {
+  const preferred = draftBranch(login);
+  if (await gh.branchExists(owner, name, preferred)) return preferred;
+  const older = await branchesUnder(gh, owner, name, `${preferred}/`);
+  return older.length ? `${preferred}/work` : preferred;
+}
+
 export function draftBranch(login) {
   const slug = String(login || "author")
     .toLowerCase()

@@ -97,7 +97,10 @@ page.on("console", (m) => {
   errors.push(t);
 });
 
-const branches = new Set(["main"]);
+// What a repository looks like after the older per-session scheme:
+// refs/heads/draft/tester/ is a directory, so refs/heads/draft/tester
+// cannot also be a file. Creating it answers 422.
+const branches = new Set(["main", "draft/tester/01-misuse"]);
 const onBranch = { main: new Map(Object.entries(FILES)) };
 let lastCommitBranch = null;
 
@@ -111,6 +114,14 @@ await page.route("https://api.github.com/**", (route) => {
   const json = (b, status = 200) =>
     route.fulfill({ status, contentType: "application/json", body: JSON.stringify(b) });
   if (url.endsWith("/user")) return json({ login: "tester" });
+
+  if (url.includes("/git/matching-refs/heads/")) {
+    const prefix = decodeURIComponent(url.split("/git/matching-refs/heads/")[1]);
+    const hits = [...branches].filter((b) => b.startsWith(prefix));
+    return hits.length
+      ? json(hits.map((b) => ({ ref: `refs/heads/${b}` })))
+      : json({ message: "Not Found" }, 404);
+  }
 
   const refMatch = /\/git\/refs?\/heads\/(.+?)(\?|$)/.exec(url);
   if (refMatch && method === "GET") {
@@ -243,7 +254,7 @@ const saved = await page.evaluate(() => ({
 console.log("after save:", JSON.stringify(saved));
 
 // What git now holds on the draft branch.
-const draft = [...branches].find((b) => b.startsWith("draft/"));
+const draft = [...branches].find((b) => b.startsWith("draft/") && b !== "draft/tester/01-misuse");
 if (draft) {
   onBranch[draft] = new Map(onBranch.main);
   onBranch[draft].set(
@@ -267,6 +278,9 @@ if (errors.length) console.log("errors:", errors.slice(0, 4));
 
 const failed =
   errors.length > 0 ||
+  // Stepped aside rather than failing: the older branch is still there.
+  draft !== "draft/tester/work" ||
+  !branches.has("draft/tester/01-misuse") ||
   !draft ||
   !saved.remembered?.includes("draft/") ||
   !saved.branchNote.includes("draft/") ||

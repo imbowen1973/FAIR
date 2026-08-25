@@ -18,7 +18,7 @@ import {
   roundTrips,
   serializeMarks,
 } from "../marks.js";
-import { draftBranch, parseRepo } from "../github.js";
+import { draftBranch, GitHub, parseRepo, resolveDraftBranch } from "../github.js";
 import {
   blockDocuments,
   freePath,
@@ -1451,4 +1451,71 @@ test("imported ids are renumbered around what is already there", () => {
   );
   // Nothing to avoid, nothing changes.
   assert.deepEqual(renumber([{ id: "intro" }], []).map((s) => s.id), ["intro"]);
+});
+
+// ---- the draft branch, when older ones are in the way ------------------
+//
+// Refs are paths. `draft/ada` is a file where `draft/ada/01-intro` makes
+// `draft/ada` a directory, so a repository carrying branches from the
+// older per-session scheme answers a ref creation with
+//
+//   422: Reference update failed
+//
+// which is what reached a user. Nothing is deleted: those branches still
+// hold work somebody may want.
+
+function fakeGh({ exists = [], matching = {} } = {}) {
+  return {
+    async branchExists(_o, _r, branch) {
+      return exists.includes(branch);
+    },
+    async request(path) {
+      const prefix = path.split("/git/matching-refs/heads/")[1];
+      const refs = matching[prefix];
+      if (!refs) {
+        const err = new Error("Not Found");
+        err.status = 404;
+        throw err;
+      }
+      return refs.map((r) => ({ ref: `refs/heads/${r}` }));
+    },
+  };
+}
+
+test("a fresh repository gets the plain draft branch", async () => {
+  const gh = fakeGh();
+  assert.equal(await resolveDraftBranch(gh, "o", "r", "ada"), "draft/ada");
+});
+
+test("an existing draft branch is reused rather than renamed", async () => {
+  const gh = fakeGh({ exists: ["draft/ada"] });
+  assert.equal(await resolveDraftBranch(gh, "o", "r", "ada"), "draft/ada");
+});
+
+test("older per-session branches make the plain name impossible", async () => {
+  // git will not have draft/ada as a file and draft/ada/ as a directory.
+  const gh = fakeGh({ matching: { "draft/ada/": ["draft/ada/01-intro", "draft/ada/02-next"] } });
+  assert.equal(await resolveDraftBranch(gh, "o", "r", "ada"), "draft/ada/work");
+});
+
+test("someone else's drafts do not push us aside", async () => {
+  const gh = fakeGh({ matching: { "draft/bob/": ["draft/bob/01-intro"] } });
+  assert.equal(await resolveDraftBranch(gh, "o", "r", "ada"), "draft/ada");
+});
+
+test("a branch that cannot exist says why, not 422", async () => {
+  // The message a user saw was "Reference update failed", which is true
+  // and useless. Every write path here can hit it, not only the draft.
+  const gh = new GitHub("t");
+  gh.branchExists = async () => false;
+  gh.request = async (path) => {
+    if (path.includes("/git/matching-refs/heads/draft/ada/")) {
+      return [{ ref: "refs/heads/draft/ada/01-intro" }];
+    }
+    throw Object.assign(new Error("Not Found"), { status: 404 });
+  };
+  await assert.rejects(
+    () => gh.ensureBranch("o", "r", "draft/ada", "main"),
+    /draft\/ada\/01-intro.*branch and a folder of branches/s
+  );
 });

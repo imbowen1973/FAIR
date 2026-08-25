@@ -224,6 +224,63 @@ function readBlocks(box) {
   return out;
 }
 
+/**
+ * Which line the caret is in, as a path of indices into `items`.
+ *
+ * Colour was a property of the whole placeholder, so selecting one
+ * bullet and picking a colour recoloured every line in it. The grammar
+ * has carried a per-item colour all along; nothing exposed it.
+ *
+ * Returns null when the selection is not inside a list item, which is
+ * when the region as a whole is the right target.
+ */
+/**
+ * Every line the selection touches, as paths into `items`.
+ *
+ * A caret in one line gives one path; a selection dragged over three
+ * gives three. Without this, "make these numbered" could only mean the
+ * whole placeholder.
+ */
+export function selectedItemPaths(box) {
+  const selection = box.ownerDocument.getSelection?.();
+  if (!selection || selection.rangeCount === 0) return [];
+  const range = selection.getRangeAt(0);
+  const paths = [];
+  for (const li of box.querySelectorAll("li")) {
+    if (!range.intersectsNode(li)) continue;
+    // A parent li intersects because its child does; only take the
+    // deepest, or a nested change would move its parent too.
+    if (li.querySelector("li") && [...li.querySelectorAll("li")].some((n) => range.intersectsNode(n))) {
+      continue;
+    }
+    const path = [];
+    let node = li;
+    while (node && node !== box) {
+      if (node.nodeName === "LI") path.unshift([...node.parentNode.children].indexOf(node));
+      node = node.parentNode;
+    }
+    if (path.length) paths.push(path);
+  }
+  return paths;
+}
+
+export function activeItemPath(box) {
+  const selection = box.ownerDocument.getSelection?.();
+  if (!selection || !selection.anchorNode) return null;
+  let node = selection.anchorNode;
+  if (!box.contains(node)) return null;
+
+  const path = [];
+  while (node && node !== box) {
+    if (node.nodeName === "LI") {
+      const list = node.parentNode;
+      path.unshift([...list.children].indexOf(node));
+    }
+    node = node.parentNode;
+  }
+  return path.length ? path : null;
+}
+
 function readList(list) {
   return [...list.children].map((li) => {
     const own = document.createElement("div");
