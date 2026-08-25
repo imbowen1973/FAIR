@@ -152,11 +152,13 @@ test("repo input accepts a slug or a github URL", () => {
 });
 
 test("draft branches are stable and namespaced per author", () => {
-  const branch = draftBranch("ada", "01-foundations-of-clinical-teaching");
-  assert.equal(branch, "draft/ada/01-foundations-of-clinical-teaching");
-  // Same inputs, same branch — a second save must not fork a new one.
-  assert.equal(branch, draftBranch("ada", "01-foundations-of-clinical-teaching"));
-  assert.ok(!draftBranch("ada", "Odd Block/Name!").includes(" "));
+  const branch = draftBranch("ada");
+  assert.equal(branch, "draft/ada");
+  // One branch per person per library, not one per session: a second
+  // session used to fork from the published branch and leave the first
+  // session's saved work stranded where nothing was looking.
+  assert.equal(branch, draftBranch("ada"));
+  assert.ok(!draftBranch("Odd Name!").includes(" "));
 });
 
 // ---- library shape -----------------------------------------------------

@@ -375,10 +375,23 @@ export function parseRepo(input) {
 }
 
 /** A draft branch name that is stable per user and block. */
-export function draftBranch(login, blockId) {
-  const slug = String(blockId || "course")
+/**
+ * Where one person's unmerged work in a library lives.
+ *
+ * One branch, not one per session. It used to be
+ * `draft/<login>/<blockId>`, and the second session someone edited forked
+ * a fresh branch from the published one -- which does not hold the first
+ * session's saved work. Reopening then showed the published version of
+ * everything except the session last touched, and the earlier work was
+ * not lost so much as stranded somewhere nothing was looking.
+ *
+ * A person editing a course is doing one piece of work, and it belongs
+ * on one branch. It is also what makes a single pull request possible.
+ */
+export function draftBranch(login) {
+  const slug = String(login || "author")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-|-$/g, "");
-  return `draft/${login}/${slug}`.slice(0, 240);
+  return `draft/${slug || "author"}`.slice(0, 240);
 }

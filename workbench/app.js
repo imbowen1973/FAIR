@@ -2693,7 +2693,7 @@ async function save() {
   const changed = changedFiles();
   if (!changed.length) return;
   const { owner, repo, defaultBranch } = state.repo;
-  const branch = draftBranch(state.login, state.blockId);
+  const branch = draftBranch(state.login);
 
   try {
     $("save").disabled = true;
@@ -2733,7 +2733,7 @@ async function save() {
 
 async function submit() {
   const { owner, repo, defaultBranch } = state.repo;
-  const branch = draftBranch(state.login, state.blockId);
+  const branch = draftBranch(state.login);
   try {
     // No point asking for a pull request against a branch that never landed.
     if (changedFiles().length && !(await save())) return;
@@ -2743,11 +2743,12 @@ async function submit() {
       window.open(existing.html_url, "_blank", "noopener");
       return;
     }
-    const block = state.library.blocks.get(state.blockId);
     const pull = await state.gh.openPull(owner, repo, {
       head: branch,
       base: defaultBranch,
-      title: `Update ${block.meta.title || state.blockId}`,
+      // The branch holds everything this author has changed in the
+      // library, which may be several sessions.
+      title: `Update ${state.library.course.title || repo}`,
       body:
         "Authored in the FAIR workbench.\n\n" +
         "Review and merge here; the deck is rendered from this markdown at " +
