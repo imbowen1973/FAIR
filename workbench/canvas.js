@@ -271,6 +271,27 @@ export function selectedItemPaths(box) {
   return paths;
 }
 
+/**
+ * Which top-level block the caret is in, counting from zero.
+ *
+ * A paragraph region holds its lines as one string, so there is no item
+ * to attach a colour or a marker to. The index says which line the
+ * caret is on, which is what turns "this placeholder" into "this line".
+ */
+export function activeBlockIndex(box) {
+  const selection = box.ownerDocument.getSelection?.();
+  if (!selection || !selection.anchorNode) return null;
+  let node = selection.anchorNode;
+  if (!box.contains(node)) return null;
+  while (node && node.parentNode !== box) node = node.parentNode;
+  if (!node) return null;
+  const blocks = [...box.childNodes].filter(
+    (n) => n.nodeType === Node.ELEMENT_NODE && n.nodeName !== "BR"
+  );
+  const at = blocks.indexOf(node);
+  return at >= 0 ? at : null;
+}
+
 export function activeItemPath(box) {
   const selection = box.ownerDocument.getSelection?.();
   if (!selection || !selection.anchorNode) return null;

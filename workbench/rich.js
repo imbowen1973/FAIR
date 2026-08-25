@@ -64,6 +64,42 @@ function loadCrepe() {
 }
 
 /** Has it already been paid for this session? */
+/**
+ * What the editor produced, as markdown somebody would have written.
+ *
+ * ProseMirror keeps an empty paragraph as a node, and the serializer
+ * writes it out as a literal `<br />` on its own line -- so pressing
+ * Enter twice put an HTML tag into a lesson plan, and every blank line
+ * after that multiplied. In markdown a blank line *is* the paragraph
+ * break; it needs nothing else.
+ *
+ * Only breaks that stand alone are removed. A `<br />` at the end of a
+ * line is a hard break inside a paragraph, which is a real thing to
+ * write and is left exactly as it is.
+ */
+export function tidyMarkdown(text) {
+  const NL = String.fromCharCode(10);
+  const lines = String(text ?? "").split(NL);
+  const kept = lines.map((line) =>
+    /^\s*<br\s*\/?>\s*$/i.test(line) ? "" : line
+  );
+  const out = [];
+  let blanks = 0;
+  for (const line of kept) {
+    if (line.trim() === "") {
+      blanks += 1;
+      // One blank line is a paragraph break. More than one says nothing
+      // extra in markdown and renders identically.
+      if (blanks > 1) continue;
+    } else {
+      blanks = 0;
+    }
+    out.push(line);
+  }
+  return out.join(NL);
+}
+
+
 export function richReady() {
   return modulePromise !== null;
 }
@@ -96,18 +132,18 @@ export async function richEditor(host, { text, onChange }) {
   crepe.on((listener) => {
     listener.markdownUpdated((_ctx, markdown) => {
       if (!ready || markdown === baseline) return;
-      onChange?.(markdown);
+      onChange?.(tidyMarkdown(markdown));
     });
   });
   await crepe.create();
-  baseline = crepe.getMarkdown();
+  baseline = tidyMarkdown(crepe.getMarkdown());
   ready = true;
 
   // No setText: ProseMirror owns its document state, and pushing new
   // content into a live editor is how you lose an author's cursor and
   // undo history. Switching documents rebuilds the editor instead.
   return {
-    markdown: () => crepe.getMarkdown(),
+    markdown: () => tidyMarkdown(crepe.getMarkdown()),
     /**
      * Whether opening the file reformatted it. The caller says so once,
      * rather than letting an author discover it in a diff.

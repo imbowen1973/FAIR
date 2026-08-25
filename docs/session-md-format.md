@@ -179,6 +179,13 @@ full:
 
 `bullet: false` still works and means `marker: none`.
 
+Every line carries its own `color:`, `marker:` and `align:`, so one
+placeholder holds lines that differ from each other. A paragraph region
+keeps its lines in a single string and has nowhere to put them, so the
+first time a line is formatted on its own the region becomes a list whose
+lines carry `marker: none` — which looks exactly like a paragraph and can
+then differ line by line.
+
 In the workbench these are two controls, not one: **list** sets what the
 whole placeholder is, and **line** marks only the lines the selection
 touches. One control meaning both was ambiguous — choosing "no list"

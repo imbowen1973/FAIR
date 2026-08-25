@@ -50,7 +50,12 @@ import {
   slideMark,
   workingSlides,
 } from "./library.js";
-import { activeItemPath, drawSlide, selectedItemPaths } from "./canvas.js";
+import {
+  activeBlockIndex,
+  activeItemPath,
+  drawSlide,
+  selectedItemPaths,
+} from "./canvas.js";
 import { slideMeta } from "./meta.js";
 import { paintListType, paintSwatches, ribbon } from "./ribbon.js";
 import { renderDeck, validate } from "./preview.js";
@@ -967,6 +972,42 @@ function renderMeta() {
   });
 }
 
+/**
+ * The region as lines that can be formatted one at a time.
+ *
+ * A paragraph region keeps its lines in a single string, so there is
+ * nothing to hang a colour or a marker on and formatting one line
+ * formatted the placeholder. A list is the shape the grammar already has
+ * for per-line properties, and a list whose lines carry `marker: none`
+ * looks exactly like a paragraph -- so that is what a paragraph becomes
+ * the moment a line is formatted on its own.
+ *
+ * Returns null when the region holds no text at all.
+ */
+function asLines(value) {
+  if (value && Array.isArray(value.items)) return value;
+  const text = typeof value === "string" ? value : value?.text;
+  if (typeof text !== "string") return null;
+  const lines = text.split(String.fromCharCode(10));
+  return {
+    ...(typeof value === "object" && value !== null ? value : {}),
+    type: "ul",
+    text: undefined,
+    items: lines.map((line) => ({ text: line, marker: "none" })),
+  };
+}
+
+/** Which line the caret is on, for either shape of region. */
+function caretLine(box, value) {
+  if (!box) return null;
+  if (value && Array.isArray(value.items)) {
+    const path = activeItemPath(box);
+    return path ?? null;
+  }
+  const at = activeBlockIndex(box);
+  return at === null ? null : [at];
+}
+
 /** A copy of `items` with the one at `path` given a marker. */
 function markItem(items, path, marker) {
   const [head, ...rest] = path;
@@ -1079,12 +1120,12 @@ function renderRibbon({ slides = true } = {}) {
       // single bullet and picking a colour recoloured every line in the
       // placeholder -- change one, change them all.
       const box = $("canvas").querySelector(`.region[data-region="${region}"]`);
-      const path = box ? activeItemPath(box) : null;
-      if (path && typeof value === "object" && Array.isArray(value.items)) {
-        commitSlide({
-          ...current,
-          [region]: { ...value, items: colourItem(value.items, path, slot) },
-        });
+      const path = caretLine(box, value);
+      const lined = path ? asLines(value) : null;
+      if (lined) {
+        const next = { ...lined, items: colourItem(lined.items, path, slot) };
+        delete next.text;
+        commitSlide({ ...current, [region]: next });
         renderCanvas();
         return;
       }
@@ -1152,19 +1193,27 @@ function renderRibbon({ slides = true } = {}) {
       if (!region) return;
       const current = slideData(state.slideIndex);
       const value = current[region];
-      if (!value?.items) {
-        status("Make the placeholder a list first, then mark its lines.", "");
+      const box = $("canvas").querySelector(`.region[data-region="${region}"]`);
+      const lined = asLines(value);
+      if (!lined) {
+        status("There is nothing in this placeholder to mark.", "");
         return;
       }
-      const box = $("canvas").querySelector(`.region[data-region="${region}"]`);
-      const paths = box ? selectedItemPaths(box) : [];
+      // Every line the selection touches, whichever shape the region was
+      // in: a paragraph becomes a list of unmarked lines so that one of
+      // them can differ from the rest.
+      const paths = value?.items
+        ? selectedItemPaths(box)
+        : [caretLine(box, value)].filter(Boolean);
       if (!paths.length) {
         status("Put the caret in a line first.", "");
         return;
       }
-      let items = value.items;
+      let items = lined.items;
       for (const path of paths) items = markItem(items, path, marker);
-      commitSlide({ ...current, [region]: { ...value, items } });
+      const next = { ...lined, items };
+      delete next.text;
+      commitSlide({ ...current, [region]: next });
       renderCanvas();
     },
   });
