@@ -917,6 +917,22 @@ function previewData(data) {
 }
 
 function renderCanvas({ redraw = true } = {}) {
+  // A session with no slides yet. There is nothing to draw and nothing
+  // wrong: the deck has not been started. Saying anything about layouts
+  // or geometry here sends an author to look at the wrong thing.
+  if (!working().length) {
+    const host = $("canvas");
+    host.innerHTML = "";
+    const note = document.createElement("p");
+    note.className = "empty";
+    note.textContent =
+      "This session has no slides yet. Add one from the toolbar, or bring " +
+      "some in with import.";
+    host.appendChild(note);
+    $("meta").innerHTML = "";
+    return;
+  }
+
   const data = slideData(state.slideIndex);
   const shown = previewData(data);
   if (redraw) {

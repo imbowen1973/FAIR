@@ -599,6 +599,20 @@ export function drawSlide(
   const layout = geometry?.layouts?.[layoutKey];
   const theme = geometry?.theme ?? {};
 
+  if (!layoutKey) {
+    // No layout to look up, which is not the geometry's fault. Blaming
+    // it sent an author to read a template that had nothing to do with
+    // the problem.
+    host.innerHTML = "";
+    const note = document.createElement("p");
+    note.className = "empty";
+    note.textContent =
+      "This slide has no layout, so there is nothing to draw it into. " +
+      "Choose one from the toolbar.";
+    host.appendChild(note);
+    return new Set(Object.keys(slide || {}));
+  }
+
   if (!layout) {
     // The caller offers to build it. Telling somebody to install a
     // command-line tool is a dead end in a workbench whose whole claim
