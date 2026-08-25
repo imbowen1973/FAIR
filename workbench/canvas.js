@@ -20,6 +20,41 @@ function themeColour(theme, slot) {
 }
 
 /**
+ * A placeholder's own background, from the geometry.
+ *
+ * PowerPoint paints this itself, so the deck was always right. The canvas
+ * drew only the text -- and the Cards layout puts white headings on
+ * accent-coloured tabs, so they were white on white and invisible while
+ * the rendered deck looked correct.
+ */
+function fillColour(theme, fill) {
+  if (!fill) return null;
+  let base = fill.hex ?? themeColour(theme, fill.slot);
+  if (!base) return null;
+  // Tints, shades and luminance modifiers: a card often sits a lighter
+  // body under a stronger tab, and ignoring them draws both the same.
+  const rgb = hexToRgb(base);
+  if (!rgb) return base;
+  let [r, g, b] = rgb;
+  if (fill.lumMod !== undefined) [r, g, b] = [r, g, b].map((c) => c * fill.lumMod);
+  if (fill.lumOff !== undefined) [r, g, b] = [r, g, b].map((c) => c + 255 * fill.lumOff);
+  if (fill.tint !== undefined) {
+    [r, g, b] = [r, g, b].map((c) => c * fill.tint + 255 * (1 - fill.tint));
+  }
+  if (fill.shade !== undefined) [r, g, b] = [r, g, b].map((c) => c * fill.shade);
+  const clamp = (c) => Math.max(0, Math.min(255, Math.round(c)));
+  const alpha = fill.alpha ?? 1;
+  return `rgba(${clamp(r)}, ${clamp(g)}, ${clamp(b)}, ${alpha})`;
+}
+
+function hexToRgb(hex) {
+  const match = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? ""));
+  if (!match) return null;
+  const n = parseInt(match[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/**
  * PowerPoint's shrink-on-overflow, emulated: it reduces type size and
  * line spacing together, so doing only one reaches a fit later than the
  * deck will and under-reports how full a slide is.
@@ -250,9 +285,12 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
   if (regionColour) box.style.color = regionColour;
 
   if (type === "text" || type === "p") {
-    const lines = type === "text"
-      ? [String(value ?? "")]
-      : String(value.text ?? "").split("\n");
+    // A bare string was drawn as exactly one paragraph however many
+    // lines it held, so typing a second line into a card and then
+    // touching anything that redraws merged them back into one. Both
+    // kinds split.
+    const raw = String((type === "text" ? value : value.text) ?? "");
+    const lines = raw.split(String.fromCharCode(10));
     for (const line of lines) box.appendChild(paragraph(line, size));
 
     if (editable) {
@@ -260,7 +298,14 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
       box.dataset.editable = "text";
       box.addEventListener("input", () => {
         const text = readBlocks(box).join(String.fromCharCode(10));
-        commit(type === "text" ? text : { ...value, text });
+        // A bare string is shorthand for a single line. The moment there
+        // are two it becomes a paragraph region, which is what the
+        // grammar has for multi-line text and what survives being
+        // written to YAML and read back.
+        const multiline = text.includes(String.fromCharCode(10));
+        commit(
+          type === "text" ? (multiline ? { type: "p", text } : text) : { ...value, text }
+        );
       });
     }
     return;
@@ -437,6 +482,8 @@ export function drawSlide(
     const box = document.createElement("div");
     box.className = "region";
     if (region === activeRegion) box.classList.add("active");
+    const paint = fillColour(theme, rect.fill);
+    if (paint) box.style.background = paint;
     box.style.left = `${rect.x * 100}%`;
     box.style.top = `${rect.y * 100}%`;
     box.style.width = `${rect.w * 100}%`;
@@ -501,6 +548,8 @@ export function drawSlide(
     if (drawn.has(region) || compact) continue;
     const box = document.createElement("div");
     box.className = "region vacant";
+    const paint = fillColour(theme, rect.fill);
+    if (paint) box.style.background = paint;
     box.style.left = `${rect.x * 100}%`;
     box.style.top = `${rect.y * 100}%`;
     box.style.width = `${rect.w * 100}%`;

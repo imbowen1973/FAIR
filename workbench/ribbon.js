@@ -52,10 +52,11 @@ function button(label, title, onDown, className = "mark", id = null) {
  * onMedia()      a picture or video is wanted in the selected region.
  * onListType(kind) when the region becomes a "ul", an "ol", or null for none.
  * onUndo() / onRedo()  step the block's history.
+ * onAddSlide() / onImport()  add a slide, or bring some in.
  */
 export function ribbon(host, {
   layouts, layout, onCommand, onLayout, onColour, onListType, onMedia,
-  onUndo, onRedo,
+  onUndo, onRedo, onAddSlide, onImport,
 }) {
   host.innerHTML = "";
 
@@ -70,6 +71,32 @@ export function ribbon(host, {
     button(icon("redo", { size: 16 }), "Redo", () => onRedo?.(), "mark with-icon", "redo")
   );
   host.appendChild(steps);
+
+  // Adding a slide and bringing one in are the two things an author does
+  // between slides rather than within one, so they sit here rather than
+  // in the rail -- which on a narrow screen is a drawer that has to be
+  // opened first.
+  const deck = document.createElement("div");
+  deck.className = "ribbon-group";
+  deck.appendChild(
+    button(
+      icon("slide", { size: 16 }),
+      "Add a slide after this one",
+      () => onAddSlide?.(),
+      "mark with-icon",
+      "add-slide-ribbon"
+    )
+  );
+  deck.appendChild(
+    button(
+      icon("import", { size: 16 }),
+      "Import slides written elsewhere",
+      () => onImport?.(),
+      "mark with-icon",
+      "import-ribbon"
+    )
+  );
+  host.appendChild(deck);
 
   const marks = document.createElement("div");
   marks.className = "ribbon-group";

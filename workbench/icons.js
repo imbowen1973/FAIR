@@ -25,6 +25,10 @@ const PATHS = {
   add: "M3 3h10v10H3z M8 6v4M6 8h4",
   // Chevron for the picker.
   chevron: "M4 6l4 4 4-4",
+  // A sheet with a plus: add a slide.
+  slide: "M2.5 3.5h11v9h-11z M8 6v4M6 8h4",
+  // An arrow coming down into a tray: bring slides in from outside.
+  import: "M8 2.5v6.5M5.5 7l2.5 2.5L10.5 7M2.5 11v2.5h11V11",
   // Arrows curving back and forward: undo and redo.
   undo: "M5.5 3.5l-3 3 3 3M2.5 6.5h6a4 4 0 1 1 0 8H5",
   redo: "M10.5 3.5l3 3-3 3M13.5 6.5h-6a4 4 0 1 0 0 8H11",

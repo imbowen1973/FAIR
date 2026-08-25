@@ -153,31 +153,32 @@ console.log("add workbook:", JSON.stringify(afterWorkbook));
 await page.click(".tabstrip .tab:has(.tab-label:text-is('Slides'))");
 await page.waitForTimeout(400);
 for (let i = 0; i < 11; i += 1) {
-  await page.click(".deck-actions .add-slide:nth-child(1)");
+  await page.click("#add-slide-ribbon");
 }
 await page.waitForTimeout(400);
 
 const reach = await page.evaluate(() => {
-  const button = [...document.querySelectorAll(".add-slide")].find(
-    (b) => b.textContent === "import"
-  );
+  const button = document.getElementById("import-ribbon");
   if (!button) return { found: false };
   const r = button.getBoundingClientRect();
-  const x = r.left + r.width / 2;
-  const y = r.top + r.height / 2;
-  const hit = document.elementFromPoint(x, y);
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  const svg = button.querySelector("svg.icon");
   return {
     found: true,
     slides: document.querySelectorAll(".slide-row").length,
     onScreen: r.top >= 0 && r.bottom <= innerHeight,
     // Not hidden behind anything, and not clipped out of its own pane.
     clickable: hit === button || button.contains(hit),
+    // An icon, and a drawn one: an empty svg is a button with nothing
+    // on it, and the title alone is not a label anybody sees.
+    drawn: Boolean(svg) && svg.getBBox().width > 8,
+    labelled: Boolean(button.getAttribute("aria-label")),
   };
 });
 console.log("import reachable:", JSON.stringify(reach));
 
 // And it works: paste a deck written elsewhere and add it.
-await page.click(".deck-actions .add-slide:nth-child(2)");
+await page.click("#import-ribbon");
 await page.waitForSelector(".import-panel", { timeout: 5000 });
 await page.fill(
   ".import-source",
@@ -208,24 +209,19 @@ const afterImport = {
 };
 console.log("import:", JSON.stringify({ imported, afterImport }));
 
-// ---- and on a phone, where the rail is a drawer ------------------------
+// ---- and on a phone ----------------------------------------------------
 //
-// Narrow screens hide the rail behind a toggle, so a deck action there
-// is two steps away however high up it sits. What must hold is that
-// opening the drawer puts it on screen without scrolling, and that
-// using it closes the drawer instead of leaving the panel behind it.
+// Narrow screens hide the rail behind a toggle, so anything living there
+// is two steps away however high up it sits. That is why these moved to
+// the ribbon: it is on screen at every width, with no drawer to open.
 await page.setViewportSize({ width: 390, height: 844 });
 await page.waitForTimeout(400);
-const phone = await page.evaluate(() => {
-  const railHidden = !document.querySelector("#outline")?.checkVisibility?.();
-  document.getElementById("rail-toggle").click();
-  return { railHidden, toggleVisible: Boolean(document.getElementById("rail-toggle")) };
-});
-await page.waitForTimeout(400);
+const phone = await page.evaluate(() => ({
+  railHidden: !document.querySelector("#outline")?.checkVisibility?.(),
+  toggleVisible: Boolean(document.getElementById("rail-toggle")),
+}));
 const onPhone = await page.evaluate(() => {
-  const button = [...document.querySelectorAll(".add-slide")].find(
-    (b) => b.textContent === "import"
-  );
+  const button = document.getElementById("import-ribbon");
   const r = button.getBoundingClientRect();
   const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
   return {
@@ -233,7 +229,7 @@ const onPhone = await page.evaluate(() => {
     clickable: hit === button || button.contains(hit),
   };
 });
-await page.click(".deck-actions .add-slide:nth-child(2)");
+await page.click("#import-ribbon");
 await page.waitForTimeout(600);
 const phonePanel = await page.evaluate(() => {
   const panel = document.querySelector(".import-panel");
@@ -277,6 +273,8 @@ const failed =
   !reach.found ||
   !reach.onScreen ||
   !reach.clickable ||
+  !reach.drawn ||
+  !reach.labelled ||
   !imported.canAdd ||
   !afterImport.panelGone ||
   !afterImport.titles.includes("Brought in") ||

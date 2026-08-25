@@ -468,6 +468,44 @@ def _region_text_style(placeholder_el, master, is_title: bool) -> dict:
 DEFAULT_INSETS = {"l": 91440, "r": 91440, "t": 45720, "b": 45720}
 
 
+def _region_fill(element) -> dict | None:
+    """The placeholder's own background, as a theme slot or a hex value.
+
+    PowerPoint paints this itself, so the deck was always right. The
+    workbench canvas draws only the text, and a Cards layout puts white
+    headings on accent-coloured tabs -- white on white, invisible, while
+    the rendered deck looked correct. Two views of one slide, disagreeing
+    about whether the words were there.
+    """
+    spPr = element.find(f"{{{PPTX_P_NS}}}spPr")
+    if spPr is None:
+        return None
+    if spPr.find(f"{{{PPTX_A_NS}}}noFill") is not None:
+        return None
+    solid = spPr.find(f"{{{PPTX_A_NS}}}solidFill")
+    if solid is None:
+        return None
+
+    out: dict = {}
+    scheme = solid.find(f"{{{PPTX_A_NS}}}schemeClr")
+    srgb = solid.find(f"{{{PPTX_A_NS}}}srgbClr")
+    node = scheme if scheme is not None else srgb
+    if node is None:
+        return None
+    if scheme is not None:
+        out["slot"] = scheme.get("val")
+    else:
+        out["hex"] = f"#{srgb.get('val')}"
+
+    # Tints and shades of the slot, which a card often uses to sit a
+    # lighter body under a stronger tab.
+    for name in ("alpha", "lumMod", "lumOff", "tint", "shade"):
+        child = node.find(f"{{{PPTX_A_NS}}}{name}")
+        if child is not None and child.get("val"):
+            out[name] = int(child.get("val")) / 100000
+    return out
+
+
 def _region_insets(placeholder_el) -> dict:
     """The text inset PowerPoint will apply inside this placeholder.
 
@@ -537,6 +575,9 @@ def layout_geometry(path: Path, results: list[LayoutResult]) -> dict:
                     "t": round(insets["t"] / slide_h, 5),
                     "b": round(insets["b"] / slide_h, 5),
                 }
+                fill = _region_fill(element)
+                if fill:
+                    entry["fill"] = fill
             regions[region] = entry
         if regions:
             layouts[result.key] = {"layoutName": result.layout_name, "regions": regions}

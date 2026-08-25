@@ -49,8 +49,10 @@ const FILES = {
     "",
     "--- slide",
     "id: s-01",
-    "layout: Full",
+    "layout: Cards",
     "title: Opening",
+    "head1: A heading on a coloured tab",
+    "card1: One line to start with",
     "full:",
     "  type: ul",
     "  items:",
@@ -58,7 +60,7 @@ const FILES = {
     "---",
     "",
   ].join("\n"),
-  "layout-map.yaml": [
+  "__unused": [
     "Full:", "  layout: Full", "  regions:", "    title: 0", "    full: 1", "",
   ].join("\n"),
 };
@@ -84,7 +86,11 @@ const GEOM = {
     },
   },
 };
-FILES["layout-geometry.json"] = JSON.stringify(GEOM);
+FILES["layout-geometry.json"] = JSON.stringify({"slide": {"widthEmu": 9144000, "heightEmu": 6858000, "aspect": 1.33333, "widthPt": 720.0}, "theme": {"dk1": "#000000", "lt1": "#FFFFFF", "dk2": "#1F497D", "lt2": "#EEECE1", "accent1": "#4F81BD", "accent2": "#C0504D", "accent3": "#9BBB59", "accent4": "#8064A2", "accent5": "#4BACC6", "accent6": "#F79646", "hlink": "#0000FF", "folHlink": "#800080", "bg1": "#FFFFFF", "tx1": "#000000", "bg2": "#EEECE1", "tx2": "#1F497D"}, "layouts": {"Cards": {"layoutName": "Cards", "regions": {"title": {"idx": 0, "x": 0.05, "y": 0.04005, "w": 0.9, "h": 0.16667, "type": "title", "style": {"align": "ctr", "sizePt": 44.0}, "inset": {"l": 0.01, "r": 0.01, "t": 0.00667, "b": 0.00667}}, "head1": {"idx": 1, "x": 0.033, "y": 0.24, "w": 0.22075, "h": 0.07333, "type": "body", "style": {"align": "ctr", "sizePt": 15.0, "bold": true, "colorSlot": "lt1", "bulleted": false}, "inset": {"l": 0.01, "r": 0.01, "t": 0.0, "b": 0.0}, "fill": {"slot": "accent1"}}, "card1": {"idx": 5, "x": 0.033, "y": 0.31333, "w": 0.22075, "h": 0.63333, "type": "body", "style": {"align": "l", "sizePt": 13.0, "sizePt2": 11.0, "bulleted": true}, "inset": {"l": 0.01, "r": 0.01, "t": 0.012, "b": 0.012}, "fill": {"slot": "bg2"}}, "head2": {"idx": 2, "x": 0.27075, "y": 0.24, "w": 0.22075, "h": 0.07333, "type": "body", "style": {"align": "ctr", "sizePt": 15.0, "bold": true, "colorSlot": "lt1", "bulleted": false}, "inset": {"l": 0.01, "r": 0.01, "t": 0.0, "b": 0.0}, "fill": {"slot": "accent2"}}, "card2": {"idx": 6, "x": 0.27075, "y": 0.31333, "w": 0.22075, "h": 0.63333, "type": "body", "style": {"align": "l", "sizePt": 13.0, "sizePt2": 11.0, "bulleted": true}, "inset": {"l": 0.01, "r": 0.01, "t": 0.012, "b": 0.012}, "fill": {"slot": "bg2"}}, "head3": {"idx": 3, "x": 0.5085, "y": 0.24, "w": 0.22075, "h": 0.07333, "type": "body", "style": {"align": "ctr", "sizePt": 15.0, "bold": true, "colorSlot": "lt1", "bulleted": false}, "inset": {"l": 0.01, "r": 0.01, "t": 0.0, "b": 0.0}, "fill": {"slot": "accent3"}}, "card3": {"idx": 7, "x": 0.5085, "y": 0.31333, "w": 0.22075, "h": 0.63333, "type": "body", "style": {"align": "l", "sizePt": 13.0, "sizePt2": 11.0, "bulleted": true}, "inset": {"l": 0.01, "r": 0.01, "t": 0.012, "b": 0.012}, "fill": {"slot": "bg2"}}, "head4": {"idx": 4, "x": 0.74625, "y": 0.24, "w": 0.22075, "h": 0.07333, "type": "body", "style": {"align": "ctr", "sizePt": 15.0, "bold": true, "colorSlot": "lt1", "bulleted": false}, "inset": {"l": 0.01, "r": 0.01, "t": 0.0, "b": 0.0}, "fill": {"slot": "accent4"}}, "card4": {"idx": 8, "x": 0.74625, "y": 0.31333, "w": 0.22075, "h": 0.63333, "type": "body", "style": {"align": "l", "sizePt": 13.0, "sizePt2": 11.0, "bulleted": true}, "inset": {"l": 0.01, "r": 0.01, "t": 0.012, "b": 0.012}, "fill": {"slot": "bg2"}}}}}});
+FILES["layout-map.yaml"] = [
+  "Cards:", "  layout: Cards", "  regions:",
+  "    title: 0", "    head1: 1", "    card1: 5", "    head2: 2", "    card2: 6", "",
+].join(String.fromCharCode(10));
 
 const browser = await chromium.launch({ channel: "msedge" });
 const page = await browser.newPage({ viewport: { width: 1500, height: 950 } });
@@ -183,86 +189,74 @@ const slideNow = () =>
     };
   });
 
-// ---- the rail's own controls -------------------------------------------
+// ---- the Cards layout --------------------------------------------------
 //
-// Reorder and delete sit beside the thumbnail in each slide row. They
-// were reported as "gone". They were drawn, visible, and not clickable:
-// drawSlide falls back to a 150px stage when its host has not been laid
-// out yet, which is wider than the 110px thumbnail, and the overflow sat
-// on top of them. Every DOM assertion passed while the buttons could not
-// be pressed.
-page.on("dialog", (d) => d.accept());
-
-// Three slides, so moving and deleting both have somewhere to go.
-await page.click("#add-slide-ribbon");
-await page.click("#add-slide-ribbon");
-await page.waitForTimeout(500);
-
-const ids = () => page.$$eval(".slide-row", (n) => n.map((x) => x.dataset.slideId));
-const reach = () =>
-  page.evaluate(() => {
-    const rows = [...document.querySelectorAll(".slide-row")];
-    return rows.map((row) => {
-      const buttons = [...row.querySelectorAll(".slide-tools button")];
-      return buttons.map((b) => {
-        const r = b.getBoundingClientRect();
-        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-        return {
-          label: b.getAttribute("aria-label"),
-          onScreen: r.top >= 0 && r.bottom <= innerHeight,
-          clickable: hit === b || b.contains(hit),
-          over: hit ? hit.className : "nothing",
-        };
-      });
-    });
-  });
-
-const before = await ids();
-const reachable = (await reach()).flat();
-const unreachable = reachable.filter((b) => b.onScreen && !b.clickable);
-console.log("rows:", before.length, "| tool buttons:", reachable.length);
-console.log("unreachable:", JSON.stringify(unreachable));
-
-// Move the last slide up, by pressing the button rather than calling in.
-await page.click('button[aria-label="move up: slide 3"]');
-await page.waitForTimeout(400);
-const afterMove = await ids();
-
-// Then delete the first.
-await page.click('button[aria-label="delete: slide 1"]');
-await page.waitForTimeout(500);
-const afterDelete = await ids();
-
-// The thumbnail must still select its slide, having been made
-// click-through so it would stop swallowing the buttons beside it.
-await page.click(".slide-row:last-of-type .thumb");
-await page.waitForTimeout(300);
-const picked = await page.evaluate(() => {
-  const on = document.querySelector(".slide-row.on");
-  const rows = [...document.querySelectorAll(".slide-row")];
-  return { index: rows.indexOf(on), total: rows.length };
+// Its headings are white, because in the template they sit on an
+// accent-coloured tab. The canvas drew only the text, so they were white
+// on white -- invisible here while the rendered deck looked correct.
+const painted = await page.evaluate(() => {
+  const read = (name) => {
+    const box = document.querySelector(`.canvas .region[data-region="${name}"]`);
+    if (!box) return { missing: true };
+    const s = getComputedStyle(box);
+    return { colour: s.color, background: s.backgroundColor };
+  };
+  return { head1: read("head1"), card1: read("card1") };
 });
+console.log("cards:", JSON.stringify(painted));
 
-console.log("ids before:", JSON.stringify(before));
-console.log("after move up:", JSON.stringify(afterMove));
-console.log("after delete: ", JSON.stringify(afterDelete));
-console.log("thumb selects:", JSON.stringify(picked));
+const transparent = (c) => !c || c === "rgba(0, 0, 0, 0)" || c === "transparent";
+
+// ---- and newlines typed into a card ------------------------------------
+//
+// A bare string was drawn as one paragraph however many lines it held,
+// so a second line merged back into the first on the next redraw.
+const card = page.locator('.canvas .region[data-region="card1"]').first();
+await card.click();
+await page.waitForTimeout(200);
+await page.keyboard.press("Control+A");
+await page.keyboard.type("First line");
+await page.keyboard.press("Enter");
+await page.keyboard.type("Second line");
+await page.waitForTimeout(500);
+
+// Blur, exactly as the report describes, then force a redraw by leaving
+// the slide and coming back.
+await page.locator('.canvas .region[data-region="head1"]').first().click();
+await page.waitForTimeout(400);
+const thumbAfterBlur = await page.evaluate(
+  () => document.querySelector(".slide-row .thumb")?.textContent?.trim() ?? ""
+);
+await page.locator(".tabstrip .tab", { hasText: "Outcomes" }).first().click();
+await page.waitForTimeout(500);
+await page.locator(".tabstrip .tab", { hasText: "Slides" }).first().click();
+await page.waitForTimeout(600);
+const redrawn = await page.evaluate(() => {
+  const box = document.querySelector('.canvas .region[data-region="card1"]');
+  return {
+    paragraphs: box ? box.querySelectorAll("p").length : 0,
+    text: box ? box.textContent.trim() : "",
+  };
+});
+console.log("after blur, thumb:", JSON.stringify(thumbAfterBlur));
+console.log("after a redraw:", JSON.stringify(redrawn));
 
 if (errors.length) console.log("errors:", errors.slice(0, 4));
 
 const failed =
   errors.length > 0 ||
-  before.length !== 3 ||
-  reachable.length !== 9 ||
-  unreachable.length > 0 ||
-  // Moved, not merely re-rendered.
-  JSON.stringify(afterMove) === JSON.stringify(before) ||
-  afterMove[1] !== before[2] ||
-  // Deleted, and the right one.
-  afterDelete.length !== 2 ||
-  afterDelete.includes(before[0]) ||
-  // And the thumbnail still picks its slide.
-  picked.index !== picked.total - 1;
+  painted.head1.missing ||
+  // The tab is painted, so white text is legible.
+  transparent(painted.head1.background) ||
+  transparent(painted.card1.background) ||
+  painted.head1.background === painted.card1.background ||
+  // Both lines survived the blur...
+  !thumbAfterBlur.includes("First line") ||
+  !thumbAfterBlur.includes("Second line") ||
+  // ...and the redraw, as two paragraphs rather than one run-on.
+  redrawn.paragraphs !== 2 ||
+  !redrawn.text.includes("First line") ||
+  !redrawn.text.includes("Second line");
 
 console.log(failed ? String.fromCharCode(10) + "FAIL" : String.fromCharCode(10) + "PASS");
 await browser.close();

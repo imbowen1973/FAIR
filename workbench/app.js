@@ -143,6 +143,9 @@ function status(message, kind = "") {
   el.textContent = message;
   el.className = `status ${kind}`.trim();
   el.hidden = !message;
+  // The action bar sticks below the chrome, and the chrome just changed
+  // height.
+  measureHeader();
 }
 
 /** Run work with the button disabled and the status bar showing progress. */
@@ -195,10 +198,20 @@ async function signInWithToken() {
 function measureHeader() {
   const header = document.querySelector("header");
   if (!header) return;
-  document.documentElement.style.setProperty(
-    "--header-h",
-    `${Math.round(header.getBoundingClientRect().height)}px`
-  );
+  const head = header.getBoundingClientRect().height;
+  const bar = document.getElementById("status");
+  // The status bar is usually hidden and takes no room; when it is
+  // showing, everything below it has to start lower.
+  const shown = bar && !bar.hidden ? bar.getBoundingClientRect().height : 0;
+  // The action bar sticks below both, so anything scrolled into view has
+  // to clear all three or it opens underneath them.
+  const actions = document.querySelector(".bar");
+  const barHeight =
+    actions && !actions.closest("[hidden]") ? actions.getBoundingClientRect().height : 0;
+  const root = document.documentElement.style;
+  root.setProperty("--header-h", `${Math.round(head)}px`);
+  root.setProperty("--chrome-h", `${Math.round(head + shown)}px`);
+  root.setProperty("--sticky-h", `${Math.round(head + shown + barHeight)}px`);
 }
 measureHeader();
 addEventListener("resize", measureHeader);
@@ -431,7 +444,7 @@ function openImport() {
   const host = $("panels");
   const panel = document.createElement("div");
   host.prepend(panel);
-  panel.scrollIntoView({ block: "nearest" });
+  panel.scrollIntoView({ block: "start" });
 
   const place = (slides, replace) => {
     const list = working();
@@ -618,24 +631,12 @@ function renderOutline() {
     // The slide strip belongs to the deck. On a workbook tab it would be
     // a list of things the pane on the right is not showing.
     if (id === state.blockId && activeDoc()?.editor === "slides") {
-      // Above the slides, not below them. At the foot of a real deck
-      // these sat hundreds of pixels below the fold, and on a phone
-      // inside a drawer that starts closed.
-      const deckActions = document.createElement("div");
-      deckActions.className = "deck-actions";
-      for (const [label, title, fn] of [
-        ["+ slide", "Add an empty slide after this one", addSlide],
-        ["import", "Paste or open slides written elsewhere", openImport],
-      ]) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "add-slide";
-        button.textContent = label;
-        button.title = title;
-        button.addEventListener("click", fn);
-        deckActions.appendChild(button);
-      }
+      // Adding a slide and importing live in the ribbon, which is always
+      // on screen while a deck is open. What stays here is the one that
+      // is occasional and only sometimes offered: the opening pair.
       if (!hasOpeningSlides()) {
+        const deckActions = document.createElement("div");
+        deckActions.className = "deck-actions";
         const opening = document.createElement("button");
         opening.type = "button";
         opening.className = "add-slide";
@@ -645,8 +646,8 @@ function renderOutline() {
           "the library rather than typed";
         opening.addEventListener("click", addOpeningSlides);
         deckActions.appendChild(opening);
+        group.appendChild(deckActions);
       }
-      group.appendChild(deckActions);
 
       working(id).forEach((entry, index) => {
         const data = entry.data;
@@ -1035,6 +1036,8 @@ function renderRibbon() {
     },
     onUndo: undo,
     onRedo: redo,
+    onAddSlide: addSlide,
+    onImport: openImport,
     onListType: (kind) => {
       const region = activeRegion;
       if (!region) return;
@@ -1943,7 +1946,7 @@ function openMediaPicker(region, value, kind) {
   const host = $("panels");
   const panel = document.createElement("div");
   host.prepend(panel);
-  panel.scrollIntoView({ block: "nearest" });
+  panel.scrollIntoView({ block: "start" });
 
   const set = (next) => {
     const current = slideData(state.slideIndex);

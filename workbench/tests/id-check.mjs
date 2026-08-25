@@ -70,7 +70,7 @@ await page.waitForSelector("#workspace:not([hidden])", { timeout: 15000 });
 // when a slide has one, and would have hidden a duplicate.
 const ids = () =>
   page.$$eval(".slide-row", (n) => n.map((x) => x.dataset.slideId));
-const addSlide = () => page.click(".deck-actions .add-slide:nth-child(1)");
+const addSlide = () => page.click("#add-slide-ribbon");
 
 for (let i = 0; i < 3; i += 1) await addSlide();
 await page.waitForTimeout(300);
@@ -88,7 +88,7 @@ const afterAdd = await ids();
 // The opening pair used to derive s-01 and s-02 from a stem, which
 // duplicated whatever the deck already had. The renderer refuses a
 // duplicate id outright, so this was a deck that could not be built.
-await page.click(".deck-actions .add-slide:nth-child(3)");
+await page.click(".deck-actions .add-slide");
 await page.waitForTimeout(400);
 const withOpening = await ids();
 const dupes = withOpening.filter((x, i) => withOpening.indexOf(x) !== i);

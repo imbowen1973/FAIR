@@ -110,7 +110,14 @@ button.link.danger { color: var(--danger); }
 .status.error { border-color: var(--danger); }
 .status.ok { border-color: var(--ok); }
 
+/* Sticky, below the header and the status. On a desktop the panes scroll
+   inside themselves so this stayed put by accident; below 1100px the page
+   itself scrolls, and Save and Submit went off the top of the screen --
+   measured at top:-207 after an ordinary scroll. The two actions that
+   commit work are not ones to go hunting for. */
 .bar {
+  position: sticky; top: var(--chrome-h, 60px); z-index: 4;
+  background: var(--bg);
   display: flex; align-items: center; gap: 12px;
   padding: 10px 18px; border-bottom: 1px solid var(--border);
 }
@@ -396,6 +403,11 @@ button.swatch.none { background: var(--bg); font-size: 11px; line-height: 1; }
 .session-details .meta-row { align-items: flex-end; }
 .session-details input.text { width: 100%; box-sizing: border-box; }
 .session-details .meta-field { min-width: 120px; }
+
+/* Panels open above the canvas and are scrolled to. The header, the
+   status and the action bar are all sticky, so without this a panel
+   arrives underneath them with its heading and first control hidden. */
+#panels > * { scroll-margin-top: calc(var(--sticky-h, 120px) + 8px); }
 
 /* Icons sit on the text line and follow the theme through currentColor. */
 .icon { flex: none; vertical-align: -2px; }
