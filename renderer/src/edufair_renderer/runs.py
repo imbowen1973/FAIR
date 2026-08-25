@@ -150,13 +150,24 @@ def write_runs(
     color: str | None = None,
     code_typeface: str = DEFAULT_CODE_TYPEFACE,
 ) -> None:
-    """Write text into a paragraph as emphasis-parsed, optionally coloured runs."""
+    """Write text into a paragraph as emphasis-parsed, optionally coloured runs.
+
+    A newline inside the text is a line break within the paragraph, and
+    becomes `<a:br/>`. Putting it in a run instead makes PowerPoint show
+    a space: the break an author typed simply was not there.
+    """
     for spec in parse_emphasis(text):
-        run = paragraph.add_run()
-        run.text = spec.text
-        _apply_marks(run, spec, code_typeface)
-        if color:
-            _apply_scheme_color(run, color)
+        pieces = spec.text.split(chr(10))
+        for i, piece in enumerate(pieces):
+            if i:
+                etree.SubElement(paragraph._p, f"{{{A_NS}}}br")
+            if not piece:
+                continue
+            run = paragraph.add_run()
+            run.text = piece
+            _apply_marks(run, spec, code_typeface)
+            if color:
+                _apply_scheme_color(run, color)
 
 
 def plain_text(text: str) -> str:

@@ -33,14 +33,23 @@ Object.assign(TAG_TO_MARK, {
 export function toNodes(text) {
   const fragment = document.createDocumentFragment();
   for (const span of parseMarks(text ?? "")) {
-    let node = document.createTextNode(span.text);
-    for (const mark of MARKS) {
-      if (!span[mark]) continue;
-      const wrapper = document.createElement(TAG[mark]);
-      wrapper.appendChild(node);
-      node = wrapper;
-    }
-    fragment.appendChild(node);
+    // A newline has to become a <br>. As a text node HTML collapses it
+    // to a space, so a line break drawn once was gone the next time the
+    // DOM was read back -- the data still held it, the screen did not,
+    // and the next keystroke committed the screen.
+    const lines = String(span.text).split(String.fromCharCode(10));
+    lines.forEach((line, i) => {
+      if (i) fragment.appendChild(document.createElement("br"));
+      if (!line) return;
+      let node = document.createTextNode(line);
+      for (const mark of MARKS) {
+        if (!span[mark]) continue;
+        const wrapper = document.createElement(TAG[mark]);
+        wrapper.appendChild(node);
+        node = wrapper;
+      }
+      fragment.appendChild(node);
+    });
   }
   return fragment;
 }

@@ -2530,3 +2530,42 @@ def test_a_marker_or_alignment_it_does_not_know_is_refused(tmp_path):
         )
         with pytest.raises(SessionParseError):
             parse_session(path)
+
+
+def test_a_line_break_inside_a_line_becomes_a_real_break(tmp_path):
+    """Shift+Enter is a break within the paragraph, not a space.
+
+    A newline in the text used to go into a run, which PowerPoint shows
+    as a space: the break an author typed was simply not there.
+    """
+    nl = chr(10)
+    slide = _render_one(
+        tmp_path,
+        "full:" + nl + "  type: ul" + nl + "  items:" + nl
+        + "    - 'Item one" + nl + nl + "      still item one'" + nl,
+    )
+    paragraphs = list(_body_paragraphs(slide))
+    assert len(paragraphs) == 1, "one item, one paragraph"
+    kinds = [
+        etree.QName(child).localname
+        for child in paragraphs[0]._p
+        if etree.QName(child).localname in ("r", "br")
+    ]
+    assert kinds == ["r", "br", "r"], kinds
+
+
+def test_a_break_does_not_lose_the_emphasis_around_it(tmp_path):
+    nl = chr(10)
+    slide = _render_one(
+        tmp_path,
+        "full:" + nl + "  type: ul" + nl + "  items:" + nl
+        + "    - '**Bold** then" + nl + nl + "      a break'" + nl,
+    )
+    paragraph = next(_body_paragraphs(slide))
+    assert [r.text for r in paragraph.runs if r.font.bold] == ["Bold"]
+    kinds = [
+        etree.QName(child).localname
+        for child in paragraph._p
+        if etree.QName(child).localname in ("r", "br")
+    ]
+    assert "br" in kinds

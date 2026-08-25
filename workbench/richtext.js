@@ -27,25 +27,37 @@ const TAG = {
 };
 
 /** Spans -> DOM, innermost mark closest to the text. */
+const NEWLINE = String.fromCharCode(10);
+
 function spansToHtml(spans) {
   return spans
     .map((span) => {
-      const el = document.createTextNode(span.text);
-      let node = el;
-      for (const mark of MARKS) {
-        if (!span[mark]) continue;
-        const wrapper = document.createElement(TAG[mark]);
-        wrapper.appendChild(node);
-        node = wrapper;
-      }
       const holder = document.createElement("div");
-      holder.appendChild(node);
+      // A newline has to become a <br>. In a text node HTML collapses
+      // it to a space, so a note saved with two paragraphs came back
+      // as one line -- and the next keystroke committed that.
+      const lines = String(span.text).split(NEWLINE);
+      lines.forEach((line, i) => {
+        if (i) holder.appendChild(document.createElement("br"));
+        if (!line) return;
+        let node = document.createTextNode(line);
+        for (const mark of MARKS) {
+          if (!span[mark]) continue;
+          const wrapper = document.createElement(TAG[mark]);
+          wrapper.appendChild(node);
+          node = wrapper;
+        }
+        holder.appendChild(node);
+      });
       return holder.innerHTML;
     })
     .join("");
 }
 
 /** DOM -> spans, walking the tree and collecting marks on the way down. */
+/** Elements that start a new line when the DOM is read back as text. */
+const BLOCKS = new Set(["p", "div", "li", "h1", "h2", "h3", "h4", "blockquote", "pre"]);
+
 function htmlToSpans(root) {
   const spans = [];
   const walk = (node, marks) => {
@@ -60,6 +72,12 @@ function htmlToSpans(root) {
       if (tag === "br") {
         spans.push({ text: "\n", ...marks });
         continue;
+      }
+      // Pressing Enter makes a new block, and walking into it added
+      // its words straight after the previous ones -- so two
+      // paragraphs of speaker notes came back as one long line.
+      if (BLOCKS.has(tag) && spans.length) {
+        spans.push({ text: NEWLINE, ...marks });
       }
       walk(child, mark ? { ...marks, [mark]: true } : marks);
     }
