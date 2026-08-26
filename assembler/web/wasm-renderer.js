@@ -39,6 +39,75 @@ export const MODULES = [
   "zipnorm",
 ];
 
+/**
+ * Fetch the renderer's Python modules.
+ *
+ * `base` is where they sit relative to the caller: the assembler page is
+ * at the site root, the workbench is one level down.
+ *
+ * Two things this does that a plain loop did not, both learned from a
+ * preview that failed with "cannot load renderer module assets (503)"
+ * while every one of those files was being served perfectly well:
+ *
+ *   it retries what is worth retrying. A 5xx or a dropped connection is
+ *   the host having a moment -- Pages answers 503 while a deploy is
+ *   going out -- and the right response is to ask again, not to make
+ *   somebody re-run the preview and wonder what they did wrong. A 404
+ *   is not retried: that file is not published and waiting will not
+ *   publish it.
+ *
+ *   it fetches them together. Fourteen sequential round-trips is
+ *   fourteen chances to be unlucky, one after another, and slower than
+ *   it needs to be.
+ */
+export async function fetchModules(
+  base,
+  {
+    fetcher = fetch,
+    attempts = 3,
+    wait = (ms) => new Promise((r) => setTimeout(r, ms)),
+    // The build this page was served as. The workflow stamps every
+    // import with it, so this module's own URL carries it -- and the
+    // Python it fetches must be stamped too. Pages serves .py with
+    // max-age=600, so for ten minutes after a deploy an unstamped
+    // fetch can hand back a mix of old and new renderer modules and
+    // render something wrong rather than failing. That is worse than
+    // the 503 that led here.
+    stamp = new URL(import.meta.url).searchParams.get("v"),
+  } = {}
+) {
+  const load = async (mod) => {
+    const url = `${base}${mod}.py` + (stamp ? `?v=${stamp}` : "");
+    let last = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (attempt) await wait(300 * 2 ** (attempt - 1));
+      let res;
+      try {
+        res = await fetcher(url);
+      } catch (err) {
+        last = new Error(`could not reach ${mod}.py (${err.message})`);
+        continue;
+      }
+      if (res.ok) return [mod, await res.text()];
+      if (res.status === 404) {
+        // Not published. Retrying cannot help, and pretending otherwise
+        // just makes the failure slower.
+        throw new Error(
+          `the renderer module ${mod}.py is not published on this site (404)`
+        );
+      }
+      last = new Error(`${mod}.py answered ${res.status}`);
+    }
+    throw new Error(
+      `${last.message} after ${attempts} attempts. The site is not serving ` +
+        "the renderer right now — this is nothing to do with your library. " +
+        "Try Preview again in a moment."
+    );
+  };
+
+  return Promise.all(MODULES.map(load));
+}
+
 const REQUIRED = ["template.pptx", "layout-map.yaml"];
 
 /**
@@ -94,10 +163,8 @@ async function ensurePyodide(status) {
 
     status("Loading the FAIR renderer…");
     py.FS.mkdirTree("/py/edufair_renderer");
-    for (const mod of MODULES) {
-      const res = await fetch(`py/edufair_renderer/${mod}.py`);
-      if (!res.ok) throw new Error(`cannot load renderer module ${mod} (${res.status})`);
-      py.FS.writeFile(`/py/edufair_renderer/${mod}.py`, await res.text());
+    for (const [mod, source] of await fetchModules("py/edufair_renderer/")) {
+      py.FS.writeFile(`/py/edufair_renderer/${mod}.py`, source);
     }
     return py;
   })();

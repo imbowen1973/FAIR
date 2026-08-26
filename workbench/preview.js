@@ -16,7 +16,7 @@
 // than copying it is deliberate — assembler/tests/wasm-modules.test.mjs
 // derives that list from the Python import graph, and a second copy here
 // would be the thing that drifts.
-import { MODULES } from "../wasm-renderer.js";
+import { fetchModules } from "../wasm-renderer.js";
 
 const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 const LIB_DIR = "/fairlib"; // never /lib: that is Pyodide's own stdlib
@@ -44,10 +44,8 @@ async function ensurePyodide(status = () => {}) {
 
     status("Loading the FAIR renderer…");
     py.FS.mkdirTree("/py/edufair_renderer");
-    for (const mod of MODULES) {
-      const res = await fetch(`../py/edufair_renderer/${mod}.py`);
-      if (!res.ok) throw new Error(`cannot load renderer module ${mod} (${res.status})`);
-      py.FS.writeFile(`/py/edufair_renderer/${mod}.py`, await res.text());
+    for (const [mod, source] of await fetchModules("../py/edufair_renderer/")) {
+      py.FS.writeFile(`/py/edufair_renderer/${mod}.py`, source);
     }
     return py;
   })();
