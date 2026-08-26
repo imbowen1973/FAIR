@@ -23,7 +23,79 @@ try {
 const yaml = impl.default ?? impl;
 
 export function parse(text) {
-  return yaml.load(text ?? "");
+  return yaml.load(repairInlinedLists(String(text ?? "")));
+}
+
+/*
+  Undo a list this file once wrote badly.
+
+  `inlineShortLists` used to stop at the first item it could not fold and
+  inline the ones before it, leaving the rest as block entries under a
+  flow sequence:
+
+      items: [SAFFT4EU]
+        - REGE FARMS
+        - FARMS 5.0
+
+  That is not YAML, so js-yaml refused the whole slide and it came back
+  with no data: no layout, no cards, no notes. The writer no longer does
+  it, but files already committed still hold it, and a deck cannot be
+  mended by fixing the thing that broke it -- the bytes are on the
+  branch.
+
+  The damage is exactly reversible, because the old writer only ever
+  inlined bare scalars: no commas, no quotes, no nesting. So a flow
+  sequence directly followed by block entries at the item indent is
+  unambiguously one list, and can be put back as one.
+
+  This is safe to run over everything. The shape it repairs is invalid
+  YAML in every case, so no valid document can be changed by it: if the
+  pattern is there, the file was broken, and it was broken by us.
+*/
+function repairInlinedLists(text) {
+  // A flow sequence has to be present for there to be anything to undo.
+  if (!text.includes("[")) return text;
+
+  const crlf = text.includes("\r\n");
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  let mended = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const head = lines[i].match(/^(\s*)([\w.-]+):[ \t]*\[([^\]]*)\][ \t]*$/);
+    if (!head) {
+      out.push(lines[i]);
+      continue;
+    }
+
+    const [, indent, key, inside] = head;
+    const itemPattern = new RegExp("^" + indent + "  - (.*)$");
+    const stranded = [];
+    let j = i + 1;
+    while (j < lines.length) {
+      const m = lines[j].match(itemPattern);
+      if (!m) break;
+      stranded.push(m[1]);
+      j += 1;
+    }
+
+    // No block entries under it: an ordinary, valid flow sequence.
+    if (!stranded.length) {
+      out.push(lines[i]);
+      continue;
+    }
+
+    // The old writer only inlined bare scalars, so splitting on a comma
+    // cannot break an item apart.
+    const inlined = inside.trim() ? inside.split(",").map((s) => s.trim()) : [];
+    out.push(`${indent}${key}:`);
+    for (const item of [...inlined, ...stranded]) out.push(`${indent}  - ${item}`);
+    i = j - 1;
+    mended = true;
+  }
+
+  if (!mended) return text;
+  return out.join(crlf ? "\r\n" : "\n");
 }
 
 /**

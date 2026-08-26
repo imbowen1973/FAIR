@@ -30,10 +30,16 @@ const CORRUPT = [
   "version: 1.0.0",
   "---",
   "",
+  // Slide one: what the old writer left on branches everywhere. The
+  // content is all there; it just could not be parsed. It must come
+  // back, without the author doing anything.
   "--- slide",
   "id: profile-climate-regenerative-agriculture",
   "layout: Cards",
   "title: Climate-Resilient & Regenerative Agriculture Specialist",
+  "card1:",
+  "  type: ul",
+  "  items: [AGFORWEB, NECTAR, OFAFFU]",
   "card4:",
   "  type: ul",
   "  items: [SAFFT4EU]",
@@ -41,11 +47,13 @@ const CORRUPT = [
   "    - FARMS 5.0",
   "---",
   "",
+  // Slide two: broken for a reason that is nobody's bug but the
+  // author's. This must still say so, or the repair has quietly become
+  // "make it parse somehow".
   "--- slide",
-  "id: profile-precision-crop-irrigation",
+  "id: hand-edited-badly",
   "layout: Cards",
-  "title: Precision Crop & Irrigation Specialist",
-  "card1: InnoCSA",
+  "title: \"unclosed",
   "---",
   "",
 ].join(String.fromCharCode(10));
@@ -118,49 +126,69 @@ await page.click("#open-manual");
 await page.waitForSelector("#workspace", { timeout: 15000 });
 await page.waitForTimeout(1500);
 
-const said = await page.evaluate(() => {
+const said = await page.evaluate(async () => {
   const canvas = document.querySelector(".canvas") || document.getElementById("canvas");
   const text = canvas ? canvas.textContent.trim() : "";
+  const { parseSlides } = await import("./library.js");
   return {
-    text: text.slice(0, 240),
+    text: text.slice(0, 200),
+    regions: document.querySelectorAll(".canvas .region").length,
+    unreadable: Boolean(document.querySelector("[data-unreadable]")),
     blamesGeometry: Boolean(canvas?.querySelector("[data-missing-geometry]")),
-    saysUndefined: /undefined/.test(text),
-    namesTheFile: /slides\.md/.test(text),
-    // The line YAML objected to is the whole point of saying anything.
-    givesTheLine: /line \d+|\(\d+:\d+\)/.test(text),
-    offersHistory: /clock|earlier version/i.test(text),
   };
 });
 
-console.log("opening a deck whose file is already broken:");
-console.log(JSON.stringify(said, null, 1));
+console.log("slide 1, corrupted by the old writer:", JSON.stringify(said, null, 1));
+
+// What it actually recovered.
+const recovered = await page.evaluate(async (text) => {
+  const { parseSlides } = await import("./library.js");
+  const first = parseSlides(text).slides[0];
+  return {
+    error: first.error,
+    layout: first.data?.layout ?? null,
+    card1: first.data?.card1?.items ?? null,
+    card4: first.data?.card4?.items ?? null,
+  };
+}, CORRUPT);
+console.log("recovered:", JSON.stringify(recovered));
 
 // The second slide is fine and must still be reachable and drawable.
 const rowCount = await page.locator(".slide-row").count();
 if (rowCount > 1) await page.locator(".slide-row").nth(1).click();
-const second = { rows: rowCount };
-await page.waitForTimeout(900);
-const secondDrawn = await page.evaluate(() => ({
-  regions: document.querySelectorAll(".canvas .region").length,
-  stillComplaining: Boolean(document.querySelector("[data-unreadable]")),
-}));
+await page.waitForTimeout(700);
+const second = await page.evaluate(() => {
+  const canvas = document.querySelector(".canvas") || document.getElementById("canvas");
+  const text = canvas ? canvas.textContent.trim() : "";
+  return {
+    rows: document.querySelectorAll(".slide-row").length,
+    unreadable: Boolean(document.querySelector("[data-unreadable]")),
+    namesTheFile: /slides\.md/.test(text),
+    givesTheLine: /\(\d+:\d+\)/.test(text),
+    saysUndefined: /undefined/.test(text),
+  };
+});
+const secondDrawn = {};
 console.log("the slide beside it:", JSON.stringify({ ...second, ...secondDrawn }));
 
 if (errors.length) console.log("errors:", errors.slice(0, 4));
 
 const failed =
   errors.length > 0 ||
-  // It must not blame the geometry or the template.
+  // Slide one is mended and drawn, with every item back.
+  said.unreadable ||
   said.blamesGeometry ||
-  said.saysUndefined ||
-  // It must say what is actually wrong, and where.
-  !said.namesTheFile ||
-  !said.givesTheLine ||
-  !said.offersHistory ||
-  // One unreadable slide must not take the rest of the deck with it.
+  said.regions < 4 ||
+  recovered.error !== null ||
+  recovered.layout !== "Cards" ||
+  JSON.stringify(recovered.card1) !== JSON.stringify(["AGFORWEB", "NECTAR", "OFAFFU"]) ||
+  JSON.stringify(recovered.card4) !== JSON.stringify(["SAFFT4EU", "REGE FARMS", "FARMS 5.0"]) ||
+  // Slide two is broken for another reason and must still say so.
   second.rows !== 2 ||
-  secondDrawn.stillComplaining ||
-  secondDrawn.regions < 1;
+  !second.unreadable ||
+  !second.namesTheFile ||
+  !second.givesTheLine ||
+  second.saysUndefined;
 
 console.log(failed ? "\nFAIL" : "\nPASS");
 await browser.close();

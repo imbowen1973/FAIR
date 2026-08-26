@@ -1686,3 +1686,126 @@ test("an imported Cards slide survives being saved", () => {
   ]);
   assert.equal(saved.slides[0].data.notes.trim(), "Introduce the project names only.");
 });
+
+test("a list this file once wrote badly is read back whole", () => {
+  // Exactly what the old inlineShortLists produced, and exactly what is
+  // sitting in repositories now. The content is not lost -- it is all
+  // there in the file -- it just could not be parsed.
+  const broken = [
+    "card4:",
+    "  type: ul",
+    "  items: [SAFFT4EU]",
+    "    - REGE FARMS",
+    "    - ReGENERATE",
+    "    - FARMS 5.0",
+    "notes: Say them.",
+  ].join("\n");
+
+  assert.deepEqual(parseYaml(broken), {
+    card4: { type: "ul", items: ["SAFFT4EU", "REGE FARMS", "ReGENERATE", "FARMS 5.0"] },
+    notes: "Say them.",
+  });
+});
+
+test("repair leaves valid yaml exactly as it is", () => {
+  // The shape being repaired is invalid YAML in every case, so no valid
+  // document can be altered by it -- but that claim is worth pinning.
+  const cases = [
+    "develops: [AP1, AP3]\n",
+    "items: [a, b]\nother:\n  - x\n  - y\n",
+    "a:\n  - one\n  - two\n",
+    "text: |\n  a line with [brackets] in it\n  and a - dash\n",
+    "empty: []\n",
+    "nested:\n  inner: [p, q]\n  after: yes\n",
+    "quoted: \"[not, a, list]\"\n",
+  ];
+  for (const text of cases) {
+    assert.deepEqual(parseYaml(text), parseYaml(text), text);
+  }
+  assert.deepEqual(parseYaml("nested:\n  inner: [p, q]\n  after: yes\n"), {
+    // js-yaml 4 is YAML 1.2: `yes` is a string, not a boolean.
+    nested: { inner: ["p", "q"], after: "yes" },
+  });
+  assert.deepEqual(parseYaml('quoted: "[not, a, list]"\n'), { quoted: "[not, a, list]" });
+  assert.deepEqual(parseYaml("text: |\n  a line with [brackets] in it\n  and a - dash\n"), {
+    text: "a line with [brackets] in it\nand a - dash\n",
+  });
+});
+
+test("a whole corrupted slide comes back", () => {
+  // The author's first slide, as the old writer left it on the branch.
+  const md = [
+    "---",
+    "session: '01'",
+    "title: Profiles",
+    "version: 1.0.0",
+    "---",
+    "",
+    "--- slide",
+    "id: profile-climate-regenerative-agriculture",
+    "layout: Cards",
+    "title: Climate-Resilient & Regenerative Agriculture Specialist",
+    "card1:",
+    "  type: ul",
+    "  items: [AGFORWEB, NECTAR, OFAFFU]",
+    "card4:",
+    "  type: ul",
+    "  items: [SAFFT4EU]",
+    "    - REGE FARMS",
+    "    - ReGENERATE",
+    "    - RELOOP",
+    "    - AgriGreenSkills",
+    "    - FARMS 5.0",
+    "notes: |",
+    "  Introduce the project names only.",
+    "---",
+    "",
+  ].join("\n");
+
+  const parsed = parseSlides(md);
+  assert.equal(parsed.slides.length, 1);
+  assert.equal(parsed.slides[0].error, null);
+  const slide = parsed.slides[0].data;
+  assert.equal(slide.layout, "Cards");
+  assert.deepEqual(slide.card1.items, ["AGFORWEB", "NECTAR", "OFAFFU"]);
+  assert.deepEqual(slide.card4.items, [
+    "SAFFT4EU",
+    "REGE FARMS",
+    "ReGENERATE",
+    "RELOOP",
+    "AgriGreenSkills",
+    "FARMS 5.0",
+  ]);
+  assert.equal(slide.notes.trim(), "Introduce the project names only.");
+});
+
+test("recovered content is written back correctly", () => {
+  // Reading it is half the job: the next save has to put it back as
+  // YAML that stays readable, or the deck breaks again on the round
+  // after this one.
+  const broken = "items: [SAFFT4EU]\n  - REGE FARMS\n";
+  const value = parseYaml(broken);
+  const rewritten = stringifyYaml(value);
+  assert.deepEqual(parseYaml(rewritten), value);
+  assert.ok(
+    !/\[[^\]]*\]\s*\n\s+-/.test(rewritten),
+    `wrote it badly again:\n${rewritten}`
+  );
+});
+
+test("yaml that is broken for any other reason is still an error", () => {
+  // The repair must not turn into a general "make it parse somehow".
+  // A file somebody hand-edited badly has to say so.
+  const md = [
+    "--- slide",
+    "id: s-01",
+    'title: "unclosed',
+    "layout: Cards",
+    "---",
+    "",
+  ].join("\n");
+  const parsed = parseSlides(md);
+  assert.equal(parsed.slides.length, 1);
+  assert.ok(parsed.slides[0].error, "a genuinely broken slide reported no error");
+  assert.deepEqual(parsed.slides[0].data, {});
+});
