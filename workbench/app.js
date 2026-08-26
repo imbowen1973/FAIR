@@ -933,6 +933,26 @@ function renderCanvas({ redraw = true } = {}) {
     return;
   }
 
+  // A slide the file could not be read into. The content is not lost --
+  // it is in the commit -- but it is not here, and nothing about the
+  // layout or the geometry is wrong. Say which line, so it can be found.
+  const broken = working()[state.slideIndex]?.error;
+  if (broken) {
+    const host = $("canvas");
+    host.innerHTML = "";
+    const note = document.createElement("p");
+    note.className = "empty";
+    note.dataset.unreadable = "1";
+    note.textContent =
+      "This slide could not be read from slides.md, so there is nothing " +
+      "to draw. It is not a layout or a template problem. YAML says: " +
+      String(broken).split(String.fromCharCode(10))[0] +
+      ". Use the clock to open an earlier version, or paste the slide in again.";
+    host.appendChild(note);
+    $("meta").innerHTML = "";
+    return;
+  }
+
   const data = slideData(state.slideIndex);
   const shown = previewData(data);
   if (redraw) {

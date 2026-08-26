@@ -28,21 +28,27 @@ const PASTE = [
   "id: profile-climate-regenerative-agriculture",
   "layout: Cards",
   "title: Climate-Resilient & Regenerative Agriculture Specialist",
-  'head1: "Completed projects: accessible but flat"',
+  "head1: \"Completed projects: accessible but flat\"",
   "card1:",
   "  type: ul",
   "  items:",
   "    - AGFORWEB",
   "    - NECTAR",
-  'head2: "Completed projects: genuine OER"',
-  'card2: ""',
-  'head3: "Completed projects: not publicly accessible"',
-  'card3: ""',
+  "    - OFAFFU",
+  "head2: \"Completed projects: genuine OER\"",
+  "card2: \"\"",
+  "head3: \"Completed projects: not publicly accessible\"",
+  "card3: \"\"",
   "head4: Live projects and opportunities",
   "card4:",
   "  type: ul",
   "  items:",
   "    - SAFFT4EU",
+  "    - REGE FARMS",
+  "    - ReGENERATE",
+  "    - RELOOP",
+  "    - AgriGreenSkills",
+  "    - FARMS 5.0",
   "notes: |",
   "  Introduce the project names only.",
   "---",
@@ -51,10 +57,44 @@ const PASTE = [
   "id: profile-precision-crop-irrigation",
   "layout: Cards",
   "title: Precision Crop & Irrigation Specialist",
-  'head1: "Completed projects: accessible but flat"',
+  "head1: \"Completed projects: accessible but flat\"",
   "card1: InnoCSA",
+  "head2: \"Completed projects: genuine OER\"",
+  "card2: \"\"",
+  "head3: \"Completed projects: not publicly accessible\"",
+  "card3:",
+  "  type: ul",
+  "  items:",
+  "    - Smart Farming",
+  "    - AgriDrone",
+  "    - AgroPro",
+  "    - AGRILEARN",
   "head4: Live projects and opportunities",
-  'card4: ""',
+  "card4:",
+  "  type: ul",
+  "  items:",
+  "    - Future of Precision Agriculture",
+  "    - Climate Smart Agriculture",
+  "notes: |",
+  "  Introduce the project names only.",
+  "---",
+  "",
+  "--- slide",
+  "id: profile-food-by-products",
+  "layout: Cards",
+  "title: Food Production By-Products and Side Streams Valorisation Specialist",
+  "head1: \"Completed projects: accessible but flat\"",
+  "card1:",
+  "  type: ul",
+  "  items:",
+  "    - Strategies for the Valorisation of Horticultural and Agricultural By-products",
+  "    - CitriVET",
+  "head2: \"Completed projects: genuine OER\"",
+  "card2: \"\"",
+  "head3: \"Completed projects: not publicly accessible\"",
+  "card3: CitriVET",
+  "head4: Live projects and opportunities",
+  "card4: MedSEVa",
   "notes: |",
   "  Introduce the project names only.",
   "---",
@@ -308,6 +348,26 @@ const written = (() => {
 })();
 console.log("committed head:", JSON.stringify(written.slice(0, 90)));
 
+// Read the committed file back the way the workbench will on reload.
+// Checking only that it starts with frontmatter is what let a file
+// through whose slides had been reduced to nothing: the deck was in the
+// rail, the canvas drew it, and the bytes on the branch were broken.
+const readBack = await page.evaluate(async (text) => {
+  const { parseSlides } = await import("./library.js");
+  return parseSlides(text).slides.map((slide) => ({
+    id: slide.data?.id ?? null,
+    layout: slide.data?.layout ?? null,
+    keys: Object.keys(slide.data ?? {}).length,
+    items: Object.fromEntries(
+      Object.entries(slide.data ?? {})
+        .filter(([, v]) => v && typeof v === "object" && Array.isArray(v.items))
+        .map(([k, v]) => [k, v.items.length])
+    ),
+    error: slide.error,
+  }));
+}, written);
+console.log("read back:", JSON.stringify(readBack, null, 1));
+
 if (errors.length) console.log("errors:", errors.slice(0, 4));
 
 const NL = String.fromCharCode(10);
@@ -318,7 +378,7 @@ const failed =
   emptyDeck.saysUndefined ||
   !/no slides yet/.test(emptyDeck.text) ||
   // And the import into it works, keeping the ids it was given.
-  after.slides !== 2 ||
+  after.slides !== 3 ||
   !after.ids.includes("profile-climate-regenerative-agriculture") ||
   after.geometryNote !== null ||
   after.regions < 4 ||
@@ -328,7 +388,19 @@ const failed =
   !/^session:/m.test(written) ||
   !/^title:/m.test(written) ||
   !/^version:/m.test(written) ||
-  !written.includes("profile-climate-regenerative-agriculture");
+  !written.includes("profile-climate-regenerative-agriculture") ||
+  // ...and every slide in it survives being read back. A list holding a
+  // two-word item used to be written as a flow sequence with the rest
+  // dangling under it, which is not YAML: js-yaml refused the slide, it
+  // came back with no data, and the canvas then blamed the geometry for
+  // a layout it no longer had.
+  readBack.length !== 3 ||
+  readBack.some((slide) => slide.error) ||
+  readBack.some((slide) => slide.layout !== "Cards") ||
+  readBack.some((slide) => slide.keys < 5) ||
+  readBack[0].items.card4 !== 6 ||
+  readBack[1].items.card3 !== 4 ||
+  readBack[2].items.card1 !== 2;
 
 console.log(failed ? NL + "FAIL" : NL + "PASS");
 await browser.close();

@@ -107,6 +107,12 @@ export function workingSlides(parsed) {
     sourceIndex: index,
     data: slide.data,
     dirty: false,
+    // Why a slide came back empty. Dropping this is how a file the
+    // workbench itself had written badly was reported as a missing
+    // layout: js-yaml said exactly what was wrong with line 16 and
+    // nobody was listening, so the canvas blamed the geometry and an
+    // author went and read a template that was never the problem.
+    error: slide.error ?? null,
   }));
 }
 
