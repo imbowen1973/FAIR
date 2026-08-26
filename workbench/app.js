@@ -36,6 +36,8 @@ import {
 } from "./history.js";
 import {
   asListType,
+  TEXT_ONLY_REGIONS,
+  withPlainTitle,
   blankSlide,
   flattenStructure,
   layoutRegions,
@@ -814,7 +816,11 @@ let activeRegion = null;
 /** Record an edit to the slide in focus and redraw what depends on it. */
 function commitSlide(next, { step = null } = {}) {
   const entry = working()[state.slideIndex];
-  entry.data = next;
+  // One rule, one place. The renderer takes a title as a plain string
+  // and nothing else, and there are several ordinary ways to type one
+  // that is not -- a second line is enough. Asking each control to
+  // remember that is how one of them forgets.
+  entry.data = withPlainTitle(next);
   entry.dirty = true;
   remember(step);
   renderOutline();
@@ -1325,6 +1331,14 @@ function renderRibbon({ slides = true } = {}) {
         status("Click the region you want the picture in first.", "error");
         return;
       }
+      if (TEXT_ONLY_REGIONS.has(region)) {
+        status(
+          `A ${region} is a single line of text — a picture cannot go there. ` +
+            "Choose a content placeholder.",
+          ""
+        );
+        return;
+      }
       const current = slideData(state.slideIndex)[region];
       const kind = current?.type === "video" ? "video" : "image";
       openMediaPicker(region, current ?? {}, kind);
@@ -1337,6 +1351,14 @@ function renderRibbon({ slides = true } = {}) {
     onListType: (kind) => {
       const region = activeRegion;
       if (!region) return;
+      if (kind && TEXT_ONLY_REGIONS.has(region)) {
+        status(
+          `A ${region} is a single line of text — the renderer will not take ` +
+            "a list there. Put the points in a content placeholder instead.",
+          ""
+        );
+        return;
+      }
       const current = slideData(state.slideIndex);
       const next = asListType(current[region], kind);
       if (next === current[region]) return; // already that, or not text

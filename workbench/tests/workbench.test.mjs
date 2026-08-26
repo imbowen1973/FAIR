@@ -70,6 +70,8 @@ import {
   slideRegions,
   writeSlides,
   asListType,
+  asPlainText,
+  withPlainTitle,
 } from "../library.js";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -1808,4 +1810,122 @@ test("yaml that is broken for any other reason is still an error", () => {
   assert.equal(parsed.slides.length, 1);
   assert.ok(parsed.slides[0].error, "a genuinely broken slide reported no error");
   assert.deepEqual(parsed.slides[0].data, {});
+});
+
+// ---- a title is text, and only text -------------------------------------
+//
+// The renderer takes `title` as a plain string and nothing else. The
+// workbench did not know that and wrote several shapes it refuses, so a
+// preview ended in a Python traceback naming a line number:
+//
+//     slides.md:240: 'title' must be a plain string
+//
+// A list button pressed with the title selected does it. So, more
+// quietly, does typing a second line: asListType(value, null) yields
+// {type: p, text} for anything multi-line, which is not a string either.
+
+test("every shape the editor can make of a title becomes text", () => {
+  // Exactly the values the workbench's own controls produce.
+  assert.equal(asPlainText({ type: "ul", items: ["Aims", "Outline"] }), "Aims\nOutline");
+  assert.equal(asPlainText({ type: "ol", items: ["First", "Second"] }), "First\nSecond");
+  assert.equal(asPlainText({ type: "p", text: "Two\nlines" }), "Two\nlines");
+  assert.equal(asPlainText({ type: "text", text: "One" }), "One");
+  assert.equal(asPlainText("already text"), "already text");
+  assert.equal(asPlainText(""), "");
+  assert.equal(asPlainText(null), "");
+  assert.equal(asPlainText(undefined), "");
+  // A title that YAML read as a number is still a title.
+  assert.equal(asPlainText(2026), "2026");
+  // Nested list items keep their words.
+  assert.equal(
+    asPlainText({ type: "ul", items: [{ text: "Top", items: ["Under"] }, "Next"] }),
+    "Top\nUnder\nNext"
+  );
+  // There is no honest text for a picture, so it is not invented.
+  assert.equal(asPlainText({ type: "image", src: "a.png" }), null);
+  assert.equal(asPlainText({ type: "video", src: "b.mp4" }), null);
+  assert.equal(asPlainText({ type: "mermaid", text: "graph TD" }), null);
+});
+
+test("newlines in a title survive: the renderer writes a break for them", () => {
+  // The wrapper is the problem, not the second line. Flattening a title
+  // to one line would quietly rewrite what somebody typed.
+  const slide = withPlainTitle({ id: "s-01", title: { type: "p", text: "Ways big data\nis misused" } });
+  assert.equal(slide.title, "Ways big data\nis misused");
+});
+
+test("a slide with a legal title is not copied needlessly", () => {
+  // workingSlides marks a slide dirty when mending changes it, so this
+  // has to be identity — or opening any deck would show every slide as
+  // changed and every save would churn the whole file.
+  const slide = { id: "s-01", title: "Fine", full: { type: "ul", items: ["a"] } };
+  assert.equal(withPlainTitle(slide), slide);
+});
+
+test("only the title is restricted", () => {
+  // Everywhere else a list is exactly right, and must be left alone.
+  const slide = {
+    id: "s-01",
+    title: "Profiles",
+    card1: { type: "ul", items: ["AGFORWEB", "NECTAR"] },
+    head1: { type: "p", text: "Two\nlines" },
+  };
+  assert.equal(withPlainTitle(slide), slide);
+});
+
+test("a deck already carrying a bad title opens mended, and dirty", () => {
+  // Mending it in memory alone would leave the branch broken: an
+  // untouched slide is copied to the file byte for byte, so the next
+  // preview would fail exactly as before.
+  const md = [
+    "--- slide",
+    "id: s-01",
+    "layout: Cards",
+    "title:",
+    "  type: ul",
+    "  items:",
+    "    - Introduction to the workshop",
+    "    - What we will cover",
+    "card1: Something",
+    "---",
+    "",
+  ].join("\n");
+
+  const parsed = parseSlides(md);
+  assert.deepEqual(parsed.slides[0].data.title, {
+    type: "ul",
+    items: ["Introduction to the workshop", "What we will cover"],
+  });
+
+  const working = workingSlides(parsed);
+  assert.equal(
+    working[0].data.title,
+    "Introduction to the workshop\nWhat we will cover"
+  );
+  assert.equal(working[0].dirty, true, "a mended slide must be written back");
+
+  // And what gets written is what the renderer will take.
+  const saved = parseSlides(
+    renderSlidesFile(parsed, working, { id: "01-intro", meta: { title: "Intro" } })
+  );
+  assert.equal(typeof saved.slides[0].data.title, "string");
+  assert.equal(saved.slides[0].data.card1, "Something");
+});
+
+test("an ordinary deck opens with nothing to save", () => {
+  const md = [
+    "--- slide",
+    "id: s-01",
+    "layout: Cards",
+    "title: Introduction to the workshop",
+    "card1:",
+    "  type: ul",
+    "  items:",
+    "    - One",
+    "    - Two",
+    "---",
+    "",
+  ].join("\n");
+  const working = workingSlides(parseSlides(md));
+  assert.equal(working[0].dirty, false, "opening a good deck marked it changed");
 });

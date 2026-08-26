@@ -103,17 +103,24 @@ export function parseSlides(text) {
 export function workingSlides(parsed) {
   // A block with no deck yet: an empty list, ready for a first slide.
   if (!parsed) return [];
-  return parsed.slides.map((slide, index) => ({
+  return parsed.slides.map((slide, index) => {
+    // A title the renderer will refuse is mended here rather than at
+    // preview time. Marked dirty on purpose: mending it in memory alone
+    // would leave the branch broken, because an untouched slide is
+    // copied to the file byte for byte.
+    const mended = withPlainTitle(slide.data);
+    return {
     sourceIndex: index,
-    data: slide.data,
-    dirty: false,
+    data: mended,
+    dirty: mended !== slide.data,
     // Why a slide came back empty. Dropping this is how a file the
     // workbench itself had written badly was reported as a missing
     // layout: js-yaml said exactly what was wrong with line 16 and
     // nobody was listening, so the canvas blamed the geometry and an
     // author went and read a template that was never the problem.
     error: slide.error ?? null,
-  }));
+    };
+  });
 }
 
 // ---- changing a layout without losing what is in it ---------------------
@@ -468,6 +475,66 @@ export function readLibrary(files) {
   }
 
   return { course, layoutMap, geometry, competencies, outcomes, blocks };
+}
+
+// ---- the title is text, and only text -----------------------------------
+//
+// The renderer is strict about one region: `title` must be a plain
+// string. Everywhere else a region may be a list, an image, a diagram.
+//
+// The workbench did not know that, so several ordinary actions wrote a
+// title the renderer then refused, and the author found out from a
+// Python traceback naming a line number:
+//
+//     'title' must be a plain string
+//
+// It took a list button pressed with the title selected -- but also,
+// and more quietly, simply typing a second line into it: turning a
+// multi-line region back into "no list" yields {type: p, text}, which
+// is not a string either.
+//
+// Newlines are not the problem and are not removed: the renderer writes
+// a line break for one, so a two-line title renders as a two-line
+// title. Only the wrapper has to go.
+
+/** Regions the renderer will only take as plain text. */
+export const TEXT_ONLY_REGIONS = new Set(["title"]);
+
+/**
+ * A region value as the plain string a title has to be, or null when it
+ * holds something that cannot become text without throwing it away --
+ * an image, a video, a diagram. Callers refuse rather than destroy.
+ */
+export function asPlainText(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map((v) => asPlainText(v) ?? "").join("\n");
+  if (typeof value !== "object") return "";
+
+  const type = value.type ?? null;
+  if (type === "ul" || type === "ol") return listLines(value.items).join("\n");
+  if (type === null || type === "p" || type === "text") return String(value.text ?? "");
+  // image, video, mermaid: there is no honest text for these.
+  return null;
+}
+
+/**
+ * A slide with its title made legal, if it can be. Applied wherever a
+ * slide is committed, so no control has to remember the rule and none
+ * can get round it.
+ */
+export function withPlainTitle(slide) {
+  if (!slide || typeof slide !== "object") return slide;
+  for (const region of TEXT_ONLY_REGIONS) {
+    if (!(region in slide)) continue;
+    const value = slide[region];
+    if (typeof value === "string") continue;
+    const text = asPlainText(value);
+    if (text === null) continue; // media: left alone, and refused above
+    slide = { ...slide, [region]: text };
+  }
+  return slide;
 }
 
 /** A list's items as plain lines, depth first. */
