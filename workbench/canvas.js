@@ -622,10 +622,20 @@ export function drawSlide(
     const note = document.createElement("p");
     note.className = "empty";
     note.dataset.missingGeometry = layoutKey ?? "";
+    // Say what the geometry does hold. "Nothing for Cards" is true and
+    // useless: it does not distinguish a template that was never read
+    // from one read on a different branch, or from a geometry file that
+    // loaded as nothing at all -- and those want different answers. The
+    // list is the diagnosis, so the first report of a problem carries it.
+    const known = Object.keys(geometry?.layouts ?? {});
+    note.dataset.knownLayouts = known.join(",");
     note.textContent =
-      `This library's layout-geometry.json has nothing for ${layoutKey}, so ` +
-      "there is nothing to draw the slide into. The template knows; it just " +
-      "has not been read.";
+      `This library's layout-geometry.json has nothing for ${layoutKey}. ` +
+      (known.length
+        ? `It has ${known.join(", ")}. If ${layoutKey} should be there, the ` +
+          "template on this branch is not the one it was read from."
+        : "It has no layouts at all, so either the file did not load or it " +
+          "is not on this branch. This is not a problem with the slide.");
     host.appendChild(note);
     return new Set(Object.keys(slide || {}));
   }
