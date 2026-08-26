@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+from . import yamlio
 from pptx.presentation import Presentation
 
 
@@ -35,7 +37,7 @@ def load_style(path: Path) -> dict:
     a font of its own.
     """
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yamlio.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
         raise LayoutMapError(f"{path}: invalid YAML: {e}") from e
     style = (data or {}).get("_style") or {}
@@ -46,7 +48,7 @@ def load_style(path: Path) -> dict:
 
 def load_layout_map(path: Path) -> dict[str, LayoutBinding]:
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yamlio.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
         raise LayoutMapError(f"{path}: invalid YAML: {e}") from e
     if not isinstance(data, dict) or not data:

@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 
 import yaml
+
+from . import yamlio
 from lxml import etree
 from pptx import Presentation
 from pptx.enum.shapes import PP_PLACEHOLDER
@@ -453,7 +455,7 @@ def render_session(
     block_meta = {}
     if block_meta_path.is_file():
         try:
-            block_meta = yaml.safe_load(block_meta_path.read_text(encoding="utf-8")) or {}
+            block_meta = yamlio.safe_load(block_meta_path.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError:
             block_meta = {}
     fill_roles(

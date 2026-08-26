@@ -38,6 +38,8 @@ from pathlib import Path
 
 import yaml
 
+from . import yamlio
+
 OUTCOMES_FILE = "outcomes.yaml"
 
 
@@ -65,7 +67,7 @@ def load_outcomes(path: Path, competencies: set[str] | None = None) -> dict[str,
         return {}
 
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yamlio.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise OutcomeError(f"{path}: invalid YAML: {exc}") from exc
     if not isinstance(data, dict) or "outcomes" not in data:

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from . import yamlio
+
 RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "outcomes", "dok", "role"}
 
 # A slide with a role is filled from the library rather than typed. The
@@ -274,7 +276,7 @@ def _parse_region(name: str, raw, where: str) -> Region:
 def _parse_slide(lineno: int, raw_yaml: str, path: Path, seen_ids: set[str]) -> Slide:
     where = f"{path}:{lineno}"
     try:
-        data = yaml.safe_load(raw_yaml)
+        data = yamlio.safe_load(raw_yaml)
     except yaml.YAMLError as e:
         raise SessionParseError(f"{where}: invalid YAML in slide block: {e}") from e
     if not isinstance(data, dict):
@@ -338,7 +340,7 @@ def parse_session(path: Path) -> Session:
     fm_yaml, blocks = _split_blocks(text, path)
 
     try:
-        frontmatter = yaml.safe_load(fm_yaml)
+        frontmatter = yamlio.safe_load(fm_yaml)
     except yaml.YAMLError as e:
         raise SessionParseError(f"{path}: invalid YAML in frontmatter: {e}") from e
     if not isinstance(frontmatter, dict):

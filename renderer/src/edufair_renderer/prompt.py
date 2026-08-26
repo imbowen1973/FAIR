@@ -29,6 +29,8 @@ from pathlib import Path
 
 import yaml
 
+from . import yamlio
+
 from .layoutmap import load_layout_map
 from .outcomes import OUTCOMES_FILE, load_outcomes
 
@@ -37,7 +39,7 @@ def _framework(root: Path) -> dict[str, str]:
     path = root / "competencies" / "framework.yaml"
     if not path.is_file():
         return {}
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data = yamlio.safe_load(path.read_text(encoding="utf-8")) or {}
     out = {}
     for cid, entry in (data.get("competencies") or {}).items():
         out[str(cid)] = entry if isinstance(entry, str) else str(entry.get("label", cid))
@@ -46,7 +48,7 @@ def _framework(root: Path) -> dict[str, str]:
 
 def _course(root: Path) -> dict:
     path = root / "course.yaml"
-    return (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.is_file() else {}
+    return (yamlio.safe_load(path.read_text(encoding="utf-8")) or {}) if path.is_file() else {}
 
 
 def _example_slide(bindings) -> str:

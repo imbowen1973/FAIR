@@ -35,6 +35,8 @@ from pathlib import Path
 
 import yaml
 
+from . import yamlio
+
 COURSE_FILE = "course.yaml"
 BLOCKS_DIR = "blocks"
 BLOCK_FILE = "block.yaml"
@@ -95,7 +97,7 @@ class Library:
 
 def _load_yaml(path: Path) -> dict:
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yamlio.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
         raise LibraryError(f"{path}: invalid YAML: {e}") from e
     if not isinstance(data, dict):
@@ -436,7 +438,7 @@ def _framework_ids(root: Path) -> set[str]:
     if not path.is_file():
         return set()
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yamlio.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError:
         return set()
     entries = (data or {}).get("competencies")

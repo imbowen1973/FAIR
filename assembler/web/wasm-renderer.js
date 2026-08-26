@@ -36,6 +36,9 @@ export const MODULES = [
   // layout-geometry.json can be repaired in the browser rather than by
   // telling somebody to install a command-line tool.
   "template_inspect",
+  // Reading YAML, including the flow sequences with a dangling tail
+  // that this project's own writer once produced.
+  "yamlio",
   "zipnorm",
 ];
 

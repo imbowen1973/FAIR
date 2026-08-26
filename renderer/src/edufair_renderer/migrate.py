@@ -27,6 +27,8 @@ from pathlib import Path
 
 import yaml
 
+from . import yamlio
+
 from .library import BLOCKS_DIR, COURSE_FILE
 
 
@@ -39,7 +41,7 @@ def _session_frontmatter(path: Path) -> dict:
     if not text.startswith("---"):
         raise MigrationError(f"{path}: no frontmatter")
     end = text.index("\n---", 3)
-    data = yaml.safe_load(text[3:end])
+    data = yamlio.safe_load(text[3:end])
     return data if isinstance(data, dict) else {}
 
 
@@ -79,7 +81,7 @@ def _credential_order(root: Path) -> list[tuple[list[tuple[str, str]], str]]:
             order.append((here, str(sid)))
 
     for cred_path in creds:
-        cred = yaml.safe_load(cred_path.read_text(encoding="utf-8")) or {}
+        cred = yamlio.safe_load(cred_path.read_text(encoding="utf-8")) or {}
         walk(cred, [], None)
     return order
 
@@ -188,7 +190,7 @@ def apply_migration(plan: dict) -> list[str]:
     identity = {}
     creds = sorted((root / "credentials").glob("*.yaml")) if (root / "credentials").is_dir() else []
     if creds:
-        first = yaml.safe_load(creds[0].read_text(encoding="utf-8")) or {}
+        first = yamlio.safe_load(creds[0].read_text(encoding="utf-8")) or {}
         identity = {k: first[k] for k in ("id", "title") if first.get(k)}
 
     course = {
@@ -304,7 +306,7 @@ def plan_outcomes(root: Path) -> dict:
         competencies = None
         meta_path = block_dir / BLOCK_FILE
         if meta_path.is_file():
-            block_meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            block_meta = yamlio.safe_load(meta_path.read_text(encoding="utf-8")) or {}
             competencies = block_meta.get("competencies")
         if not competencies:
             competencies = meta.get("competencies") or {}
@@ -372,7 +374,7 @@ def apply_outcomes(plan: dict) -> list[str]:
         meta_path = block["path"] / BLOCK_FILE
         meta = {}
         if meta_path.is_file():
-            meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+            meta = yamlio.safe_load(meta_path.read_text(encoding="utf-8")) or {}
         meta["outcomes"] = block["outcomes"]
         meta_path.write_text(
             yaml.safe_dump(meta, sort_keys=False, allow_unicode=True), encoding="utf-8"

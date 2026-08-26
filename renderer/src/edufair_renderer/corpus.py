@@ -37,6 +37,8 @@ from pathlib import Path
 
 import yaml
 
+from . import yamlio
+
 from .assets import check_assets
 from .outcomes import OUTCOMES_FILE, load_outcomes
 from .library import Library, LibraryError, load_library
@@ -48,7 +50,7 @@ class CorpusError(Exception):
 
 
 def _load_framework(path: Path) -> dict[str, str]:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data = yamlio.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or "competencies" not in data:
         raise CorpusError(f"{path}: framework file needs a 'competencies' mapping")
     labels: dict[str, str] = {}
@@ -340,7 +342,7 @@ def build_corpus(
         session_ids = {s["sessionId"] for s in sessions}
         known = set(competencies) | referenced
         for cred_path in sorted(credentials_dir.glob("*.yaml")):
-            cred = yaml.safe_load(cred_path.read_text(encoding="utf-8"))
+            cred = yamlio.safe_load(cred_path.read_text(encoding="utf-8"))
             if not isinstance(cred, dict) or "id" not in cred:
                 raise CorpusError(f"{cred_path}: credential needs at least an 'id'")
             _validate_credential(cred, cred_path, session_ids, known, durations, warn)

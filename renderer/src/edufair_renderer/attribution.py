@@ -38,6 +38,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+
+from . import yamlio
 from lxml import etree
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
@@ -69,7 +71,7 @@ def load_attribution(path: Path) -> dict | None:
     A file that is not a mapping at all is still an error: that is a
     broken file rather than an empty one.
     """
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data = yamlio.safe_load(path.read_text(encoding="utf-8"))
     if data is None:
         return None
     if not isinstance(data, dict):
