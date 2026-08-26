@@ -26,6 +26,7 @@ import {
   withoutResource,
 } from "../documents.js";
 import { markdownToHtml } from "../markdown.js";
+import { parse as parseYaml, stringify as stringifyYaml } from "../yaml.js";
 import { repoImages, resolveMedia, videoHost, videoThumb } from "../media.js";
 import { repoLogos } from "../course.js";
 import { readImport, renumber } from "../import.js";
@@ -1572,4 +1573,116 @@ test("a deck that already has frontmatter keeps its own", () => {
   assert.equal(after.frontmatter.title, "Mine");
   assert.equal(after.frontmatter.version, "2.1.0");
   assert.deepEqual(after.frontmatter.dc, { creator: "Ada" });
+});
+
+// ---- yaml ---------------------------------------------------------------
+//
+// None of this was tested, and it silently corrupted saved files.
+//
+// `stringify` collapses a short list of bare words back to flow style, so
+// that editing a title does not produce a diff nobody wants to read. It
+// used to stop reading at the first item it could not fold and inline the
+// ones before it, which left block entries hanging under a flow sequence:
+//
+//     items: [SAFFT4EU]
+//       - REGE FARMS
+//
+// That is not YAML. js-yaml refused the slide it appeared in, so the slide
+// came back with no data at all — no layout, no cards, no notes. The deck
+// rendered perfectly right up until it was saved, and then the canvas
+// blamed layout-geometry.json, because a slide with no data has no layout
+// to look one up by.
+
+test("what stringify writes always reads back", () => {
+  // Each has an item the inliner cannot fold, in a different position:
+  // last, first, middle; then the shapes that must keep working.
+  const cases = [
+    { items: ["SAFFT4EU", "REGE FARMS", "ReGENERATE", "RELOOP", "FARMS 5.0"] },
+    { items: ["Smart Farming", "AgriDrone", "AgroPro"] },
+    { items: ["CitriVET", "By-products of a sort", "MedSEVa"] },
+    { items: ["I-RESTART", "AGRIMED C"] },
+    { items: ["one", "two: three"] },
+    { items: ['"quoted"', "plain"] },
+    { items: ["only"] },
+    { items: [] },
+    { develops: ["AP1", "AP3"] },
+    { resources: [{ type: "workbook", title: "A workbook", path: "w.md" }] },
+    { card4: { type: "ul", items: ["SAFFT4EU", "REGE FARMS"] }, notes: "Say them.\n" },
+  ];
+  for (const value of cases) {
+    const text = stringifyYaml(value);
+    assert.deepEqual(parseYaml(text), value, `did not survive: ${JSON.stringify(text)}`);
+  }
+});
+
+test("a short list of bare words is still inlined", () => {
+  // The whole reason inlineShortLists exists: without it every outcome
+  // edit churns the diff. Fixing the corruption must not cost this.
+  assert.ok(
+    stringifyYaml({ develops: ["AP1", "AP3"] }).includes("develops: [AP1, AP3]"),
+    "a bare list stopped being inlined"
+  );
+});
+
+test("a list is never inlined by halves", () => {
+  // Structural rather than a regex: no line ending in a flow sequence may
+  // be followed by a block entry, which is exactly what the fault wrote.
+  const text = stringifyYaml({ items: ["SAFFT4EU", "REGE FARMS", "FARMS 5.0"] });
+  const lines = text.split("\n");
+  lines.forEach((line, i) => {
+    if (!line.trimEnd().endsWith("]")) return;
+    const next = (lines[i + 1] ?? "").trim();
+    assert.ok(!next.startsWith("- "), `inlined part of a list:\n${text}`);
+  });
+});
+
+test("an imported Cards slide survives being saved", () => {
+  // The deck that found this. It imported, it rendered, and it broke on
+  // save — and the message pointed at the template, which was innocent.
+  const md = [
+    "--- slide",
+    "id: profile-climate-regenerative-agriculture",
+    "layout: Cards",
+    "title: Climate-Resilient & Regenerative Agriculture Specialist",
+    'head1: "Completed projects: accessible but flat"',
+    "card1:",
+    "  type: ul",
+    "  items:",
+    "    - AGFORWEB",
+    "    - NECTAR",
+    "head4: Live projects and opportunities",
+    "card4:",
+    "  type: ul",
+    "  items:",
+    "    - SAFFT4EU",
+    "    - REGE FARMS",
+    "    - FARMS 5.0",
+    "notes: |",
+    "  Introduce the project names only.",
+    "---",
+    "",
+  ].join("\n");
+
+  const parsed = parseSlides(md);
+  const working = workingSlides(parsed).map((entry) => ({
+    ...entry,
+    dirty: true,
+    sourceIndex: null,
+  }));
+  const saved = parseSlides(
+    renderSlidesFile(parsed, working, { id: "01-profiles", meta: { title: "Profiles" } })
+  );
+
+  assert.equal(saved.slides.length, 1);
+  assert.equal(saved.slides[0].error, null);
+  // The symptom the author saw: the layout was gone, so the canvas asked
+  // the geometry for a layout named "undefined".
+  assert.equal(saved.slides[0].data.layout, "Cards");
+  assert.deepEqual(saved.slides[0].data.card1.items, ["AGFORWEB", "NECTAR"]);
+  assert.deepEqual(saved.slides[0].data.card4.items, [
+    "SAFFT4EU",
+    "REGE FARMS",
+    "FARMS 5.0",
+  ]);
+  assert.equal(saved.slides[0].data.notes.trim(), "Introduce the project names only.");
 });

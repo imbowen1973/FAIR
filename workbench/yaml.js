@@ -61,16 +61,31 @@ function inlineShortLists(text) {
     const [, indent, key] = head;
     const items = [];
     let j = i + 1;
-    // Bare scalars only: a quoted or nested item keeps its own line.
-    const itemPattern = new RegExp("^" + indent + "  - ([\\w.-]+)$");
+    // Every item in the list, bare or not. Reading only as far as the
+    // first awkward one and inlining what came before it wrote
+    //
+    //     items: [SAFFT4EU]
+    //       - REGE FARMS
+    //
+    // which is not YAML at all: a flow sequence with block entries
+    // hanging off it. js-yaml then refused the whole slide, so a deck
+    // that rendered perfectly lost a slide's entire body the moment it
+    // was saved -- and the canvas blamed the geometry, because a slide
+    // with no data has no layout to look up.
+    const itemPattern = new RegExp("^" + indent + "  - (.*)$");
+    const isBare = /^[\w.-]+$/;
+    let allBare = true;
     while (j < lines.length) {
       const m = lines[j].match(itemPattern);
       if (!m) break;
+      if (!isBare.test(m[1])) allBare = false;
       items.push(m[1]);
       j += 1;
     }
     const inline = `${indent}${key}: [${items.join(", ")}]`;
-    if (items.length >= 1 && j > i + 1 && inline.length <= 78) {
+    // `allBare` is the whole rule: one item with a space, a quote or a
+    // colon in it and the list stays as it is, entire.
+    if (allBare && items.length >= 1 && j > i + 1 && inline.length <= 78) {
       out.push(inline);
       i = j - 1;
     } else {
