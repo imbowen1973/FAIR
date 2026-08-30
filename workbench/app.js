@@ -1445,6 +1445,24 @@ function renderRibbon({ slides = true, steps = slides } = {}) {
       commitSlide({ ...current, [region]: next });
       renderCanvas();
       paintListType($("ribbon"), kind);
+
+      // Say what just happened, and where the other thing lives. This
+      // control acting on everything is correct and was still reported
+      // as a bug three times: the per-line buttons sit beside it looking
+      // identical, so an author who wanted one line had no way to know
+      // they had pressed the wrong pair. Only worth saying when there is
+      // more than one line -- otherwise the two are the same thing.
+      const lines = asLines(next)?.items?.length ?? 0;
+      if (lines > 1) {
+        status(
+          kind
+            ? "The whole placeholder is now a list. To mark only some lines, " +
+                "select them and use the tinted buttons under “selected lines”."
+            : "The whole placeholder is plain lines now. To mark only some, " +
+                "select them and use the tinted buttons under “selected lines”.",
+          ""
+        );
+      }
     },
 
     // The lines the selection touches, which is how one placeholder

@@ -1,90 +1,56 @@
-// Does editing one thing throw away another?
+// Marking some lines and not others, in one placeholder.
 //
-// Every panel that edits a slide used to send back a whole slide object
-// built from the copy it was constructed with. That copy goes stale the
-// instant anything else is touched, so writing it back silently undid
-// work — and the metadata panel is only rebuilt by renderCanvas, which a
-// metadata edit deliberately does not call, so its copy stayed stale for
-// a whole session.
+// The ribbon carries two triplets of the same three glyphs: one sets the
+// whole placeholder, one marks only the lines the selection touches. The
+// second worked and was reported as broken three times, because the two
+// were labelled "list" and "line" -- four letters each, both starting
+// "li" -- on identical buttons thirty pixels apart. Authors pressed the
+// first and got the whole box.
 //
-//   type on the canvas       working copy becomes S'
-//   type a speaker note      {...S, notes} — the canvas edit is gone
+// So this checks both: that each does its own job, and that they can be
+// told apart. It also reads the committed file, because the canvas can
+// show a marker the saved deck does not carry.
 //
-// Nothing failed, nothing was reported, and the slide simply reverted.
-// So this drives the real app and checks that every edit survives every
-// later one, in both orders.
+// The file this replaced was a copy of no-loss-check under another name,
+// which is how a working feature came to have no test at all.
 //
-//   node tests/no-loss-check.mjs
+//   node tests/perline-check.mjs
 //
 // Needs a site-shaped build (see create-check.mjs).
 
 import { chromium } from "playwright-core";
 
-const BASE = process.env.WB || "http://localhost:8898/workbench/";
+const BASE = process.env.WB || "http://127.0.0.1:8898/workbench/";
 
 const FILES = {
   "course.yaml": "id: v\ntitle: V130\nstructure:\n  - block: 01-misuse\n",
-  "competencies/framework.yaml":
-    "competencies:\n  C1:\n    label: Data ethics\n  C2:\n    label: Judgement\n",
-  "outcomes.yaml": [
-    "outcomes:",
-    "  O1:",
-    "    statement: Decide whether a dataset may be shared",
-    "    block: 01-misuse",
-    "    develops: [C1]",
-    "  O2:",
-    "    statement: Explain re-identification",
-    "    block: 01-misuse",
-    "    develops: [C2]",
-    "",
-  ].join("\n"),
-  "blocks/01-misuse/block.yaml":
-    "title: Ways big data is misused\nduration_minutes: 90\noutcomes: [O1]\nresources: []\n",
+  "competencies/framework.yaml": "competencies:\n  C1:\n    label: Ethics\n",
+  "outcomes.yaml": "outcomes:\n  O1:\n    statement: s\n    block: 01-misuse\n    develops: [C1]\n",
+  "blocks/01-misuse/block.yaml": "title: Misuse\nduration_minutes: 90\nresources: []\n",
   "blocks/01-misuse/slides.md": [
-    "---",
-    "session: '01'",
-    "title: Misuse",
-    "version: 1.0.0",
-    "---",
-    "",
-    "--- slide",
-    "id: s-01",
-    "layout: Full",
-    "title: Opening",
-    "full:",
-    "  type: ul",
-    "  items:",
-    "    - The original bullet",
-    "---",
-    "",
+    "---", "session: '01'", "title: Misuse", "version: 1.0.0", "---", "",
+    "--- slide", "id: s-01", "layout: Full", "title: Opening",
+    "full:", "  type: p", "  text: |-", "    A lead-in line",
+    "    The first point", "    The second point", "    A closing line",
+    "---", "",
   ].join("\n"),
-  "layout-map.yaml": [
-    "Full:", "  layout: Full", "  regions:", "    title: 0", "    full: 1", "",
-  ].join("\n"),
+  "layout-map.yaml": "Full:\n  layout: Full\n  regions:\n    title: 0\n    full: 1\n",
 };
-
-const GEOM = {
-  slide: { widthEmu: 12192000, heightEmu: 6858000, aspect: 1.7778, widthPt: 960 },
-  theme: { dk1: "#000000", lt1: "#FFFFFF", accent1: "#4F81BD", bg1: "#FFFFFF", tx1: "#000000" },
+FILES["layout-geometry.json"] = JSON.stringify({
+  slide: { widthEmu: 9144000, heightEmu: 6858000, aspect: 1.33333, widthPt: 720 },
+  theme: { bg1: "#FFFFFF", tx1: "#000000", accent1: "#4F81BD", accent2: "#C0504D" },
   layouts: {
     Full: {
       layoutName: "Full",
       regions: {
-        title: {
-          idx: 0, x: 0.06, y: 0.07, w: 0.88, h: 0.15, type: "title",
-          style: { align: "l", sizePt: 32 },
-          inset: { l: 0.01, r: 0.01, t: 0.007, b: 0.007 },
-        },
-        full: {
-          idx: 1, x: 0.06, y: 0.27, w: 0.88, h: 0.6, type: "body",
-          style: { align: "l", sizePt: 20 },
-          inset: { l: 0.01, r: 0.01, t: 0.007, b: 0.007 },
-        },
+        title: { idx: 0, x: 0.06, y: 0.07, w: 0.88, h: 0.15, type: "title",
+          style: { align: "l", sizePt: 32 }, inset: { l: 0.01, r: 0.01, t: 0.007, b: 0.007 } },
+        full: { idx: 1, x: 0.06, y: 0.27, w: 0.88, h: 0.6, type: "body",
+          style: { align: "l", sizePt: 20 }, inset: { l: 0.01, r: 0.01, t: 0.007, b: 0.007 } },
       },
     },
   },
-};
-FILES["layout-geometry.json"] = JSON.stringify(GEOM);
+});
 
 const browser = await chromium.launch({ channel: "msedge" });
 const page = await browser.newPage({ viewport: { width: 1500, height: 950 } });
@@ -97,222 +63,149 @@ page.on("console", (m) => {
   errors.push(t);
 });
 
-// What a repository looks like after the older per-session scheme:
-// refs/heads/draft/tester/ is a directory, so refs/heads/draft/tester
-// cannot also be a file. Creating it answers 422.
-const sentBlobs = [];
-const branches = new Set(["main", "draft/tester/01-misuse"]);
-const onBranch = { main: new Map(Object.entries(FILES)) };
-let lastCommitBranch = null;
-
+const repo = new Map(Object.entries(FILES));
+const blobs = [];
 await page.route("https://api.github.com/**", (route) => {
-  const req = route.request();
-  const url = req.url();
-  const method = req.method();
-  const body = () => {
-    try { return JSON.parse(req.postData() || "{}"); } catch { return {}; }
-  };
-  const json = (b, status = 200) =>
-    route.fulfill({ status, contentType: "application/json", body: JSON.stringify(b) });
-  if (url.endsWith("/user")) return json({ login: "tester" });
-
-  if (url.includes("/git/matching-refs/heads/")) {
-    const prefix = decodeURIComponent(url.split("/git/matching-refs/heads/")[1]);
-    const hits = [...branches].filter((b) => b.startsWith(prefix));
-    return hits.length
-      ? json(hits.map((b) => ({ ref: `refs/heads/${b}` })))
-      : json({ message: "Not Found" }, 404);
-  }
-
-  const refMatch = /\/git\/refs?\/heads\/(.+?)(\?|$)/.exec(url);
-  if (refMatch && method === "GET") {
-    const name = decodeURIComponent(refMatch[1]);
-    return branches.has(name)
-      ? json({ object: { sha: `sha-${name}` } })
-      : json({ message: "Not Found" }, 404);
-  }
-  if (url.includes("/git/refs") && method === "POST") {
-    branches.add(body().ref.replace("refs/heads/", ""));
-    return json({});
-  }
-  if (url.includes("/git/blobs") && method === "POST") {
-    const blob = body();
-    sentBlobs.push(blob);
-    return json({ sha: `blob-${blob.content?.length ?? 0}-${Math.round(performance.now())}` });
-  }
-  if (url.includes("/git/trees") && method === "POST") {
-    lastCommitBranch = null;
-    return json({ sha: "tree1", _entries: body().tree });
-  }
-  if (url.includes("/git/commits") && method === "POST") return json({ sha: "commit1" });
-  if (url.includes("/git/commits/")) return json({ tree: { sha: "base" } });
-  if (url.includes("/git/trees/")) {
-    const which = decodeURIComponent(url.split("/git/trees/")[1].split("?")[0]);
-    const files = onBranch[which] ?? onBranch.main;
-    return json({
-      truncated: false,
-      tree: [...files.keys()].map((path) => ({ path, type: "blob" })),
-    });
-  }
-  if (/\/repos\/[^/]+\/[^/]+$/.test(url)) {
-    return json({ default_branch: "main", permissions: { push: true } });
-  }
+  const req = route.request(); const url = req.url(); const method = req.method();
+  const body = () => { try { return JSON.parse(req.postData() || "{}"); } catch { return {}; } };
+  const json = (b, s = 200) => route.fulfill({ status: s, contentType: "application/json", body: JSON.stringify(b) });
+  if (url.includes("/git/matching-refs/heads/")) return json([]);
+  if (url.endsWith("/user") && method === "GET") return json({ login: "tester" });
   if (url.includes("/user/repos")) return json([]);
+  if (/\/repos\/tester\/[^/]+$/.test(url) && method === "GET") return json({ default_branch: "main", permissions: { push: true } });
+  if (url.includes("/git/ref")) return method === "GET" ? json({ object: { sha: "p1" } }) : json({});
+  if (url.includes("/git/trees/")) return json({ truncated: false, tree: [...repo.keys()].map((p) => ({ path: p, type: "blob" })) });
+  if (url.includes("/git/blobs") && method === "POST") { blobs.push(body()); return json({ sha: `b${blobs.length}` }); }
+  if (url.includes("/git/trees") && method === "POST") {
+    const t = body();
+    t.tree.forEach((e, i) => {
+      const blob = blobs[blobs.length - t.tree.length + i];
+      if (blob && blob.encoding !== "base64") repo.set(e.path, blob.content ?? "");
+    });
+    return json({ sha: "t1" });
+  }
+  if (url.includes("/git/commits") && method === "POST") return json({ sha: "c1" });
+  if (url.includes("/git/commits/")) return json({ tree: { sha: "base" } });
+  if (url.includes("/branches")) return json([{ name: "main" }]);
   return json({});
 });
 await page.route("https://raw.githubusercontent.com/**", (route) => {
-  // .../<owner>/<repo>/<branch>/<path>
-  const rest = route.request().url().split("raw.githubusercontent.com/")[1] ?? "";
-  const bits = rest.split("/");
-  const which = decodeURIComponent(bits[2] ?? "main");
-  const path = decodeURIComponent(bits.slice(3).join("/"));
-  const files = onBranch[which] ?? onBranch.main;
-  return files.has(path)
-    ? route.fulfill({ status: 200, contentType: "text/plain", body: files.get(path) })
+  const path = decodeURIComponent(route.request().url().split(/\/(?:main|draft[^/]*)\//)[1] ?? "");
+  return repo.has(path)
+    ? route.fulfill({ status: 200, contentType: "text/plain", body: repo.get(path) })
     : route.fulfill({ status: 404, body: "" });
 });
 
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.fill("#pat", "x");
 await page.click("#pat-signin");
-await page.waitForSelector("#signed-in:not([hidden])", { timeout: 15000 });
-await page.fill("#manual-repo", "test/library");
+await page.waitForSelector("#signed-in:not([hidden])");
+await page.fill("#manual-repo", "tester/v130");
 await page.click("#open-manual");
-await page.waitForSelector("#workspace:not([hidden])", { timeout: 15000 });
-await page.waitForTimeout(600);
+await page.waitForSelector("#workspace");
+await page.waitForTimeout(1200);
 
-/** The slide as it would be committed: read the file the app would save. */
-const slideSource = () =>
-  page.evaluate(async () => {
-    const { parseSlides } = await import("./library.js");
-    // The canvas holds the truth for regions; the source view is what a
-    // Save would write. Read it through the app's own tab.
-    const tab = [...document.querySelectorAll(".tabstrip .tab")].find((t) =>
-      t.textContent.includes("Slides")
-    );
-    return { hasTab: Boolean(tab), parse: typeof parseSlides === "function" };
-  });
+const groups = await page.evaluate(() => ({
+  labels: [...document.querySelectorAll("#ribbon .ribbon-label")].map((l) => l.textContent),
+  list: [...document.querySelectorAll(".mark.list")].map((b) => b.dataset.list),
+  line: [...document.querySelectorAll(".mark.line-marker")].map((b) => b.dataset.marker),
+  // The two groups must not look the same. A tint an eye catches before
+  // it reads the label is the difference.
+  tinted: (() => {
+    const one = document.querySelector(".mark.list");
+    const two = document.querySelector(".mark.line-marker");
+    if (!one || !two) return false;
+    return getComputedStyle(one).backgroundColor !== getComputedStyle(two).backgroundColor;
+  })(),
+}));
+console.log("ribbon:", JSON.stringify(groups));
 
-/** Type into a region on the canvas. */
-async function typeInRegion(region, text) {
-  const box = page.locator(`.canvas .region[data-region="${region}"]`).first();
-  await box.click();
-  await page.waitForTimeout(150);
-  await page.keyboard.press("Control+A");
-  await page.keyboard.type(text);
-  await page.waitForTimeout(400);
+/** Click the region for real, then select one line inside it. */
+async function selectLine(text) {
+  await page.click('#canvas .region[data-region="full"]');
+  await page.waitForTimeout(200);
+  return page.evaluate((wanted) => {
+    const box = document.querySelector('#canvas .region[data-region="full"]');
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    const texts = [];
+    while (walker.nextNode()) texts.push(walker.currentNode);
+    const node = texts.find((t) => t.data.includes(wanted));
+    if (!node) return null;
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, node.data.length);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return sel.toString();
+  }, text);
 }
 
-/**
- * Everything the slide currently holds.
- *
- * Read from the rail thumbnail, not the canvas. The canvas is a live
- * contenteditable that is deliberately not redrawn on a metadata change,
- * so it goes on showing what was typed even after the data underneath
- * has been overwritten — which is exactly how this bug stayed invisible.
- * The thumbnail is drawn from the committed slide on every commitSlide,
- * so it is the honest witness.
- */
-const slideNow = () =>
-  page.evaluate(() => {
-    const regions = {};
-    const thumb = document.querySelector(".slide-row .thumb");
-    for (const r of thumb ? thumb.querySelectorAll("[data-region]") : []) {
-      regions[r.dataset.region] = r.textContent.trim();
-    }
-    regions._thumb = thumb ? thumb.textContent.trim() : "";
-    const notesHost = document.querySelector("#meta .notes-field");
-    return {
-      regions,
-      notes: notesHost ? notesHost.textContent.trim() : null,
-      id: document.querySelector("#meta input")?.value ?? null,
-      dok: document.querySelector("#meta select.dok")?.value ?? null,
-      outcomesOn: [...document.querySelectorAll("#meta .chips .chip.on")].map((c) =>
-        c.textContent.trim()
-      ),
-    };
-  });
+const committed = () => repo.get("blocks/01-misuse/slides.md") ?? "";
+const regionOf = async () =>
+  page.evaluate(async (text) => {
+    const { parseSlides } = await import("./library.js");
+    return parseSlides(text).slides[0]?.data?.full ?? null;
+  }, committed());
 
-const NL = String.fromCharCode(10);
-const committed = () => {
-  for (const blob of sentBlobs) {
-    const text = blob.encoding === "base64"
-      ? Buffer.from(blob.content, "base64").toString("utf8")
-      : blob.content ?? "";
-    if (text.includes("--- slide")) return text;
-  }
-  return null;
-};
-
-// A plain paragraph region with three lines -- no list, no items.
-await page.locator('.canvas .region[data-region="full"]').first().click();
-await page.waitForTimeout(200);
-await page.locator('#ribbon .mark.list[data-list="none"]').first().click();
-await page.waitForTimeout(500);
-await page.locator('.canvas .region[data-region="full"]').first().click();
-await page.keyboard.press("Control+A");
-await page.keyboard.type("Line one");
-await page.keyboard.press("Enter");
-await page.keyboard.type("Line two");
-await page.keyboard.press("Enter");
-await page.keyboard.type("Line three");
-await page.waitForTimeout(600);
-
-const read = () =>
-  page.evaluate(() => {
-    const box = document.querySelector('.canvas .region[data-region="full"]');
-    return [...box.querySelectorAll("p, li")].map((n) => ({
-      text: n.textContent.trim().slice(0, 12),
-      colour: getComputedStyle(n).color,
-      marker: getComputedStyle(n).listStyleType,
-    }));
-  });
-console.log("before:", JSON.stringify(await read()));
-
-// Colour the middle line only.
-await page.locator('.canvas .region[data-region="full"] p, .canvas .region[data-region="full"] li').nth(1).click();
-await page.waitForTimeout(300);
-await page.locator("#ribbon button.swatch").nth(0).click();
-await page.waitForTimeout(600);
-const coloured = await read();
-console.log("after colour on line 2:", JSON.stringify(coloured));
-
-// Then give the last line a bullet, in the same placeholder.
-await page.locator('.canvas .region[data-region="full"] p, .canvas .region[data-region="full"] li').nth(2).click();
-await page.waitForTimeout(300);
-await page.locator('#ribbon .mark.line-marker[data-marker="bullet"]').first().click();
-await page.waitForTimeout(600);
-const marked = await read();
-console.log("after bullet on line 3:", JSON.stringify(marked));
-
-sentBlobs.length = 0;
+// 1. One line, marked on its own.
+console.log("selected:", JSON.stringify(await selectLine("The first point")));
+await page.click('.mark.line-marker[data-marker="bullet"]');
+await page.waitForTimeout(400);
 await page.click("#save");
-await page.waitForTimeout(1400);
-const file = committed() ?? "";
-console.log("--- committed ---");
-console.log(file.split("full:")[1]?.split(NL + "---")[0] ?? "(none)");
+await page.waitForTimeout(1800);
+const one = await regionOf();
+console.log("after marking one line:", JSON.stringify(one));
+
+// 2. A second line, a different marker. One placeholder, three kinds of
+//    line — the thing the whole split exists for.
+console.log("selected:", JSON.stringify(await selectLine("The second point")));
+await page.click('.mark.line-marker[data-marker="number"]');
+await page.waitForTimeout(400);
+await page.click("#save");
+await page.waitForTimeout(1800);
+const two = await regionOf();
+console.log("after marking a second:", JSON.stringify(two));
+
+// 3. The other triplet still does its own job: everything, at once.
+//    Numbered, not bulleted -- per-line marking has already made the
+//    region a `ul`, so asking for `ul` again is correctly a no-op and
+//    would prove nothing.
+await page.click('#canvas .region[data-region="full"]');
+await page.waitForTimeout(200);
+await page.click('.mark.list[data-list="ol"]');
+await page.waitForTimeout(400);
+const said = await page.textContent("#status");
+await page.click("#save");
+await page.waitForTimeout(1800);
+const whole = await regionOf();
+console.log("after the whole-box bullet:", JSON.stringify(whole));
+console.log("and it said:", JSON.stringify(said));
 
 if (errors.length) console.log("errors:", errors.slice(0, 4));
 
-const colours = new Set(marked.map((l) => l.colour));
-const markers = new Set(marked.map((l) => l.marker));
+const markers = (r) => (r?.items ?? []).map((i) => i.marker ?? "none");
+const texts = (r) => (r?.items ?? []).map((i) => i.text);
+
 const failed =
   errors.length > 0 ||
-  marked.length !== 3 ||
-  // One line coloured, two not.
-  colours.size !== 2 ||
-  marked[1].colour === marked[0].colour ||
-  marked[0].colour !== marked[2].colour ||
-  // One line bulleted, two not.
-  markers.size !== 2 ||
-  marked[2].marker === marked[0].marker ||
-  // And all three lines are still there.
-  !file.includes("Line one") || !file.includes("Line two") || !file.includes("Line three") ||
-  // The committed shape: one placeholder, three lines, formatted apart.
-  !file.includes("color: accent1") ||
-  !file.includes("marker: bullet") ||
-  (file.match(/marker: none/g) ?? []).length !== 2;
+  // Told apart by label and by sight.
+  !groups.labels.includes("whole box") ||
+  !groups.labels.includes("selected lines") ||
+  !groups.tinted ||
+  // One line marked, the rest untouched.
+  JSON.stringify(markers(one)) !== JSON.stringify(["none", "bullet", "none", "none"]) ||
+  // Two lines, differently — in one placeholder.
+  JSON.stringify(markers(two)) !== JSON.stringify(["none", "bullet", "number", "none"]) ||
+  // Nothing was lost along the way.
+  JSON.stringify(texts(two)) !==
+    JSON.stringify(["A lead-in line", "The first point", "The second point", "A closing line"]) ||
+  // The whole-box control still takes the whole box.
+  whole?.type !== "ol" ||
+  markers(whole).some((m) => m === "number") ||
+  // ...and points at the other one, since that is the confusion.
+  !/selected lines/.test(said ?? "");
 
-console.log(failed ? NL + "FAIL" : NL + "PASS");
+console.log(failed ? String.fromCharCode(10) + "FAIL" : String.fromCharCode(10) + "PASS");
 await browser.close();
 process.exit(failed ? 1 : 0);

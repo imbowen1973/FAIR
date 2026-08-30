@@ -166,7 +166,13 @@ export function ribbon(host, {
     ["ol", "1.", "Numbered list"],
     [null, "¶", "No list: plain lines"],
   ];
-  lists.appendChild(el("span", "ribbon-label", "list"));
+  // "list" and "line" were the labels, which is two four-letter words
+  // beginning "li" on identical triplets of glyphs thirty pixels apart.
+  // Authors pressed the first one, got the whole placeholder, and
+  // reported that per-line marking did not work -- it did, and it was
+  // never the one they were pressing. The label now says what the
+  // buttons act on rather than what they are.
+  lists.appendChild(el("span", "ribbon-label", "whole box"));
   for (const [kind, label, title] of LISTS) {
     const b = button(label, `${title} — the whole placeholder`,
       () => onListType?.(kind), "mark list");
@@ -181,7 +187,7 @@ export function ribbon(host, {
   // plain text, and there was then no way to do the latter at all.
   const lines = document.createElement("div");
   lines.className = "ribbon-group";
-  lines.appendChild(el("span", "ribbon-label", "line"));
+  lines.appendChild(el("span", "ribbon-label", "selected lines"));
   for (const [kind, label, title] of LISTS) {
     const marker = kind === "ul" ? "bullet" : kind === "ol" ? "number" : "none";
     const b = button(label, `${title} — the selected lines only`,

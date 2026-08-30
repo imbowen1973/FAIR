@@ -831,6 +831,18 @@ button.session-card:focus-visible { outline: 2px solid var(--accent); outline-of
 .order-tools { display: flex; gap: 1px; flex: none; margin-left: auto; }
 .order-tools button.tool { font-size: 13px; padding: 2px 5px; }
 .order-tools .tool-gap { width: 1.55rem; flex: none; }
+
+/* The two triplets of list glyphs are identical, and the only thing
+   telling them apart used to be a four-letter label. The second acts on
+   a selection, so it is tinted like one — a difference an eye catches
+   before it reads anything. */
+.mark.line-marker {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.mark.line-marker:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .order-tools button.tool:disabled { opacity: 0.25; cursor: default; }
 .order-tools button.tool:disabled:hover { background: none; color: var(--muted); }
 .order-adds { display: flex; gap: 8px; flex: none; }
