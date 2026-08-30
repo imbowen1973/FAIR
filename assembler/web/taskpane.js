@@ -417,23 +417,51 @@ function renderTree() {
   if (drawn === 0) {
     container.innerHTML = '<p class="empty">No slides match this competency.</p>';
   }
+  paintExpandAll();
+}
+
+/**
+ * Every path in the tree that can be opened, in render order.
+ *
+ * Slides and resources are leaves: renderNode draws them without a
+ * twisty, so a path to one is not a thing that can be open.
+ */
+function openablePaths() {
+  const out = [];
+  const walk = (node, path) => {
+    if (node.kind === "slide" || node.kind === "resource") return;
+    out.push(path);
+    (node.children || []).forEach((child, i) => walk(child, `${path}/${i}`));
+  };
+  tree.forEach((root, i) => walk(root, String(i)));
+  return out;
+}
+
+const everythingOpen = () => {
+  const all = openablePaths();
+  return all.length > 0 && all.every((path) => expanded.has(path));
+};
+
+/**
+ * Keep the button's words true.
+ *
+ * They used to be set only inside the click handler, from the proxy
+ * `expanded.size > tree.length`. Open one twisty by hand -- which is the
+ * ordinary way to use the tree -- and that proxy flips while the button
+ * still reads "Expand all", so pressing it collapsed the tree instead.
+ * The label was not describing the next press; it was describing the
+ * last one.
+ */
+function paintExpandAll() {
+  const button = $("expand-all");
+  if (button) button.textContent = everythingOpen() ? "Collapse all" : "Expand all";
 }
 
 /** Expand every container, or collapse back to the roots. */
 function toggleExpandAll() {
-  if (expanded.size > tree.length) {
-    expanded = new Set(tree.map((_, i) => String(i)));
-    $("expand-all").textContent = "Expand all";
-  } else {
-    expanded = new Set();
-    const mark = (node, path) => {
-      if (node.kind === "slide") return;
-      expanded.add(path);
-      node.children.forEach((c, i) => mark(c, `${path}/${i}`));
-    };
-    tree.forEach((root, i) => mark(root, String(i)));
-    $("expand-all").textContent = "Collapse all";
-  }
+  expanded = everythingOpen()
+    ? new Set(tree.map((_, i) => String(i)))
+    : new Set(openablePaths());
   renderTree();
 }
 
