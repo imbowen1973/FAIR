@@ -314,6 +314,16 @@ function renderNode(node, path, allowed) {
   const label = document.createElement("span");
   label.className = "node-label";
   label.textContent = node.title;
+  // Sessions the course does not place. The renderer gathers them into a
+  // node of its own, and this says so rather than letting it sit among
+  // the author's modules looking like one of them. They are still fully
+  // selectable: they build, and being unplaced is a drafting state.
+  if (node.meta?.unplaced) {
+    row.classList.add("unplaced");
+    label.title =
+      "These sessions are in the library but the course does not say where " +
+      "they come. They still build, and can be used.";
+  }
 
   const meta = document.createElement("span");
   meta.className = node.kind === "credential" && node.meta.ects ? "ects" : "count";

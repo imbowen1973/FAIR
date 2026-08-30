@@ -190,7 +190,12 @@ function courseNode(node, catalog, byId, slidesBySession) {
     return {
       kind: node.kind || "group",
       title: node.title || "",
-      meta: {},
+      // The renderer gathers sessions the course does not place into a
+      // node of its own making. Carrying the flag through is what lets
+      // this be shown as the drafting state it is: without it the pane
+      // listed "Unplaced blocks" among the author's modules, looking
+      // exactly like one of them.
+      meta: node.unplaced ? { unplaced: true } : {},
       children,
       slideIds: children.flatMap((c) => c.slideIds),
     };

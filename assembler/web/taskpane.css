@@ -279,3 +279,10 @@ button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
 .build {
   margin: 12px 0 4px; font-size: 0.7rem; opacity: 0.55; text-align: center;
 }
+
+/* Sessions the course does not place. Ours, not the author's, so it does
+   not get to look like one of their modules. */
+.node-row.unplaced .node-label {
+  font-style: italic;
+  opacity: 0.85;
+}

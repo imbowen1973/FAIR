@@ -167,7 +167,9 @@ def test_a_session_left_out_of_the_order_still_builds(tmp_path):
     root = _library(tmp_path / "lib", [{"block": "01-intro"}])
     lib = load_library(root)
     gathered = lib.structure[-1]
-    assert gathered["title"] == "Unplaced blocks"
+    assert gathered["title"] == "Not in the running order"
+    # Ours, not the author's: a consumer must be able to tell.
+    assert gathered["unplaced"] is True
     assert sorted(n["block"] for n in gathered["children"]) == [
         "02-profiles",
         "03-standalone",

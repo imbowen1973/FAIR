@@ -1138,7 +1138,8 @@ def test_a_block_missing_from_the_recipe_is_unplaced_not_an_error(tmp_path):
     )
     lib = load_library(root)
     assert "02-draft" in lib.blocks
-    assert lib.structure[-1]["title"] == "Unplaced blocks"
+    assert lib.structure[-1]["title"] == "Not in the running order"
+    assert lib.structure[-1]["unplaced"] is True
 
 
 def test_corpus_from_a_course_carries_structure_and_resources(tmp_path):

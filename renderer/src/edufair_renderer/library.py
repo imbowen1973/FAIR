@@ -286,10 +286,15 @@ def load_library(root: Path) -> Library:
     # an error: they render and are findable, just unplaced in the course.
     unplaced = [b for b in sorted(blocks) if b not in referenced]
     if unplaced:
+        # Flagged, because this node is ours and not the author's. Without
+        # `unplaced` a consumer cannot tell it from a grouping somebody
+        # wrote, and the add-in duly listed "Unplaced blocks" among the
+        # modules of the course as though it were one of them.
         structure = structure + [
             {
                 "kind": "group",
-                "title": "Unplaced blocks",
+                "title": "Not in the running order",
+                "unplaced": True,
                 CHILDREN_KEY: [{"kind": "block", "block": b} for b in unplaced],
             }
         ]

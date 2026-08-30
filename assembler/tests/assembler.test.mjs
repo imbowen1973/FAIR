@@ -329,3 +329,42 @@ test("groupBySource output feeds buildInsertPlan unchanged", () => {
   assert.deepEqual(plan.map((p) => p.sourcePptx), ["d1.pptx", "d2.pptx"]);
   assert.deepEqual(plan.flatMap((p) => p.sourceRefs), ["1#1", "2#2"]);
 });
+
+
+test("sessions the course does not place are marked, not disguised", () => {
+  // load_library gathers unplaced blocks into a node of its own making
+  // and flags it. Carrying the flag is what stops the pane listing
+  // "Unplaced blocks" among the author's modules, looking exactly like
+  // one of them -- which is how it was reported.
+  const catalog = {
+    structure: [
+      { kind: "module", title: "Foundations", children: [{ kind: "block", block: "01" }] },
+      {
+        kind: "group",
+        title: "Not in the running order",
+        unplaced: true,
+        children: [{ kind: "block", block: "02" }],
+      },
+    ],
+    blocks: [
+      { blockId: "01", resources: [] },
+      { blockId: "02", resources: [] },
+    ],
+    sessions: [
+      { sessionId: "s1", blockId: "01" },
+      { sessionId: "s2", blockId: "02" },
+    ],
+    slides: [
+      { slideId: "s1-1", sessionId: "s1", title: "One" },
+      { slideId: "s2-1", sessionId: "s2", title: "Two" },
+    ],
+  };
+
+  const roots = buildTree(catalog);
+  assert.equal(roots.length, 2);
+  assert.equal(roots[0].title, "Foundations");
+  assert.equal(roots[0].meta.unplaced, undefined, "an authored module must not be flagged");
+  assert.equal(roots[1].meta.unplaced, true);
+  // Still fully usable: unplaced is a drafting state, not a quarantine.
+  assert.deepEqual(roots[1].slideIds, ["s2-1"]);
+});
