@@ -64,7 +64,7 @@ function button(label, title, onDown, className = "mark", id = null) {
 export function ribbon(host, {
   layouts, layout, onCommand, onLayout, onColour, onListType, onMedia,
   onUndo, onRedo, onAddSlide, onImport, onSave, onSubmit, onHistory,
-  onLineMarker, slides = true,
+  onLineMarker, slides = true, steps = slides,
 }) {
   host.innerHTML = "";
 
@@ -92,21 +92,26 @@ export function ribbon(host, {
   );
   host.appendChild(commit);
 
-  if (!slides) {
-    // A document tab: nothing else here applies to it.
-    return;
+  // Stepping back and forward through the work. Asked for separately
+  // from `slides`, because one flag was doing two jobs: a document tab
+  // wants neither, but the running order wants undo very much -- moving
+  // twenty sessions and mis-clicking is exactly what it is for.
+  if (steps) {
+    const back = document.createElement("div");
+    back.className = "ribbon-group";
+    back.appendChild(
+      button(icon("undo", { size: 16 }), "Undo", () => onUndo?.(), "mark with-icon", "undo")
+    );
+    back.appendChild(
+      button(icon("redo", { size: 16 }), "Redo", () => onRedo?.(), "mark with-icon", "redo")
+    );
+    host.appendChild(back);
   }
 
-  // Then stepping back and forward through the work.
-  const steps = document.createElement("div");
-  steps.className = "ribbon-group";
-  steps.appendChild(
-    button(icon("undo", { size: 16 }), "Undo", () => onUndo?.(), "mark with-icon", "undo")
-  );
-  steps.appendChild(
-    button(icon("redo", { size: 16 }), "Redo", () => onRedo?.(), "mark with-icon", "redo")
-  );
-  host.appendChild(steps);
+  if (!slides) {
+    // A document tab, or the running order: nothing below applies.
+    return;
+  }
 
   // Adding a slide and bringing one in are the two things an author does
   // between slides rather than within one, so they sit here rather than

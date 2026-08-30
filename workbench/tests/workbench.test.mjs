@@ -26,6 +26,24 @@ import {
   withoutResource,
 } from "../documents.js";
 import { markdownToHtml } from "../markdown.js";
+import {
+  appendTo,
+  blockIds,
+  canIndent,
+  canMove,
+  canOutdent,
+  flatten,
+  indent,
+  insertAfter,
+  moveWithinSiblings,
+  newContainer,
+  nodeAt,
+  outdent,
+  removeContainer,
+  renameNode,
+  wellFormed,
+} from "../structure.js";
+
 import { parse as parseYaml, stringify as stringifyYaml } from "../yaml.js";
 import { repoImages, resolveMedia, videoHost, videoThumb } from "../media.js";
 import { repoLogos } from "../course.js";
@@ -1928,4 +1946,229 @@ test("an ordinary deck opens with nothing to save", () => {
   ].join("\n");
   const working = workingSlides(parseSlides(md));
   assert.equal(working[0].dirty, false, "opening a good deck marked it changed");
+});
+
+// ---- the running order --------------------------------------------------
+
+const COURSE = () => [
+  {
+    kind: "module",
+    title: "Foundations",
+    children: [{ block: "01-intro" }, { block: "02-profiles" }],
+  },
+  { block: "03-standalone" },
+  {
+    kind: "module",
+    title: "Assessment week",
+    children: [{ block: "04-exam" }],
+  },
+];
+
+const at = (structure, path) => nodeAt(structure, path);
+
+test("moving among siblings changes the order and nothing else", () => {
+  const before = COURSE();
+  const after = moveWithinSiblings(before, [0, 0], 1);
+  assert.deepEqual(blockIds(after), ["02-profiles", "01-intro", "03-standalone", "04-exam"]);
+  // Immutable: the tree it was given is untouched, or undo has nothing
+  // to go back to.
+  assert.deepEqual(blockIds(before), ["01-intro", "02-profiles", "03-standalone", "04-exam"]);
+});
+
+test("a heading moves with everything under it", () => {
+  const after = moveWithinSiblings(COURSE(), [0], 1);
+  assert.deepEqual(blockIds(after), ["03-standalone", "01-intro", "02-profiles", "04-exam"]);
+  assert.equal(at(after, [1]).title, "Foundations");
+  assert.equal(at(after, [1]).children.length, 2);
+});
+
+test("a move that cannot happen returns the tree it was given", () => {
+  const before = COURSE();
+  // Identity, not a copy: the caller uses it to decide whether to commit.
+  assert.equal(moveWithinSiblings(before, [0], -1), before);
+  assert.equal(moveWithinSiblings(before, [2], 1), before);
+  assert.equal(moveWithinSiblings(before, [], 1), before);
+  assert.equal(canMove(before, [0], -1), false);
+  assert.equal(canMove(before, [1], -1), true);
+});
+
+test("indent puts a session in the container immediately above it", () => {
+  const after = indent(COURSE(), [1]); // 03-standalone, under Foundations
+  assert.deepEqual(blockIds(after), ["01-intro", "02-profiles", "03-standalone", "04-exam"]);
+  assert.deepEqual(
+    at(after, [0]).children.map((n) => n.block),
+    ["01-intro", "02-profiles", "03-standalone"]
+  );
+  assert.equal(at(after, [1]).title, "Assessment week");
+});
+
+test("indent is refused when there is no container to go into", () => {
+  const before = COURSE();
+  // Nothing above it at all.
+  assert.equal(canIndent(before, [0]), false);
+  assert.equal(indent(before, [0]), before);
+  // The row above is a session, not a container.
+  assert.equal(canIndent(before, [0, 1]), false);
+  assert.equal(indent(before, [0, 1]), before);
+});
+
+test("outdent leaves the parent and follows it", () => {
+  const after = outdent(COURSE(), [0, 0]); // 01-intro out of Foundations
+  assert.deepEqual(blockIds(after), ["02-profiles", "01-intro", "03-standalone", "04-exam"]);
+  assert.equal(at(after, [1]).block, "01-intro");
+  assert.deepEqual(
+    at(after, [0]).children.map((n) => n.block),
+    ["02-profiles"]
+  );
+});
+
+test("outdent is refused at the top level", () => {
+  const before = COURSE();
+  assert.equal(canOutdent(before, [1]), false);
+  assert.equal(outdent(before, [1]), before);
+});
+
+test("a session can be moved from one module to another", () => {
+  // The whole point, and the reason indent/outdent is enough on its own:
+  // out, past the next heading, in.
+  let s = COURSE();
+  s = outdent(s, [0, 0]);          // 01-intro to the top level, after Foundations
+  s = moveWithinSiblings(s, [1], 1); // past 03-standalone
+  s = moveWithinSiblings(s, [2], 1); // past Assessment week
+  s = indent(s, [3]);                // into Assessment week
+  assert.deepEqual(
+    at(s, [2]).children.map((n) => n.block),
+    ["04-exam", "01-intro"]
+  );
+  assert.deepEqual(blockIds(s).sort(), ["01-intro", "02-profiles", "03-standalone", "04-exam"]);
+});
+
+test("deleting a heading keeps its sessions, in its place", () => {
+  const after = removeContainer(COURSE(), [0]);
+  // The order on the page is unchanged; only the grouping is gone.
+  assert.deepEqual(blockIds(after), ["01-intro", "02-profiles", "03-standalone", "04-exam"]);
+  assert.equal(at(after, [0]).block, "01-intro");
+  assert.equal(at(after, [1]).block, "02-profiles");
+  assert.equal(at(after, [2]).block, "03-standalone");
+});
+
+test("deleting an empty heading removes just it", () => {
+  const before = [...COURSE(), newContainer("Spare", "week")];
+  const after = removeContainer(before, [3]);
+  assert.equal(after.length, 3);
+  assert.deepEqual(blockIds(after), blockIds(before));
+});
+
+test("a new container always declares its children", () => {
+  // A container without the key is a hard error in the renderer, not an
+  // empty container. (library.py:_walk_structure)
+  const made = newContainer("Week one", "week");
+  assert.deepEqual(made, { kind: "week", title: "Week one", children: [] });
+  assert.ok(wellFormed([made]));
+  assert.ok(wellFormed(insertAfter(COURSE(), [1], newContainer("Later"))));
+  assert.ok(wellFormed(appendTo(COURSE(), [], newContainer("Last"))));
+});
+
+test("a heading can be renamed, and told what it is", () => {
+  const after = renameNode(COURSE(), [0], { title: "Getting started", kind: "week" });
+  assert.equal(at(after, [0]).title, "Getting started");
+  assert.equal(at(after, [0]).kind, "week");
+  assert.deepEqual(at(after, [0]).children.length, 2);
+  // A session is not a heading and has no words of its own here.
+  const untouched = COURSE();
+  assert.equal(renameNode(untouched, [1], { title: "no" }), untouched);
+});
+
+test("a module inserted here goes after the row it was asked for", () => {
+  const after = insertAfter(COURSE(), [1], newContainer("Midpoint"));
+  assert.equal(at(after, [2]).title, "Midpoint");
+  assert.deepEqual(blockIds(after), blockIds(COURSE()));
+});
+
+test("flatten gives every row its own path and its parent's", () => {
+  const rows = flatten(COURSE());
+  assert.deepEqual(
+    rows.map((r) => [r.kind, r.block ?? r.title, r.depth, r.path.join("."), r.parent.join(".")]),
+    [
+      ["module", "Foundations", 0, "0", ""],
+      ["block", "01-intro", 1, "0.0", "0"],
+      ["block", "02-profiles", 1, "0.1", "0"],
+      ["block", "03-standalone", 0, "1", ""],
+      ["module", "Assessment week", 0, "2", ""],
+      ["block", "04-exam", 1, "2.0", "2"],
+    ]
+  );
+  // Every path addresses the node it belongs to.
+  for (const row of rows) {
+    const node = nodeAt(COURSE(), row.path);
+    assert.equal(row.kind === "block" ? node.block : node.title, row.block ?? row.title);
+  }
+});
+
+test("no operation ever loses a session", () => {
+  // The invariant that matters. Rearranging a running order may change
+  // where a session is; it may never change which sessions there are, or
+  // leave a container the renderer will refuse.
+  const trees = [];
+  const seed = COURSE();
+  // Every path in a reasonably shaped tree, including nested containers.
+  const deep = [
+    newContainer("Outer"),
+    { block: "a" },
+    { kind: "module", title: "M", children: [{ block: "b" }, newContainer("Inner"), { block: "c" }] },
+    { kind: "day", title: "D", children: [{ block: "d" }] },
+  ];
+  trees.push(seed, deep, [], [{ block: "solo" }], [newContainer("Only")]);
+
+  for (const tree of trees) {
+    const before = blockIds(tree).slice().sort();
+    const paths = flatten(tree).map((r) => r.path);
+    for (const path of paths) {
+      const results = [
+        moveWithinSiblings(tree, path, -1),
+        moveWithinSiblings(tree, path, 1),
+        indent(tree, path),
+        outdent(tree, path),
+        removeContainer(tree, path),
+        insertAfter(tree, path, newContainer("New")),
+        renameNode(tree, path, { title: "Renamed" }),
+      ];
+      for (const [i, after] of results.entries()) {
+        assert.deepEqual(
+          blockIds(after).slice().sort(),
+          before,
+          `operation ${i} at ${path.join(".")} changed which sessions exist`
+        );
+        assert.ok(
+          wellFormed(after),
+          `operation ${i} at ${path.join(".")} left a container without children`
+        );
+      }
+    }
+  }
+});
+
+test("repeated moves cannot lose or duplicate a session", () => {
+  // A hundred arbitrary but reproducible edits, the way somebody
+  // actually rearranges a course: a lot of small moves in a row.
+  let tree = COURSE();
+  const before = blockIds(tree).slice().sort();
+  let seed = 7;
+  const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+  for (let n = 0; n < 100; n += 1) {
+    const rows = flatten(tree);
+    if (!rows.length) break;
+    const row = rows[next() % rows.length];
+    const pick = next() % 4;
+    tree =
+      pick === 0
+        ? moveWithinSiblings(tree, row.path, next() % 2 ? 1 : -1)
+        : pick === 1
+          ? indent(tree, row.path)
+          : pick === 2
+            ? outdent(tree, row.path)
+            : insertAfter(tree, row.path, newContainer(`G${n}`));
+    assert.deepEqual(blockIds(tree).slice().sort(), before, `lost a session at step ${n}`);
+    assert.ok(wellFormed(tree), `malformed at step ${n}`);
+  }
 });

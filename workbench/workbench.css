@@ -818,6 +818,39 @@ button.session-card:focus-visible { outline: 2px solid var(--accent); outline-of
 /* A session missing its outcomes or its plan is not finished. */
 .card-facts.thin { color: var(--warn-fg, #a15c00); }
 .card-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+
+/* The running order. Rows carry their own controls rather than hiding
+   them until hover: rearranging is the whole job of this view, not a
+   secondary action on something else, and a control nobody can see is a
+   control nobody uses. */
+.order-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.order-row .session-card { flex: 1 1 auto; min-width: 0; }
+.order-row.heading { margin: 14px 0 2px; }
+.order-tools { display: flex; gap: 1px; flex: none; margin-left: auto; }
+.order-tools button.tool { font-size: 13px; padding: 2px 5px; }
+.order-tools .tool-gap { width: 1.55rem; flex: none; }
+.order-tools button.tool:disabled { opacity: 0.25; cursor: default; }
+.order-tools button.tool:disabled:hover { background: none; color: var(--muted); }
+.order-adds { display: flex; gap: 8px; flex: none; }
+.order-adds .link { font-size: 0.76rem; }
+input.order-kind {
+  flex: none; width: 5.5rem; font-size: 0.66rem; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted); font-weight: 700;
+  border: 1px solid transparent; background: none; padding: 3px 4px;
+  border-radius: 4px; font-family: inherit;
+}
+input.order-title {
+  flex: 1 1 auto; min-width: 0; font-size: 0.86rem; font-weight: 600;
+  color: var(--fg); border: 1px solid transparent; background: none;
+  padding: 3px 6px; border-radius: 4px; font-family: inherit;
+}
+input.order-kind:hover, input.order-title:hover { border-color: var(--border); }
+input.order-kind:focus, input.order-title:focus {
+  outline: none; border-color: var(--accent); background: var(--bg-raised);
+}
+
 .structure-row .link { margin-left: auto; font-size: 0.76rem; }
 
 .competency-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; max-width: 46rem; }

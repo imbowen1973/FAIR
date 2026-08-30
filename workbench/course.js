@@ -18,6 +18,8 @@
 // entry in this YAML. A session that exists in one but not the other is
 // the drift the orchestrator is supposed to prevent.
 
+import { canIndent, canMove, canOutdent } from "./structure.js";
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -54,7 +56,25 @@ function field(label, control, hint) {
  * so typing a module name and then a description sent the description
  * merged into a course that still had no name, and the name was gone.
  */
-export function courseHome(host, { course, rows, onChange, onOpen, onAddSession, onAddModule }) {
+export function courseHome(
+  host,
+  {
+    course,
+    rows,
+    structure,
+    onChange,
+    onOpen,
+    onAddSession,
+    onAddModule,
+    onMove,
+    onIndent,
+    onOutdent,
+    onHeading,
+    onRemoveHeading,
+    onAddModuleAt,
+    onPlace,
+  }
+) {
   host.innerHTML = "";
 
   const title = el("input", "text grow");
@@ -84,57 +104,174 @@ export function courseHome(host, { course, rows, onChange, onOpen, onAddSession,
       "p",
       "hint",
       "In delivery order. Each session holds its own learning outcomes, " +
-        "lesson plan, deck and assessment — open one to edit them."
+        "lesson plan, deck and assessment — open one to edit them. Use the " +
+        "arrows to reorder, and → to put a session inside the grouping above it."
     )
   );
+
+  /** One of the small square buttons, disabled rather than absent. */
+  const tool = (label, title, enabled, fn) => {
+    const b = el("button", "tool");
+    b.type = "button";
+    b.textContent = label;
+    b.title = title;
+    b.setAttribute("aria-label", title);
+    b.disabled = !enabled;
+    if (enabled) {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        fn();
+      });
+    }
+    return b;
+  };
 
   const grid = el("div", "session-cards");
   let cards = 0;
 
   for (const row of rows) {
-    if (row.kind !== "block") {
-      const heading = el("div", "structure-row");
-      heading.style.marginLeft = `${row.depth * 12}px`;
-      heading.append(el("span", "structure-kind", row.kind));
-      heading.append(document.createTextNode(row.title));
-      const add = el("button", "link", "+ session here");
-      add.type = "button";
-      add.addEventListener("click", () => onAddSession?.(row.trail));
-      heading.append(add);
-      grid.append(heading);
-      continue;
+    // A session on disk that the running order does not mention. Not an
+    // error -- it is how a session begins -- but it is not in the course
+    // yet, and pretending it sits at the top would be a quiet lie.
+    if (row.unplaced) continue;
+
+    const line = el("div", row.kind === "block" ? "order-row" : "order-row heading");
+    line.style.marginLeft = `${row.depth * 16}px`;
+
+    if (row.kind === "block") {
+      cards += 1;
+      const card = el("button", "session-card");
+      card.type = "button";
+      card.addEventListener("click", () => onOpen?.(row.block));
+      card.append(el("span", "card-title", row.title || row.block));
+      const facts = el("span", "card-facts");
+      const bits = [];
+      if (row.code) bits.push(row.code);
+      if (row.duration) bits.push(`${row.duration} min`);
+      bits.push(
+        row.outcomes
+          ? `${row.outcomes} outcome${row.outcomes === 1 ? "" : "s"}`
+          : "no outcomes yet"
+      );
+      bits.push(row.slides ? `${row.slides} slides` : "no deck yet");
+      if (!row.hasPlan) bits.push("no lesson plan");
+      facts.textContent = bits.join(" · ");
+      if (!row.outcomes || !row.hasPlan) facts.classList.add("thin");
+      card.append(facts);
+      line.append(card);
+    } else {
+      // The heading's own words. `kind` is whatever this course calls the
+      // level -- module, day, week, unit -- so it is a field, not a list.
+      const kind = el("input", "order-kind");
+      kind.type = "text";
+      kind.value = row.kind === "group" ? "" : row.kind;
+      kind.placeholder = "module";
+      kind.title = "What this course calls this level: module, day, week…";
+      kind.setAttribute("aria-label", "Kind of grouping");
+      kind.addEventListener("input", () =>
+        onHeading?.(row.path, { kind: kind.value.trim() || "group" })
+      );
+
+      const name = el("input", "order-title");
+      name.type = "text";
+      name.value = row.title ?? "";
+      name.placeholder = "What is this grouping called?";
+      name.setAttribute("aria-label", "Name of grouping");
+      name.addEventListener("input", () => onHeading?.(row.path, { title: name.value }));
+
+      line.append(kind, name);
     }
 
-    cards += 1;
-    const card = el("button", "session-card");
-    card.type = "button";
-    card.style.marginLeft = `${row.depth * 12}px`;
-    card.addEventListener("click", () => onOpen?.(row.block));
-
-    card.append(el("span", "card-title", row.title || row.block));
-    const facts = el("span", "card-facts");
-    const bits = [];
-    if (row.code) bits.push(row.code);
-    if (row.duration) bits.push(`${row.duration} min`);
-    bits.push(
-      row.outcomes
-        ? `${row.outcomes} outcome${row.outcomes === 1 ? "" : "s"}`
-        : "no outcomes yet"
+    const tools = el("span", "order-tools");
+    tools.append(
+      tool("↑", "move up", canMove(structure, row.path, -1), () => onMove?.(row.path, -1)),
+      tool("↓", "move down", canMove(structure, row.path, 1), () => onMove?.(row.path, 1))
     );
-    bits.push(row.slides ? `${row.slides} slides` : "no deck yet");
-    if (!row.hasPlan) bits.push("no lesson plan");
-    facts.textContent = bits.join(" · ");
-    if (!row.outcomes || !row.hasPlan) facts.classList.add("thin");
-    card.append(facts);
-    grid.append(card);
+    if (row.kind === "block") {
+      tools.append(
+        tool("←", "move out of this grouping", canOutdent(structure, row.path), () =>
+          onOutdent?.(row.path)
+        ),
+        tool("→", "move into the grouping above", canIndent(structure, row.path), () =>
+          onIndent?.(row.path)
+        ),
+        // A heading has one more control than a session. Without this the
+        // arrows shift sideways between the two kinds of row, and the
+        // column an eye follows down the list is not straight.
+        el("span", "tool-gap")
+      );
+    } else {
+      tools.append(
+        tool("←", "move out of this grouping", canOutdent(structure, row.path), () =>
+          onOutdent?.(row.path)
+        ),
+        tool("→", "move into the grouping above", canIndent(structure, row.path), () =>
+          onIndent?.(row.path)
+        ),
+        // Removing a grouping is a statement about the grouping. What was
+        // inside it stays, in its place, one level up — so this needs no
+        // confirming, and undo covers a misclick.
+        tool("×", "remove this grouping, keeping its sessions", true, () =>
+          onRemoveHeading?.(row.path)
+        )
+      );
+    }
+    if (row.kind !== "block") {
+      const adds = el("span", "order-adds");
+      const addHere = el("button", "link", "+ session here");
+      addHere.type = "button";
+      addHere.addEventListener("click", () => onAddSession?.(row.path));
+      const modHere = el("button", "link", "+ grouping here");
+      modHere.type = "button";
+      modHere.title = "A new grouping, after this one";
+      modHere.addEventListener("click", () => onAddModuleAt?.(row.path));
+      adds.append(addHere, modHere);
+      line.append(adds);
+    }
+
+    // Last in both kinds of row, so the arrows form one column.
+    line.append(tools);
+    grid.append(line);
   }
 
   if (!cards) {
-    grid.append(
-      el("p", "warn", "This module has no sessions yet.")
-    );
+    grid.append(el("p", "warn", "This module has no sessions yet."));
   }
   host.append(grid);
+
+  // Sessions that exist but that the running order does not mention. The
+  // renderer shows them the same way and builds them; they simply have
+  // no place yet, and the button is the act of giving them one.
+  const loose = rows.filter((r) => r.unplaced);
+  if (loose.length) {
+    host.append(el("h3", "outcome-group", "Not in the running order yet"));
+    host.append(
+      el(
+        "p",
+        "hint",
+        "These sessions exist and will build, but the course does not say " +
+          "where they come. Add one to put it at the end, then move it."
+      )
+    );
+    const spare = el("div", "session-cards");
+    for (const row of loose) {
+      const line = el("div", "order-row");
+      const card = el("button", "session-card");
+      card.type = "button";
+      card.addEventListener("click", () => onOpen?.(row.block));
+      card.append(el("span", "card-title", row.title || row.block));
+      card.append(el("span", "card-facts", row.slides ? `${row.slides} slides` : "no deck yet"));
+      line.append(card);
+      const tools = el("span", "order-tools");
+      const place = el("button", "link", "+ add to the running order");
+      place.type = "button";
+      place.addEventListener("click", () => onPlace?.(row.block));
+      tools.append(place);
+      line.append(tools);
+      spare.append(line);
+    }
+    host.append(spare);
+  }
 
   const actions = el("div", "card-actions");
   const addSession = el("button", "primary", "+ Add session");

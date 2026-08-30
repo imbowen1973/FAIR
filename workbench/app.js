@@ -76,6 +76,20 @@ import { markdownEditor } from "./mdeditor.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "./yaml.js";
 import { linkFor, prepareUpload, safeName, toBase64 } from "./attach.js";
 import {
+  appendTo,
+  canIndent,
+  canMove,
+  canOutdent,
+  flatten,
+  indent,
+  insertAfter,
+  moveWithinSiblings,
+  newContainer,
+  outdent,
+  removeContainer,
+  renameNode,
+} from "./structure.js";
+import {
   mediaPicker,
   repoImages,
   resolveMedia,
@@ -882,21 +896,86 @@ function restore(snap) {
 }
 
 function undo() {
-  const h = historyFor();
+  const course = state.courseOpen;
+  const h = course ? courseHistory() : historyFor();
   if (!canUndo(h)) return status("Nothing to undo.", "");
-  restore(undoStep(h));
+  const step = undoStep(h);
+  if (course) restoreCourse(step);
+  else restore(step);
   status("Undone.", "ok");
 }
 
 function redo() {
-  const h = historyFor();
+  const course = state.courseOpen;
+  const h = course ? courseHistory() : historyFor();
   if (!canRedo(h)) return status("Nothing to redo.", "");
-  restore(redoStep(h));
+  const step = redoStep(h);
+  if (course) restoreCourse(step);
+  else restore(step);
   status("Redone.", "ok");
 }
 
+// ---- undo, for the running order ---------------------------------------
+//
+// The history has always been per-block and slide-shaped: remember()
+// returns early without a state.blockId, and a snapshot is the deck. So
+// rearranging a course was the one bulk edit in the workbench with no
+// way back, which is precisely the edit where a mis-click is costly and
+// invisible — twenty sessions moved, and one of them now in the wrong
+// module with nothing to say so.
+//
+// The course keeps its own history under a key no block id can collide
+// with, and undo/redo route to it while the running order is on screen.
+
+const COURSE_KEY = " course";
+
+const courseSnapshot = () => structuredClone(courseDoc());
+
+function courseHistory() {
+  if (!state.history.has(COURSE_KEY)) {
+    // Seeded with the course as opened, or the first undo has nothing to
+    // go back to and the first move is unrecoverable.
+    state.history.set(COURSE_KEY, record(newHistory(), courseSnapshot()));
+  }
+  return state.history.get(COURSE_KEY);
+}
+
+/** Record the course *after* a change, as the deck's history does. */
+function rememberCourse(step = null) {
+  record(courseHistory(), courseSnapshot(), step);
+  updateHistoryButtons();
+}
+
+function restoreCourse(doc) {
+  if (!doc) return;
+  writeCourse(structuredClone(doc));
+  renderCourse();
+}
+
+/**
+ * Apply a change to the running order.
+ *
+ * Every transform returns the tree it was given when the move cannot be
+ * made, so identity says whether anything happened — and a disabled
+ * button that somehow fires costs nothing.
+ */
+function structureOp(fn, { redraw = true, step = null } = {}) {
+  const course = courseDoc();
+  const current = course.structure ?? [];
+  const next = fn(current);
+  if (next === current) return;
+  writeCourse({ ...course, structure: next });
+  rememberCourse(step);
+  updateActions();
+  if (redraw) renderCourse();
+}
+
 function updateHistoryButtons() {
-  const h = state.blockId ? historyFor() : null;
+  const h = state.courseOpen
+    ? courseHistory()
+    : state.blockId
+      ? historyFor()
+      : null;
   const set = (id, on) => {
     const button = document.getElementById(id);
     if (button) button.disabled = !on;
@@ -1202,10 +1281,11 @@ function regionType(region) {
   return typeof value === "object" && value !== null ? value.type : null;
 }
 
-function renderRibbon({ slides = true } = {}) {
+function renderRibbon({ slides = true, steps = slides } = {}) {
   const data = slides ? slideData(state.slideIndex) : {};
   ribbon($("ribbon"), {
     slides,
+    steps,
     onSave: save,
     onSubmit: submit,
     onHistory: showHistory,
@@ -1979,30 +2059,15 @@ function setOutcomeOwner(outcomeId, blockId, { stay = false } = {}) {
   if (!stay) renderCourse();
 }
 
-/** flattenStructure, plus the path to each node so a caller can add to it. */
-function withTrails(structure, trail = [], depth = 0, out = []) {
-  (structure || []).forEach((node, index) => {
-    if (node.block) {
-      out.push({ kind: "block", block: node.block, depth, trail });
-      return;
-    }
-    out.push({
-      kind: node.kind || "group",
-      title: node.title || "",
-      depth,
-      trail: [...trail, index],
-    });
-    withTrails(node.children, [...trail, index], depth + 1, out);
-  });
-  return out;
-}
-
 /** The recipe's rows, with each session's facts attached for the cards. */
 function courseRows() {
-  const rows = withTrails(courseDoc().structure);
+  const rows = flatten(courseDoc().structure);
   const placed = new Set(rows.filter((r) => r.kind === "block").map((r) => r.block));
   for (const id of state.library.blocks.keys()) {
-    if (!placed.has(id)) rows.push({ kind: "block", block: id, depth: 0, trail: [] });
+    // On disk, but the running order does not mention it. Marked rather
+    // than given a position, because it has none: showing it at the top
+    // with an empty path made every control on it a lie.
+    if (!placed.has(id)) rows.push({ kind: "block", block: id, depth: 0, unplaced: true });
   }
   const owners = outcomeOwners();
   const files = pendingFiles();
@@ -2026,9 +2091,18 @@ function courseRows() {
 function renderCourse() {
   renderTabs();
   $("slidesview").hidden = true;
-  $("ribbon").hidden = true;
   $("sidebar").hidden = true;
   $("document").hidden = false;
+
+  // Save, history, undo and redo belong here too. Hiding the whole
+  // toolbar meant rearranging a course -- the one bulk edit in the tool
+  // -- happened with no Save in front of you and no way back.
+  $("ribbon").hidden = false;
+  renderRibbon({ slides: false, steps: true });
+  // Seed the history before anything can change it, so the first undo
+  // has the course as it was opened to go back to.
+  courseHistory();
+  updateHistoryButtons();
 
   const host = $("document");
   host.innerHTML = "";
@@ -2063,6 +2137,20 @@ function renderCourse() {
       },
       onAddSession: addLesson,
       onAddModule: addModule,
+      structure: courseDoc().structure ?? [],
+      onMove: (path, delta) => structureOp((t) => moveWithinSiblings(t, path, delta)),
+      onIndent: (path) => structureOp((t) => indent(t, path)),
+      onOutdent: (path) => structureOp((t) => outdent(t, path)),
+      onRemoveHeading: (path) => structureOp((t) => removeContainer(t, path)),
+      onAddModuleAt: (path) => structureOp((t) => insertAfter(t, path, newContainer())),
+      // Typing a heading's name must not redraw the row underneath the
+      // caret, and a burst of keystrokes is one undo step, not forty.
+      onHeading: (path, patch) =>
+        structureOp((t) => renameNode(t, path, patch), {
+          redraw: false,
+          step: `heading:${path.join(".")}`,
+        }),
+      onPlace: (block) => structureOp((t) => appendTo(t, [], { block })),
     });
   draw();
 }
