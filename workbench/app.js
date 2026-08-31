@@ -1040,6 +1040,13 @@ function renderCanvas({ redraw = true } = {}) {
 
   const data = slideData(state.slideIndex);
   const shown = previewData(data);
+  // A layout change can take the selected placeholder away without the
+  // slide changing. Aiming at a region this layout does not offer is how
+  // a picture ends up in a key the renderer will not accept.
+  if (activeRegion) {
+    const offered = layoutRegions(state.library.layoutMap, data.layout);
+    if (offered.length && !offered.includes(activeRegion)) activeRegion = null;
+  }
   if (redraw) {
     drawSlide($("canvas"), {
       geometry: state.library.geometry,
@@ -2914,6 +2921,12 @@ function attachFile() {
 
 /** Kept for callers that only mean the deck. */
 function renderSlide() {
+  // The selection belongs to a region on a slide, so moving to another
+  // slide ends it. It never used to: activeRegion was set once and kept
+  // for the session, so the picture button on a new slide aimed at a
+  // placeholder from the last one -- which the new layout may not even
+  // have, giving the renderer a region it refuses.
+  activeRegion = null;
   renderBlock();
 }
 

@@ -749,6 +749,11 @@ export function drawSlide(
     if (drawn.has(region) || compact) continue;
     const box = document.createElement("div");
     box.className = "region vacant";
+    // An empty placeholder is a placeholder. Without this it had no name
+    // in the DOM and never became the selected region, so the ribbon's
+    // picture button -- which acts on the selection -- put the picture
+    // in whichever region had been clicked before it.
+    box.dataset.region = region;
     const paint = fillColour(theme, rect.fill);
     if (paint) box.style.background = paint;
     box.style.left = `${rect.x * 100}%`;
@@ -768,6 +773,14 @@ export function drawSlide(
     box.appendChild(name);
 
     if (editable) {
+      // Selected first, whatever the click then does with it: an empty
+      // placeholder that cannot be selected is one the ribbon cannot act
+      // on, and it looked selected to nobody.
+      box.addEventListener("mousedown", () => {
+        select(box);
+        onSelectRegion?.(region);
+      });
+
       if (holds === "picture") {
         box.title = `Add a picture or a video to ${region}`;
         box.addEventListener("click", () => onMedia?.(region, {}, "image"));
