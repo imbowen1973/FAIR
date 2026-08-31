@@ -254,7 +254,7 @@ function snippet(text, at, width = 120) {
  * slide titles, speaker notes, session titles and competency labels.
  * Title hits outrank notes hits; empty query returns nothing.
  *
- * @returns {Array<{slideId, sessionId, field, snippet, slide}>}
+ * @returns {Array<{slideId, sessionId, sessionTitle, field, snippet, slide}>}
  */
 export function searchCatalog(catalog, query) {
   const q = (query || "").trim().toLowerCase();
@@ -297,6 +297,10 @@ export function searchCatalog(catalog, query) {
     results.push({
       slideId: slide.slideId,
       sessionId: slide.sessionId,
+      // Which session it is in. Forty hits across seven sessions all
+      // look alike without it, and "insert this one" is a decision
+      // nobody can make from a title alone.
+      sessionTitle: sessionTitle,
       field,
       snippet: field === "competency" ? text : snippet(text, at),
       slide,

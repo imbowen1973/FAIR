@@ -302,3 +302,16 @@ button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
 .render-problems p { margin: 0 0 4px; font-weight: 600; }
 .render-problems ul { margin: 0; padding-left: 1.1rem; }
 .render-problems li { margin: 2px 0; word-break: break-word; }
+
+/* A search result has to be judgeable without opening it: what matched,
+   and which session it is in. Two slides called "Overview" are told
+   apart by the second line and by nothing else. */
+.hit-where {
+  margin: 1px 0 0 22px; font-size: 0.72rem; opacity: 0.75;
+}
+/* Standing in for a quote, not quoting: the slide's own notes. */
+.hit-snippet.peek { opacity: 0.72; font-style: italic; }
+.hit mark {
+  background: rgba(255, 210, 0, 0.38); color: inherit;
+  padding: 0 1px; border-radius: 2px;
+}

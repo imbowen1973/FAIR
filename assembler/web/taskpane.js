@@ -444,6 +444,44 @@ function renderNode(node, path, allowed) {
   return el;
 }
 
+/**
+ * `text` with every occurrence of `term` marked.
+ *
+ * Built as nodes rather than markup: a search term is whatever somebody
+ * typed, and a slide title is whatever a library holds. Neither belongs
+ * in innerHTML.
+ */
+function marked(text, term) {
+  const out = document.createDocumentFragment();
+  const hay = String(text ?? "");
+  const needle = String(term ?? "").trim();
+  if (!needle) {
+    out.append(hay);
+    return out;
+  }
+  const lower = hay.toLowerCase();
+  const find = needle.toLowerCase();
+  let at = 0;
+  for (;;) {
+    const i = lower.indexOf(find, at);
+    if (i < 0) break;
+    if (i > at) out.append(hay.slice(at, i));
+    const hit = document.createElement("mark");
+    hit.textContent = hay.slice(i, i + find.length);
+    out.append(hit);
+    at = i + find.length;
+  }
+  out.append(hay.slice(at));
+  return out;
+}
+
+/** The opening of a slide's speaker notes, as a peek at what it does. */
+function firstLines(notes, limit = 160) {
+  const text = String(notes ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text;
+}
+
 function renderSearchResults(container, allowed) {
   const hits = searchCatalog(catalog, query).filter(
     (h) => !allowed || allowed.has(h.slideId)
@@ -454,28 +492,57 @@ function renderSearchResults(container, allowed) {
     return;
   }
   for (const hit of hits) {
+    const shown = hit.slide.title ?? hit.slideId;
     const el = document.createElement("div");
     el.className = "hit";
+
     const row = document.createElement("label");
     row.className = "hit-row";
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = selected.has(hit.slideId);
     cb.addEventListener("change", () => toggleSlides([hit.slideId], cb.checked));
+    cb.setAttribute("aria-label", `Select ${shown}`);
+
     const title = document.createElement("span");
     title.className = "hit-title";
-    title.textContent = hit.slide.title ?? hit.slideId;
+    title.append(marked(shown, query));
+
     const field = document.createElement("span");
     field.className = "hit-field";
     field.dataset.field = hit.field;
     field.textContent = hit.field;
     field.setAttribute("aria-label", `matched in ${hit.field}`);
-    cb.setAttribute("aria-label", `Select ${hit.slide.title ?? hit.slideId}`);
+
     row.append(cb, title, field);
-    const snip = document.createElement("p");
-    snip.className = "hit-snippet";
-    snip.textContent = hit.snippet;
-    el.append(row, snip);
+    el.append(row);
+
+    // Which session it came from. Two slides called "Overview" are told
+    // apart by this and by nothing else on the row.
+    if (hit.sessionTitle) {
+      const where = document.createElement("p");
+      where.className = "hit-where";
+      where.append(marked(hit.sessionTitle, query));
+      el.append(where);
+    }
+
+    // The words that matched, unless they are the title again — which
+    // for a title hit they always were, so every result carried its own
+    // heading twice and said nothing else.
+    //
+    // When there is nothing to quote, the slide's own notes stand in.
+    // They are the nearest thing to looking at it: a title and a session
+    // say which slide this is, and the notes say what it does.
+    const snippet = (hit.snippet ?? "").trim();
+    const quotable = snippet && snippet !== shown.trim();
+    const peek = quotable ? snippet : firstLines(hit.slide.notes);
+    if (peek) {
+      const snip = document.createElement("p");
+      snip.className = quotable ? "hit-snippet" : "hit-snippet peek";
+      snip.append(marked(peek, quotable ? query : ""));
+      el.append(snip);
+    }
+
     container.appendChild(el);
   }
 }
