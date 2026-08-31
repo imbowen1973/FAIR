@@ -240,7 +240,13 @@ Path("${OUT_DIR}/catalog.json").read_text()
 export async function loadLibraryFromGitHub(owner, repo, status = () => {}) {
   const py = await ensurePyodide(status);
 
-  status(`Reading ${owner}/${repo}…`);
+  // Always the repository's default branch. This add-in assembles from
+  // published content and has no notion of a branch -- which is worth
+  // saying out loud, because the workbench saves to draft/<login>, so an
+  // author can fix a slide there, reload the add-in, and see the old
+  // failure unchanged. Reloading is not the problem and reinstalling
+  // does not help: the branch it reads has not moved.
+  status(`Reading the default branch of ${owner}/${repo}…`);
   const paths = selectLibraryPaths(await fetchRepoTree(owner, repo));
   const files = await fetchFiles(owner, repo, paths, status);
 
@@ -253,7 +259,20 @@ export async function loadLibraryFromGitHub(owner, repo, status = () => {}) {
   }
 
   status("Rendering slides in your browser…");
-  const catalogJson = await py.runPythonAsync(DRIVER);
+  let catalogJson;
+  try {
+    catalogJson = await py.runPythonAsync(DRIVER);
+  } catch (err) {
+    // A renderer error names a slide id and nothing about where it was
+    // read from, so an author who has just fixed that slide somewhere
+    // else has no way to tell why it is still failing.
+    const detail = String(err.message ?? err).trim().split(String.fromCharCode(10)).pop();
+    throw new Error(
+      `${detail} — read from the default branch of ${owner}/${repo}. ` +
+        "Edits saved in the workbench are on a draft branch until they are " +
+        "submitted, so a fix made there will not show here yet."
+    );
+  }
   const catalog = JSON.parse(catalogJson);
 
   const decks = new Map();
