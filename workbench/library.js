@@ -143,19 +143,53 @@ export function workingSlides(parsed) {
  * `free`    regions of the new layout that nothing has claimed
  * `suggested` a default destination for each orphan, or "" to discard
  */
-export function layoutChange(slide, layoutMap, nextLayout) {
-  const next = layoutRegions(layoutMap, nextLayout);
+export function layoutChange(slide, layoutMap, nextLayout, geometry = null) {
+  const next = layoutRegions(layoutMap, nextLayout, geometry);
   const filled = slideRegions(slide).filter((r) => !isEmptyRegion(slide[r]));
   const kept = filled.filter((r) => next.includes(r));
   const orphans = filled.filter((r) => !next.includes(r));
   const free = next.filter((r) => !kept.includes(r));
 
-  // Pair them off in order: the first orphan into the first free region.
-  // It is a starting point for the author, never applied unasked.
+  // A content placeholder belongs in a content placeholder, in either
+  // direction: the body of a Full slide should land in Comparison's
+  // left column, and Comparison's left column should land back in
+  // `full` -- accepting that `right` then has nowhere to go, which is
+  // true and worth being asked about.
+  //
+  // Pairing them off in file order did neither. Going one way it put the
+  // body into Comparison's left *heading*, because that is the region
+  // the map happens to list first.
+  //
+  // So the template is asked what each placeholder is for. Exact matches
+  // are taken first, across the whole layout, before anything settles
+  // for a placeholder of another kind.
+  const rankOf = (layout, region) => {
+    const type = String(
+      geometry?.layouts?.[layout]?.regions?.[region]?.type ?? ""
+    ).toLowerCase();
+    if (type === "object" || type === "picture") return 2; // holds anything
+    if (type === "body") return 1; // holds words
+    return 0;
+  };
+
   const suggested = {};
-  free.forEach((target, i) => {
-    if (orphans[i]) suggested[orphans[i]] = target;
-  });
+  const spare = orphans.filter(() => true);
+  const take = (target, wanted) => {
+    const i = spare.findIndex((o) => rankOf(slide.layout, o) === wanted);
+    if (i < 0) return false;
+    suggested[spare.splice(i, 1)[0]] = target;
+    return true;
+  };
+
+  const unclaimed = [];
+  for (const target of free) {
+    if (!take(target, rankOf(nextLayout, target))) unclaimed.push(target);
+  }
+  // Anything left over goes somewhere it fits rather than nowhere.
+  for (const target of unclaimed) {
+    if (!spare.length) break;
+    suggested[spare.shift()] = target;
+  }
   for (const orphan of orphans) if (!(orphan in suggested)) suggested[orphan] = "";
   return { kept, orphans, free, suggested };
 }
@@ -178,14 +212,26 @@ export function isEmptyRegion(value) {
  * new layout, or "" to drop it. An orphan with no entry is dropped, so
  * the caller has to have decided about every one of them.
  */
-export function applyLayoutChange(slide, layoutMap, nextLayout, moves = {}) {
-  const { orphans } = layoutChange(slide, layoutMap, nextLayout);
+export function applyLayoutChange(slide, layoutMap, nextLayout, moves = {}, geometry = null) {
+  const { orphans } = layoutChange(slide, layoutMap, nextLayout, geometry);
   const out = { ...slide, layout: nextLayout };
   for (const region of orphans) {
     const target = moves[region];
     const value = out[region];
     delete out[region];
     if (target) out[target] = value;
+  }
+
+  // Empty regions the new layout has not got. They are not orphans --
+  // nothing is in them, so nobody was asked about them -- and they were
+  // simply left behind, which is how `full: ""` ended up on a Comparison
+  // slide and stopped a deck rendering over a placeholder holding
+  // nothing. Dropped here, where the layout is changing anyway.
+  const offered = layoutRegions(layoutMap, nextLayout, geometry);
+  if (offered.length) {
+    for (const region of slideRegions(out)) {
+      if (!offered.includes(region) && isEmptyRegion(out[region])) delete out[region];
+    }
   }
   return out;
 }

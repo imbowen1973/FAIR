@@ -59,6 +59,15 @@ function mount(py, files) {
   for (const [path, content] of files) {
     const full = `${LIB_DIR}/${path}`;
     py.FS.mkdirTree(full.slice(0, full.lastIndexOf("/")));
+    // Pyodide's own complaint about anything else is "Unsupported data
+    // type", which names neither the file nor the value. Whatever goes
+    // wrong upstream, the report should say where to look.
+    if (typeof content !== "string" && !(content instanceof Uint8Array)) {
+      throw new Error(
+        `${path} is ${content === undefined ? "missing" : typeof content}, ` +
+          "so the library cannot be assembled to check or render it."
+      );
+    }
     py.FS.writeFile(
       full,
       typeof content === "string" ? new TextEncoder().encode(content) : content

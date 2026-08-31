@@ -433,3 +433,70 @@ def test_a_layout_with_two_content_placeholders_still_asks(tmp_path):
             out_dir=tmp_path / "out",
             warn=lambda m: None,
         )
+
+
+def test_an_empty_region_the_layout_has_not_got_is_ignored(tmp_path):
+    # What the author's slide actually carried: `full: ""` on a
+    # Comparison slide. Not orphaned content — an empty placeholder the
+    # workbench started and left behind. Nothing can be placed from it,
+    # so refusing the whole deck over it is a trade nobody would choose.
+    slides = textwrap.dedent(
+        """\
+        ---
+        session: '01'
+        title: A block
+        version: 1.0.0
+        ---
+
+        --- slide
+        id: wp52-26
+        layout: Comparison
+        title: TASK 1
+        full: ""
+        left_head: Teaching modules
+        right_head: WBL Modules
+        left: What are your three microcredentials
+        right: Are the WBL modules aligned
+        ---
+        """
+    )
+    root = _library(tmp_path / "lib", slides)
+    summary = build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=tmp_path / "out",
+        warn=lambda m: None,
+    )
+    catalog = json.loads(Path(summary["catalog"]).read_text(encoding="utf-8"))
+    assert catalog["problems"] == []
+    assert [s["slideId"] for s in catalog["slides"]] == ["wp52-26"]
+
+
+def test_an_undeclared_region_that_holds_something_still_fails(tmp_path):
+    # The distinction that makes the above safe: words nobody can place
+    # are still an error, because dropping them would lose them.
+    slides = textwrap.dedent(
+        """\
+        ---
+        session: '01'
+        title: A block
+        version: 1.0.0
+        ---
+
+        --- slide
+        id: has-words
+        layout: Comparison
+        full: Words that would be lost
+        ---
+        """
+    )
+    root = _library(tmp_path / "lib", slides)
+    with pytest.raises(RenderError, match="not declared for layout 'Comparison'"):
+        build_corpus(
+            library=root,
+            template=root / "template.pptx",
+            layout_map=root / "layout-map.yaml",
+            out_dir=tmp_path / "out",
+            warn=lambda m: None,
+        )

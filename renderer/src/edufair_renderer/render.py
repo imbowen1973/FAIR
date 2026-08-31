@@ -324,6 +324,22 @@ def _video_poster(build_dir: Path) -> Path:
     return poster
 
 
+def _region_is_empty(region: Region) -> bool:
+    """Whether a region holds nothing at all.
+
+    A placeholder the author started and did not fill leaves `full: ""`
+    behind, and a layout change can leave an empty region belonging to
+    the layout before. Nothing can be placed from one, so nothing is lost
+    by ignoring it -- and refusing an entire deck over a region holding
+    no content is a trade nobody would choose.
+    """
+    if region.type in ("image", "video", "mermaid"):
+        return not (region.src or region.url)
+    if region.items:
+        return False
+    return not (region.text or "").strip()
+
+
 def _library_root(base_dir: Path) -> Path | None:
     """The library a block belongs to, if this is a library at all.
 
@@ -444,6 +460,10 @@ def _render_slide(
     placeholders_by_idx = {ph.placeholder_format.idx: ph for ph in slide.placeholders}
 
     for region in slide_src.regions:
+        if region.name not in binding.regions and _region_is_empty(region):
+            # Declared by no layout and holding nothing: there is nothing
+            # to place and nothing to lose.
+            continue
         if region.name not in binding.regions:
             # Where that region *does* live. A region name is declared per
             # layout, so `full` working on one slide and not on another is

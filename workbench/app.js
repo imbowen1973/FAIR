@@ -3224,7 +3224,20 @@ async function save() {
 
     // The commit is now the truth: adopt it as the baseline so a second
     // save does not re-send unchanged files.
-    for (const file of changed) state.files.set(file.path, file.content);
+    //
+    // Text only. An uploaded picture travels as `base64` and has no
+    // `content`, so this stored `undefined` against its path — and the
+    // next Check mounted that into Pyodide and died with "Unsupported
+    // data type", naming nothing. The bytes are adopted below instead.
+    for (const file of changed) {
+      if (typeof file.content === "string") state.files.set(file.path, file.content);
+    }
+    for (const [path, bytes] of state.uploads) {
+      state.files.set(path, bytes);
+      if (!state.tree.includes(path)) state.tree.push(path);
+    }
+    // They are in the commit now, so they are not pending any more.
+    state.uploads = new Map();
     state.working = new Map();
     state.edits = new Map();
     state.library = readLibrary(state.files);
