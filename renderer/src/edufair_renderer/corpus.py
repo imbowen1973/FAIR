@@ -392,6 +392,17 @@ def build_corpus(
         "attribution": _catalog_attribution(attribution, out_dir),
     }
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Where the placeholders are. A reader with the catalog can now say
+    # what a slide holds; with this it can draw it, which is what anyone
+    # choosing between two slides called "Overview" actually wants.
+    # Copied rather than inlined: it belongs to the template, is the same
+    # for every slide, and a reader that does not want it should not have
+    # to download it.
+    if lib is not None:
+        geometry = lib.root / "layout-geometry.json"
+        if geometry.is_file():
+            (out_dir / "layout-geometry.json").write_bytes(geometry.read_bytes())
+
     out = out_dir / "catalog.json"
     out.write_text(json.dumps(catalog, indent=2) + "\n", encoding="utf-8")
     return {

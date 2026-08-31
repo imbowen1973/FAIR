@@ -98,6 +98,12 @@ class Slide:
     dok: int | None = None
     # "title" or "outcomes": filled from the library, not typed here.
     role: str | None = None
+    # The slide exactly as the file wrote it, before any of the above was
+    # derived from it. Carried so a reader that wants to *draw* the slide
+    # -- rather than render it to PowerPoint -- has the same thing the
+    # workbench canvas draws from, instead of a Region tree it would have
+    # to unpick.
+    source: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -332,6 +338,7 @@ def _parse_slide(lineno: int, raw_yaml: str, path: Path, seen_ids: set[str]) -> 
         outcomes=[str(o) for o in outcomes],
         dok=dok,
         role=role,
+        source=data,
     )
 
 

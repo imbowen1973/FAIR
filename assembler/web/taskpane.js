@@ -475,6 +475,202 @@ function marked(text, term) {
   return out;
 }
 
+/**
+ * The layout geometry for the open corpus, fetched once.
+ *
+ * It sits beside catalog.json for a corpus, and inside the library for
+ * one rendered here. Null when a corpus predates it being published, in
+ * which case a peek says so rather than drawing a blank rectangle.
+ */
+let geometry = null;
+let geometryFor = null;
+
+async function loadGeometry(source) {
+  if (geometryFor === source.url) return geometry;
+  geometryFor = source.url;
+  geometry = null;
+  try {
+    if (source.url.startsWith("wasm:")) {
+      const [owner, repo] = source.url.slice(5).split("/");
+      const ref = branchBySource.get(source.url);
+      const at = ref ? encodeURIComponent(ref) : "HEAD";
+      const res = await fetch(
+        `https://raw.githubusercontent.com/${owner}/${repo}/${at}/layout-geometry.json`
+      );
+      if (res.ok) geometry = await res.json();
+    } else {
+      // Beside catalog.json, which the pane reads from data/.
+      const res = await fetch(joinUrl(source.url, "data/layout-geometry.json"));
+      if (res.ok) geometry = await res.json();
+    }
+  } catch {
+    /* a peek is a convenience; failing to fetch it is not an error */
+  }
+  return geometry;
+}
+
+/**
+ * Show a slide, without inserting it.
+ *
+ * Drawn from the catalog's own copy of the slide and the template's
+ * geometry, by the same code the workbench draws its canvas with — the
+ * pane holds decks as PowerPoint bytes and cannot look inside one, so
+ * the alternative was no preview at all.
+ */
+async function showPeek(hit) {
+  document.querySelector(".peek-backdrop")?.remove();
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "peek-backdrop";
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  });
+
+  const box = document.createElement("div");
+  box.className = "peek";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-label", `Preview of ${hit.slide.title ?? hit.slideId}`);
+
+  const head = document.createElement("div");
+  head.className = "peek-head";
+  const name = document.createElement("strong");
+  name.textContent = hit.slide.title ?? hit.slideId;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "peek-close";
+  close.textContent = "×";
+  close.title = "Close";
+  close.setAttribute("aria-label", "Close the preview");
+  close.addEventListener("click", () => backdrop.remove());
+  head.append(name, close);
+
+  const stage = document.createElement("div");
+  stage.className = "peek-stage";
+  stage.textContent = "Drawing…";
+
+  const foot = document.createElement("p");
+  foot.className = "peek-foot";
+  foot.textContent = hit.sessionTitle ? `in ${hit.sessionTitle}` : "";
+
+  box.append(head, stage, foot);
+  backdrop.append(box);
+  document.body.append(backdrop);
+
+  const escape = (e) => {
+    if (e.key === "Escape") {
+      backdrop.remove();
+      document.removeEventListener("keydown", escape);
+    }
+  };
+  document.addEventListener("keydown", escape);
+  close.focus();
+
+  const geom = await loadGeometry(currentSource);
+  const source = hit.slide.source;
+  if (!geom || !source) {
+    stage.textContent = !source
+      ? "This corpus was built before slides carried their own content, so there is nothing to draw. Re-render the library to see previews."
+      : "This corpus has no layout-geometry.json beside it, so there is nothing to draw the slide into.";
+    return;
+  }
+
+  stage.textContent = "";
+  const drawn = drawPeek(stage, geom, hit.slide.layout, source);
+  if (!drawn) {
+    stage.textContent =
+      `The template has no geometry for the ${hit.slide.layout} layout, ` +
+      "so there is nothing to draw this slide into.";
+  }
+}
+
+/**
+ * A slide, drawn from the template's geometry and the slide's own text.
+ *
+ * Deliberately small, and deliberately not the workbench's canvas: that
+ * one exists to be typed into and brings its editing, its marks and its
+ * media with it. This only has to be recognisable enough to choose
+ * between two slides called "Overview", and neither it nor the canvas is
+ * the authority on how a slide looks — the renderer is, and this is a
+ * preview of what it will produce, not a claim about it.
+ */
+function drawPeek(host, geom, layoutKey, slide) {
+  const layout = geom?.layouts?.[layoutKey];
+  if (!layout?.regions) return false;
+
+  const aspect = geom.slide?.aspect || 1.7778;
+  const stage = document.createElement("div");
+  stage.className = "peek-slide";
+  stage.style.aspectRatio = String(aspect);
+  stage.style.background = geom.theme?.bg1 || "#ffffff";
+  stage.style.color = geom.theme?.tx1 || "#111111";
+
+  for (const [name, rect] of Object.entries(layout.regions)) {
+    const value = slide[name];
+    if (value === undefined || value === null || value === "") continue;
+
+    const box = document.createElement("div");
+    box.className = "peek-region";
+    box.style.left = `${rect.x * 100}%`;
+    box.style.top = `${rect.y * 100}%`;
+    box.style.width = `${rect.w * 100}%`;
+    box.style.height = `${rect.h * 100}%`;
+    if (rect.style?.align === "ctr") box.style.textAlign = "center";
+    if (rect.style?.bold) box.style.fontWeight = "700";
+    // Relative to the slide's own width, so the preview scales with it
+    // rather than pretending every placeholder is the same size.
+    if (rect.style?.sizePt) {
+      box.style.fontSize = `${(rect.style.sizePt / (geom.slide?.widthPt || 720)) * 100}cqw`;
+    }
+    const fill = rect.fill?.slot && geom.theme?.[rect.fill.slot];
+    if (fill) box.style.background = fill;
+    const ink = rect.style?.colorSlot && geom.theme?.[rect.style.colorSlot];
+    if (ink) box.style.color = ink;
+
+    fillPeekRegion(box, value);
+    stage.append(box);
+  }
+
+  host.append(stage);
+  return true;
+}
+
+/** What one placeholder holds: words, a list, or a picture. */
+function fillPeekRegion(box, value) {
+  if (typeof value === "string") {
+    for (const line of value.split(String.fromCharCode(10))) {
+      const p = document.createElement("p");
+      p.textContent = line;
+      box.append(p);
+    }
+    return;
+  }
+  if (Array.isArray(value?.items)) {
+    const list = document.createElement(value.type === "ol" ? "ol" : "ul");
+    for (const item of value.items) {
+      const li = document.createElement("li");
+      li.textContent = typeof item === "string" ? item : item?.text ?? "";
+      if (typeof item === "object" && item?.marker === "none") li.style.listStyle = "none";
+      list.append(li);
+    }
+    box.append(list);
+    return;
+  }
+  if (value?.type === "image" || value?.type === "video") {
+    // No URL is attempted: a corpus serves its media from one place and
+    // a repository from another, and a broken image is worse than an
+    // honest label.
+    const tag = document.createElement("span");
+    tag.className = "peek-media";
+    tag.textContent = `▨ ${String(value.src ?? value.url ?? "picture").split("/").pop()}`;
+    box.append(tag);
+    return;
+  }
+  const p = document.createElement("p");
+  p.textContent = String(value?.text ?? "");
+  box.append(p);
+}
+
 /** The opening of a slide's speaker notes, as a peek at what it does. */
 function firstLines(notes, limit = 160) {
   const text = String(notes ?? "").replace(/\s+/g, " ").trim();
@@ -514,7 +710,19 @@ function renderSearchResults(container, allowed) {
     field.textContent = hit.field;
     field.setAttribute("aria-label", `matched in ${hit.field}`);
 
-    row.append(cb, title, field);
+    const peekBtn = document.createElement("button");
+    peekBtn.type = "button";
+    peekBtn.className = "hit-peek";
+    peekBtn.textContent = "peek";
+    peekBtn.title = `Look at ${shown} without inserting it`;
+    peekBtn.setAttribute("aria-label", `Peek at ${shown}`);
+    peekBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      showPeek(hit);
+    });
+
+    row.append(cb, title, field, peekBtn);
     el.append(row);
 
     // Which session it came from. Two slides called "Overview" are told
@@ -538,7 +746,9 @@ function renderSearchResults(container, allowed) {
     const peek = quotable ? snippet : firstLines(hit.slide.notes);
     if (peek) {
       const snip = document.createElement("p");
-      snip.className = quotable ? "hit-snippet" : "hit-snippet peek";
+      // Not "peek": that is the modal, and the class collided — the styles
+      // for a dialog were landing on a paragraph.
+      snip.className = quotable ? "hit-snippet" : "hit-snippet from-notes";
       snip.append(marked(peek, quotable ? query : ""));
       el.append(snip);
     }

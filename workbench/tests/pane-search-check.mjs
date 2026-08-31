@@ -60,6 +60,15 @@ const WITH_STRUCTURE = {
       sessionId: `s${i + 1}`,
       title: `${id} slide ${n}`,
       notes: `What this slide does in ${id}: the point it makes and the question it opens.`,
+      // Enough to draw the slide without opening it.
+      layout: "Cards",
+      source: {
+        id: `s${i + 1}-${n}`,
+        layout: "Cards",
+        title: `${id} slide ${n}`,
+        head1: "A heading",
+        card1: { type: "ul", items: ["First point", "Second point"] },
+      },
       // One slide, two levels down, so filtering has something to find
       // that a closed tree would otherwise hide.
       develops: id === "02-profiles" && n === 2 ? ["C1"] : [],
@@ -96,6 +105,36 @@ async function run(catalog) {
   };
   await page.route("https://corpus.test/**", (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/+/, "");
+    if (path === "data/layout-geometry.json") {
+      // Published beside the catalog, so a reader can draw a slide.
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          slide: { aspect: 1.7778, widthPt: 720 },
+          theme: { bg1: "#ffffff", tx1: "#111111", lt1: "#ffffff", accent1: "#4F81BD" },
+          layouts: {
+            Cards: {
+              regions: {
+                title: {
+                  x: 0.05, y: 0.05, w: 0.9, h: 0.15, type: "title",
+                  style: { align: "ctr", sizePt: 40 },
+                },
+                head1: {
+                  x: 0.05, y: 0.25, w: 0.4, h: 0.1, type: "body",
+                  style: { sizePt: 18, bold: true, colorSlot: "lt1" },
+                  fill: { slot: "accent1" },
+                },
+                card1: {
+                  x: 0.05, y: 0.37, w: 0.4, h: 0.5, type: "body",
+                  style: { sizePt: 15 },
+                },
+              },
+            },
+          },
+        }),
+      });
+    }
     if (catalog && path === "data/catalog.json") {
       return route.fulfill({
         status: 200,
@@ -181,14 +220,42 @@ async function run(catalog) {
     })),
   }));
 
+  // Peek: a look at the slide without inserting it.
+  let peek = null;
+  const opened = await page.evaluate(() => {
+    const b = document.querySelector(".hit-peek");
+    if (!b) return false;
+    b.click();
+    return true;
+  });
+  if (opened) {
+    await page.waitForTimeout(900);
+    peek = await page.evaluate(() => {
+      const box = document.querySelector(".peek");
+      if (!box) return null;
+      const tidy = (t) => t.replace(/[ ]+/g, " ").trim().slice(0, 40);
+      return {
+        title: box.querySelector(".peek-head strong")?.textContent ?? "",
+        regions: [...box.querySelectorAll(".peek-region")].map((r) => tidy(r.textContent)),
+        stage: Boolean(box.querySelector(".peek-slide")),
+        foot: box.querySelector(".peek-foot")?.textContent ?? "",
+      };
+    });
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+  }
+  const stillOpen = await page.evaluate(() => Boolean(document.querySelector(".peek")));
+
   await page.close();
-  return { errors, results };
+  return { errors, results, peek, stillOpen };
 }
 
 const CATALOG = null;
 const out = await run(WITH_STRUCTURE);
 console.log("heading:", JSON.stringify(out.results.heading));
-for (const h of out.results.hits.slice(0, 6)) console.log(" ", JSON.stringify(h));
+for (const h of out.results.hits.slice(0, 2)) console.log(" ", JSON.stringify(h));
+console.log("peek:", JSON.stringify(out.peek));
+console.log("closed on Escape:", !out.stillOpen);
 if (out.errors.length) console.log("errors:", out.errors.slice(0, 3));
 
 const failed =
@@ -202,7 +269,15 @@ const failed =
   out.results.hits.some((h) => h.snippet && h.snippet.trim() === h.title.trim()) ||
   // ...and when there is nothing to quote, the notes stand in, so a
   // result is judgeable without opening the slide.
-  out.results.hits.some((h) => !h.snippet);
+  out.results.hits.some((h) => !h.snippet) ||
+  // The peek draws the slide rather than describing it.
+  !out.peek ||
+  !out.peek.stage ||
+  out.peek.regions.length < 3 ||
+  !out.peek.regions.some((r) => /First point/.test(r)) ||
+  !/in /.test(out.peek.foot) ||
+  // ...and Escape closes it.
+  out.stillOpen;
 
 console.log(failed ? String.fromCharCode(10) + "FAIL" : String.fromCharCode(10) + "PASS");
 await browser.close();

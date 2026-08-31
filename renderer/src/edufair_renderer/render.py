@@ -634,6 +634,12 @@ def render_session(
                 "dok": slide_src.dok,
                 # Carried so the pane can search narration, not just titles.
                 "notes": slide_src.notes,
+                # Enough to draw the slide without opening it: the layout
+                # it binds to and the slide exactly as the file wrote it.
+                # The pane holds rendered decks as bytes and cannot look
+                # inside one, so a preview had to come from somewhere.
+                "layout": slide_src.layout,
+                "source": slide_src.source,
             }
         )
 

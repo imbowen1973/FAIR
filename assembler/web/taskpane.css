@@ -310,8 +310,48 @@ button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
   margin: 1px 0 0 22px; font-size: 0.72rem; opacity: 0.75;
 }
 /* Standing in for a quote, not quoting: the slide's own notes. */
-.hit-snippet.peek { opacity: 0.72; font-style: italic; }
+.hit-snippet.from-notes { opacity: 0.72; font-style: italic; }
 .hit mark {
   background: rgba(255, 210, 0, 0.38); color: inherit;
   padding: 0 1px; border-radius: 2px;
 }
+
+/* Looking at a slide without inserting it. The pane holds decks as
+   PowerPoint bytes and cannot look inside one, so this is drawn from the
+   catalog's own copy of the slide. */
+.hit-peek {
+  margin-left: auto; flex: none; font-size: 0.7rem; padding: 1px 7px;
+  border: 1px solid var(--border, #c3ccd5); border-radius: 999px;
+  background: none; color: inherit; opacity: 0.75; cursor: pointer;
+}
+.hit-peek:hover { opacity: 1; background: rgba(0, 0, 0, 0.05); }
+.peek-backdrop {
+  position: fixed; inset: 0; z-index: 50; display: flex;
+  align-items: center; justify-content: center; padding: 12px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.peek {
+  background: var(--bg-raised, #fff); border-radius: 10px; padding: 12px;
+  max-width: 96vw; max-height: 90vh; overflow: auto;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+.peek-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.peek-head strong { font-size: 0.86rem; flex: 1 1 auto; }
+.peek-close {
+  flex: none; border: 0; background: none; font-size: 1.1rem; line-height: 1;
+  cursor: pointer; color: inherit; padding: 2px 6px;
+}
+.peek-stage { min-width: 300px; min-height: 60px; font-size: 0.78rem; }
+.peek-slide {
+  position: relative; width: min(70vw, 460px); container-type: inline-size;
+  border: 1px solid var(--border, #c3ccd5); border-radius: 4px; overflow: hidden;
+}
+.peek-region {
+  position: absolute; overflow: hidden; padding: 1.2cqw;
+  line-height: 1.25; font-size: 3cqw;
+}
+.peek-region p { margin: 0 0 0.4em; }
+.peek-region ul, .peek-region ol { margin: 0; padding-left: 1.1em; }
+.peek-region li { margin: 0 0 0.3em; }
+.peek-media { opacity: 0.6; }
+.peek-foot { margin: 8px 0 0; font-size: 0.72rem; opacity: 0.7; }
