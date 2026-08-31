@@ -333,10 +333,9 @@ export class GitHub {
       files = rest;
       parent = await this.headSha(owner, name, branch);
     }
-    const base = parent
-      ? await this.request(`/repos/${owner}/${name}/git/commits/${parent}`)
-      : null;
-
+    // The blobs are the same whatever the branch does underneath: they
+    // are this session's files, and uploading them again on a retry
+    // would only make more of them.
     const blobs = [];
     for (const file of files) {
       const blob = await this.request(`/repos/${owner}/${name}/git/blobs`, {
@@ -349,28 +348,61 @@ export class GitHub {
       blobs.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
     }
 
-    const tree = await this.request(`/repos/${owner}/${name}/git/trees`, {
-      method: "POST",
-      body: base ? { base_tree: base.tree.sha, tree: blobs } : { tree: blobs },
-    });
-
-    const created = await this.request(`/repos/${owner}/${name}/git/commits`, {
-      method: "POST",
-      body: { message, tree: tree.sha, parents: parent ? [parent] : [] },
-    });
-
-    if (parent) {
-      await this.request(
-        `/repos/${owner}/${name}/git/refs/heads/${encodeURIComponent(branch)}`,
-        { method: "PATCH", body: { sha: created.sha } }
-      );
-    } else {
-      await this.request(`/repos/${owner}/${name}/git/refs`, {
+    /** Build a tree and a commit on `onto`, and try to move the branch. */
+    const commitOnto = async (onto) => {
+      const base = onto
+        ? await this.request(`/repos/${owner}/${name}/git/commits/${onto}`)
+        : null;
+      const tree = await this.request(`/repos/${owner}/${name}/git/trees`, {
         method: "POST",
-        body: { ref: `refs/heads/${branch}`, sha: created.sha },
+        body: base ? { base_tree: base.tree.sha, tree: blobs } : { tree: blobs },
       });
+      const created = await this.request(`/repos/${owner}/${name}/git/commits`, {
+        method: "POST",
+        body: { message, tree: tree.sha, parents: onto ? [onto] : [] },
+      });
+      if (onto) {
+        await this.request(
+          `/repos/${owner}/${name}/git/refs/heads/${encodeURIComponent(branch)}`,
+          { method: "PATCH", body: { sha: created.sha } }
+        );
+      } else {
+        await this.request(`/repos/${owner}/${name}/git/refs`, {
+          method: "POST",
+          body: { ref: `refs/heads/${branch}`, sha: created.sha },
+        });
+      }
+      return created.sha;
+    };
+
+    // Uploading blobs, building a tree and writing a commit takes
+    // seconds, and a branch can move in seconds -- another tab, another
+    // person, a merge on GitHub. The ref update then fails:
+    //
+    //   422  Update is not a fast forward
+    //
+    // which is git protecting the other person's commit, and correct.
+    // Giving up at that point is not: the work is still in the browser
+    // and the answer is to put it on top of what arrived instead.
+    //
+    // Safe because every write here is a whole file. Rebuilding on the
+    // new head keeps every file this session did not touch, exactly as
+    // the other commit left it, and applies this session's version of
+    // the ones it did. Nothing merges line by line and nothing pretends
+    // to.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await commitOnto(parent);
+      } catch (err) {
+        const moved =
+          err.status === 422 && /fast forward/i.test(err.message ?? "");
+        if (!moved || attempt >= 2) throw err;
+        const now = await this.headSha(owner, name, branch);
+        if (now === parent) throw err; // 422 for some other reason
+        parent = now;
+        this.onRebased?.(branch, now);
+      }
     }
-    return created.sha;
   }
 
   // ---- provisioning ---------------------------------------------------

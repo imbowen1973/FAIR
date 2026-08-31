@@ -3274,6 +3274,12 @@ async function save() {
     if (saveButton) saveButton.disabled = true;
     status(`Saving to ${branch}…`);
     const created = await state.gh.ensureBranch(owner, repo, branch, defaultBranch);
+    // Set if the commit had to be rebuilt on a head that arrived while
+    // this save was in flight, so the report can say so.
+    let rebasedOnto = null;
+    state.gh.onRebased = (_, sha) => {
+      rebasedOnto = sha;
+    };
     const message =
       `Edit ${state.blockId}\n\n` +
       changed.map((f) => `- ${f.path}`).join("\n");
@@ -3299,6 +3305,7 @@ async function save() {
     state.edits = new Map();
     state.library = readLibrary(state.files);
 
+    state.gh.onRebased = null;
     // So the next visit opens here rather than on the published version.
     rememberBranch(owner, repo, branch);
     state.repo.branch = branch;
@@ -3307,12 +3314,28 @@ async function save() {
     renderSlide();
     renderBranchNote();
     status(
-      `Saved to ${branch} (${sha.slice(0, 7)})${created ? " — branch created" : ""}.`,
+      rebasedOnto
+        ? `Saved to ${branch} (${sha.slice(0, 7)}). The branch had moved while ` +
+            "this was saving, so your files went on top of what was already " +
+            "there — anything you did not touch is untouched."
+        : `Saved to ${branch} (${sha.slice(0, 7)})${created ? " — branch created" : ""}.`,
       "ok"
     );
     return true;
   } catch (err) {
-    status(`Save failed: ${err.message}`, "error");
+    // The raw API text for this one is "Update is not a fast forward"
+    // against a URL-encoded ref, which says nothing about what happened
+    // or what to do. It means the branch moved while the save was in
+    // flight and could not be caught up.
+    const moved = err.status === 422 && /fast forward/i.test(err.message ?? "");
+    status(
+      moved
+        ? `${branch} moved while this was saving, and kept moving — another ` +
+            "tab, another person, or a merge on GitHub. Nothing here is lost: " +
+            "press Save again, or use Submit to open a branch of your own."
+        : `Save failed: ${err.message}`,
+      "error"
+    );
     return false;
   } finally {
     updateActions();
