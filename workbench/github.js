@@ -153,13 +153,44 @@ export class GitHub {
     return data.tree.filter((e) => e.type === "blob").map((e) => e.path);
   }
 
-  /** File contents as text. */
+  /**
+   * File contents as text.
+   *
+   * The message used to be `cannot read attribution.yaml (400)` and
+   * nothing else, which says neither which repository nor which branch
+   * was being read -- and reading is the one thing here that depends on
+   * both. A 400 in particular is raw.githubusercontent refusing the
+   * *address*: it answers 404 for a branch that is not there and 400 for
+   * a ref it will not accept at all, so the two want opposite answers
+   * and the number alone cannot tell them apart.
+   */
   async file(owner, name, path, ref = "HEAD") {
-    const res = await fetch(
-      `https://raw.githubusercontent.com/${owner}/${name}/${encodeURIComponent(ref)}/${path}`
-    );
+    const url = `https://raw.githubusercontent.com/${owner}/${name}/${encodeURIComponent(ref)}/${path}`;
+    let res;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      throw new GitHubError(
+        `could not reach GitHub for ${path} on ${ref} (${err.message})`,
+        0,
+        path
+      );
+    }
     if (!res.ok) {
-      throw new GitHubError(`cannot read ${path} (${res.status})`, res.status, path);
+      const where = `${owner}/${name} on ${ref}`;
+      const why =
+        res.status === 400
+          ? ` — GitHub would not accept that address. The branch name is the ` +
+            `usual reason.`
+          : res.status === 404
+            ? ` — no such file on that branch. A private repository reads as ` +
+              `missing here too: these reads are anonymous.`
+            : "";
+      throw new GitHubError(
+        `cannot read ${path} from ${where} (${res.status})${why}`,
+        res.status,
+        path
+      );
     }
     return res.text();
   }
