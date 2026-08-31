@@ -254,3 +254,88 @@ def test_the_error_says_which_layout_does_declare_it(tmp_path):
     assert repr(region) in message
     assert repr(holder) in message
     assert "instead" in message
+
+
+def _with_image(layout: str, region: str, src: str) -> str:
+    return textwrap.dedent(
+        f"""\
+        ---
+        session: '01'
+        title: A block
+        version: 1.0.0
+        ---
+
+        --- slide
+        id: has-a-picture
+        layout: {layout}
+        {region}:
+          type: image
+          src: {src}
+        ---
+        """
+    )
+
+
+def _picture_shape():
+    """A layout and a region that can hold a picture."""
+    layouts = yaml.safe_load((EXAMPLES / "layout-map.yaml").read_text(encoding="utf-8"))
+    for name, entry in layouts.items():
+        if name.startswith("_"):
+            continue
+        body = [r for r in ((entry or {}).get("regions") or {}) if r != "title"]
+        if body:
+            return name, body[0]
+    return None, None
+
+
+@pytest.mark.parametrize("spelling", ["media/pic.png", "blocks/01-b/media/pic.png"])
+def test_both_spellings_of_a_media_path_render(tmp_path, spelling):
+    # An upload writes the first; choosing an image already in the
+    # library writes the second, and the renderer used to look for
+    # blocks/01-b/blocks/01-b/media/pic.png and refuse the slide. The
+    # canvas draws both, so the author sees a picture and a deck that
+    # will not build.
+    layout, region = _picture_shape()
+    if layout is None:
+        pytest.skip("no body region in the example layout map")
+
+    root = _library(tmp_path / "lib", _with_image(layout, region, spelling))
+    media = root / "blocks" / "01-b" / "media"
+    media.mkdir(parents=True)
+    # A real PNG, small: python-pptx opens it for its dimensions.
+    media.joinpath("pic.png").write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753"
+            "de0000000c4944415408d763f8cfc00000030101003c1c2d840000000049454e"
+            "44ae426082"
+        )
+    )
+
+    summary = build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=tmp_path / "out",
+        warn=lambda m: None,
+    )
+    catalog = json.loads(Path(summary["catalog"]).read_text(encoding="utf-8"))
+    assert catalog["problems"] == []
+    assert [s["slideId"] for s in catalog["slides"]] == ["has-a-picture"]
+
+
+def test_a_picture_that_is_genuinely_missing_still_fails(tmp_path):
+    # The fallback must not become "look everywhere until something
+    # turns up". A src naming nothing is still an error, and it names
+    # the place a reader would look first.
+    layout, region = _picture_shape()
+    if layout is None:
+        pytest.skip("no body region in the example layout map")
+    root = _library(tmp_path / "lib", _with_image(layout, region, "media/absent.png"))
+    with pytest.raises(RenderError, match="image not found"):
+        build_corpus(
+            library=root,
+            template=root / "template.pptx",
+            layout_map=root / "layout-map.yaml",
+            out_dir=tmp_path / "out",
+            warn=lambda m: None,
+        )

@@ -323,8 +323,51 @@ def _video_poster(build_dir: Path) -> Path:
     return poster
 
 
+def _library_root(base_dir: Path) -> Path | None:
+    """The library a block belongs to, if this is a library at all.
+
+    A block lives at <root>/blocks/<id>, so the root is two up. A flat
+    sessions directory has no root and gets None.
+    """
+    parent = base_dir.parent
+    return parent.parent if parent.name == "blocks" else None
+
+
+def _asset_path(base_dir: Path, src: str) -> Path:
+    """Where the media a slide names actually is.
+
+    A slide names its media relative to its own block, which is what an
+    upload writes: `media/consortium.jpg`. But the workbench's picker
+    offers every image in the library and writes the repo-relative path
+    for one it did not just upload, so the block got counted twice:
+
+        blocks/01-intro/blocks/01-intro/media/consortium.jpg
+
+    Those slides are committed and the canvas draws them perfectly --
+    it accepts both spellings -- so refusing them here fails a deck for
+    a difference the author cannot see. A path that resolves from the
+    library root is accepted as well.
+
+    Which also makes reuse across blocks expressible, and it has to be:
+    the picker lists the whole library, so it was already being asked
+    for.
+
+    The block-relative path is returned when neither exists, so the
+    error names the place a reader would look first.
+    """
+    direct = base_dir / src
+    if direct.exists():
+        return direct
+    root = _library_root(base_dir)
+    if root is not None:
+        from_root = root / src
+        if from_root.exists():
+            return from_root
+    return direct
+
+
 def _fill_video(slide, placeholder, region: Region, base_dir: Path, build_dir: Path) -> None:
-    poster = base_dir / region.src if region.src else _video_poster(build_dir)
+    poster = _asset_path(base_dir, region.src) if region.src else _video_poster(build_dir)
     pic = _fill_image(slide, placeholder, poster, region.fit or DEFAULT_IMAGE_FIT)
     pic.click_action.hyperlink.address = region.url
 
@@ -370,9 +413,12 @@ def _fill_region(
             code_typeface=code_typeface,
         )
     elif region.type == "image":
-        _fill_image(slide, placeholder, base_dir / region.src, region.fit or DEFAULT_IMAGE_FIT)
+        _fill_image(
+            slide, placeholder, _asset_path(base_dir, region.src),
+            region.fit or DEFAULT_IMAGE_FIT,
+        )
     elif region.type == "mermaid":
-        image = resolve_mermaid(base_dir / region.src, build_dir)
+        image = resolve_mermaid(_asset_path(base_dir, region.src), build_dir)
         _fill_image(slide, placeholder, image, region.fit or DEFAULT_IMAGE_FIT)
     elif region.type == "video":
         _fill_video(slide, placeholder, region, base_dir, build_dir)

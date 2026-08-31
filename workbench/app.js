@@ -2481,6 +2481,28 @@ function availableImages() {
   return [...new Set([...repoImages(state.tree), ...staged])];
 }
 
+/**
+ * A media src as this block spells it.
+ *
+ * An upload writes `media/x.jpg` — relative to the block, which is how
+ * the renderer resolves it. The picker offers every image in the
+ * library and hands back the repo path, so choosing one already in this
+ * block wrote `blocks/<id>/media/x.jpg`, and the renderer then looked
+ * under `blocks/<id>/blocks/<id>/media/x.jpg` and refused the slide.
+ *
+ * The canvas draws both, which is why this survived: the picture
+ * appeared, and the deck would not build.
+ *
+ * An image from another block keeps its full path — that is the only
+ * way to say it, and the renderer now resolves it from the library root.
+ */
+function blockRelative(next) {
+  const src = next?.src;
+  if (typeof src !== "string" || !state.blockId) return {};
+  const mine = `blocks/${state.blockId}/`;
+  return src.startsWith(mine) ? { src: src.slice(mine.length) } : {};
+}
+
 /** Fill a placeholder: a panel above the slide, not a modal. */
 function openMediaPicker(region, value, kind) {
   const host = $("panels");
@@ -2507,7 +2529,8 @@ function openMediaPicker(region, value, kind) {
       // way the author already said they wanted it.
       set(typeof now === "object" && now ? { ...now, fit } : { ...value, fit });
     },
-    onPick: (next) => set({ ...(value?.fit ? { fit: value.fit } : {}), ...next }),
+    onPick: (next) =>
+      set({ ...(value?.fit ? { fit: value.fit } : {}), ...next, ...blockRelative(next) }),
     onClear: () => {
       const current = { ...slideData(state.slideIndex) };
       delete current[region];
