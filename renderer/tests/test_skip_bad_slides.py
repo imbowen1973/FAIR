@@ -339,3 +339,97 @@ def test_a_picture_that_is_genuinely_missing_still_fails(tmp_path):
             out_dir=tmp_path / "out",
             warn=lambda m: None,
         )
+
+
+def test_full_means_the_content_placeholder_whatever_it_is_called(tmp_path):
+    # The point. A layout map names the same PowerPoint placeholder
+    # differently in every layout — `full` in Title and Content,
+    # `picture` in Picture with Caption — so a slide written for one was
+    # undeclared in the next, for no reason but the name. Both are the
+    # placeholder a picture goes into, so both answer to `full`.
+    slides = textwrap.dedent(
+        """\
+        ---
+        session: '01'
+        title: A block
+        version: 1.0.0
+        ---
+
+        --- slide
+        id: text-in-a-picture-layout
+        layout: Picture
+        title: A picture slide
+        full: Words in the content placeholder
+        ---
+
+        --- slide
+        id: image-in-a-picture-layout
+        layout: Picture
+        title: Another
+        full:
+          type: image
+          src: media/pic.png
+        ---
+
+        --- slide
+        id: still-works-in-full
+        layout: Full
+        full: The layout that already called it that
+        ---
+        """
+    )
+    root = _library(tmp_path / "lib", slides)
+    media = root / "blocks" / "01-b" / "media"
+    media.mkdir(parents=True)
+    media.joinpath("pic.png").write_bytes(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753"
+            "de0000000c4944415408d763f8cfc00000030101003c1c2d840000000049454e"
+            "44ae426082"
+        )
+    )
+
+    summary = build_corpus(
+        library=root,
+        template=root / "template.pptx",
+        layout_map=root / "layout-map.yaml",
+        out_dir=tmp_path / "out",
+        warn=lambda m: None,
+    )
+    catalog = json.loads(Path(summary["catalog"]).read_text(encoding="utf-8"))
+    assert catalog["problems"] == []
+    assert [s["slideId"] for s in catalog["slides"]] == [
+        "text-in-a-picture-layout",
+        "image-in-a-picture-layout",
+        "still-works-in-full",
+    ]
+
+
+def test_a_layout_with_two_content_placeholders_still_asks(tmp_path):
+    # Comparison has left and right, and guessing which column somebody
+    # meant is worse than refusing. The alias exists to remove a naming
+    # accident, not to make every layout accept everything.
+    slides = textwrap.dedent(
+        """\
+        ---
+        session: '01'
+        title: A block
+        version: 1.0.0
+        ---
+
+        --- slide
+        id: ambiguous
+        layout: Comparison
+        full: Which column did you mean?
+        ---
+        """
+    )
+    root = _library(tmp_path / "lib", slides)
+    with pytest.raises(RenderError, match="not declared for layout 'Comparison'"):
+        build_corpus(
+            library=root,
+            template=root / "template.pptx",
+            layout_map=root / "layout-map.yaml",
+            out_dir=tmp_path / "out",
+            warn=lambda m: None,
+        )

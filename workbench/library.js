@@ -398,10 +398,55 @@ export function slideRegions(slide) {
 /**
  * The regions a layout offers, from layout-map.yaml, in map order.
  * `_style` is a settings block, not a layout.
+ *
+ * `geometry` is optional and only affects one thing: every layout with a
+ * single content placeholder also answers to `full`, whatever the map
+ * calls it — see mainContentRegion. Passing it keeps this in step with
+ * the renderer, which applies the same rule; leaving it out gives the
+ * literal contents of the file.
  */
-export function layoutRegions(layoutMap, layoutKey) {
+export function layoutRegions(layoutMap, layoutKey, geometry = null) {
   const entry = layoutMap?.[layoutKey];
-  return entry && entry.regions ? Object.keys(entry.regions) : [];
+  if (!entry || !entry.regions) return [];
+  const named = Object.keys(entry.regions);
+  if (named.includes(MAIN_CONTENT_REGION)) return named;
+  const main = mainContentRegion(geometry, layoutKey, named);
+  return main ? [...named, MAIN_CONTENT_REGION] : named;
+}
+
+/** The name a slide uses for "the content placeholder". */
+export const MAIN_CONTENT_REGION = "full";
+
+// What PowerPoint will let you drop a picture into. A body placeholder
+// takes text and nothing else, which is why a section header's subtitle
+// is not a candidate however alone it is on the slide.
+const PLACEHOLDER_TAKES_A_PICTURE = new Set(["object", "picture"]);
+
+/**
+ * The one region of a layout that holds the slide's content, or null
+ * when there is a real choice to make.
+ *
+ * The layout map names the same PowerPoint placeholder differently in
+ * every layout -- `full` in Title and Content, `picture` in Picture with
+ * Caption -- so a slide written for one was undeclared in the next for
+ * no reason but the name. Where a layout has exactly one such
+ * placeholder it answers to `full` as well. Where it has two --
+ * Comparison, Split, Cards -- this returns null, because guessing which
+ * column somebody meant is worse than asking.
+ *
+ * Mirrors layoutmap.apply_content_aliases in the renderer, from the same
+ * placeholder types the template itself declares.
+ */
+export function mainContentRegion(geometry, layoutKey, named = null) {
+  const regions = geometry?.layouts?.[layoutKey]?.regions;
+  if (!regions) return null;
+  const holders = Object.entries(regions)
+    .filter(([name]) => !named || named.includes(name))
+    .filter(([, rect]) =>
+      PLACEHOLDER_TAKES_A_PICTURE.has(String(rect?.type ?? "").toLowerCase())
+    )
+    .map(([name]) => name);
+  return holders.length === 1 ? holders[0] : null;
 }
 
 export function layoutKeys(layoutMap) {

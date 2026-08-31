@@ -14,6 +14,7 @@ from pathlib import Path
 import yaml
 
 from . import yamlio
+from pptx.enum.shapes import PP_PLACEHOLDER
 from pptx.presentation import Presentation
 
 
@@ -79,6 +80,57 @@ def load_layout_map(path: Path) -> dict[str, LayoutBinding]:
             raise LayoutMapError(f"{path}: entry {key!r} maps two regions to the same index")
         bindings[key] = LayoutBinding(key=key, layout_name=layout_name, regions=dict(regions))
     return bindings
+
+
+# The name a slide uses for "the content placeholder", whichever one
+# this layout calls it.
+MAIN_CONTENT_REGION = "full"
+
+# What PowerPoint will let you drop a picture into. A BODY placeholder
+# takes text and nothing else, which is why a section header's subtitle
+# is not a candidate however alone it is on the slide.
+CONTENT_TYPES = {PP_PLACEHOLDER.OBJECT, PP_PLACEHOLDER.PICTURE}
+
+
+def _main_content(binding: LayoutBinding, layout) -> str | None:
+    """The one region of this layout that holds the slide's content.
+
+    A layout map names the same PowerPoint placeholder differently in
+    every layout — `full` in Title and Content, `picture` in Picture with
+    Caption, `content` in Content with Caption — so a slide could not be
+    moved between them, and content written for one was undeclared in
+    the next. That is a naming accident, not a difference in the
+    template: all three are the placeholder a picture goes into.
+
+    So where a layout has exactly one of those, it answers to `full` as
+    well as to its own name. Where it has two — Comparison, Split, Cards
+    — there is a real choice to make and this returns None, because
+    guessing which column somebody meant is worse than asking.
+    """
+    types = {ph.placeholder_format.idx: ph.placeholder_format.type for ph in layout.placeholders}
+    holders = [r for r, idx in binding.regions.items() if types.get(idx) in CONTENT_TYPES]
+    return holders[0] if len(holders) == 1 else None
+
+
+def apply_content_aliases(bindings: dict[str, LayoutBinding], prs: Presentation) -> None:
+    """Let every single-content layout answer to `full`.
+
+    Applied to the bindings rather than written into layout-map.yaml, so
+    libraries that already exist gain it without regenerating anything.
+    A map that declares `full` itself is left alone.
+    """
+    layouts_by_name = {
+        layout.name: layout for master in prs.slide_masters for layout in master.slide_layouts
+    }
+    for binding in bindings.values():
+        if MAIN_CONTENT_REGION in binding.regions:
+            continue
+        layout = layouts_by_name.get(binding.layout_name)
+        if layout is None:
+            continue
+        region = _main_content(binding, layout)
+        if region is not None:
+            binding.regions[MAIN_CONTENT_REGION] = binding.regions[region]
 
 
 def validate_against_template(

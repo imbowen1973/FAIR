@@ -997,7 +997,7 @@ function previewData(data) {
   return fillRole(data, {
     blockMeta: currentBlock()?.meta,
     catalogue: catalogueDoc().outcomes || {},
-    layoutRegions: layoutRegions(state.library.layoutMap, data.layout),
+    layoutRegions: layoutRegions(state.library.layoutMap, data.layout, state.library.geometry),
   });
 }
 
@@ -1110,7 +1110,7 @@ function renderCanvas({ redraw = true } = {}) {
   // slide changing. Aiming at a region this layout does not offer is how
   // a picture ends up in a key the renderer will not accept.
   if (activeRegion) {
-    const offered = layoutRegions(state.library.layoutMap, data.layout);
+    const offered = layoutRegions(state.library.layoutMap, data.layout, state.library.geometry);
     if (offered.length && !offered.includes(activeRegion)) activeRegion = null;
   }
   if (redraw) {
@@ -1118,7 +1118,7 @@ function renderCanvas({ redraw = true } = {}) {
       geometry: state.library.geometry,
       layoutKey: data.layout,
       slide: shown,
-      derived: roleRegions(data, layoutRegions(state.library.layoutMap, data.layout)),
+      derived: roleRegions(data, layoutRegions(state.library.layoutMap, data.layout, state.library.geometry)),
       media: mediaHelpers(),
       attribution: attributionForCanvas(),
       onMedia: openMediaPicker,

@@ -25,6 +25,7 @@ from .attribution import (
 )
 from .creation_id import derive_creation_id, inject_creation_id
 from .layoutmap import (
+    apply_content_aliases,
     LayoutBinding,
     LayoutMapError,
     load_layout_map,
@@ -532,6 +533,10 @@ def render_session(
 
     prs = Presentation(str(template_path))
     validate_against_template(bindings, prs, template_path)
+    # Every layout with a single content placeholder also answers to
+    # `full`, so a slide's content is not undeclared merely because the
+    # next layout calls that placeholder something else.
+    apply_content_aliases(bindings, prs)
 
     layouts_by_name = {
         layout.name: layout for master in prs.slide_masters for layout in master.slide_layouts
