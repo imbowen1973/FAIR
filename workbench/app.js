@@ -1001,6 +1001,72 @@ function previewData(data) {
   });
 }
 
+/**
+ * Content on a slide that this layout has no placeholder for.
+ *
+ * drawSlide has always returned these and both callers threw the value
+ * away, so the region simply did not appear: the slide looked finished,
+ * the words were still in the file, and the first anyone heard of it was
+ * the renderer refusing the deck --
+ *
+ *   slide 'wp52-25': region 'full' is not declared for layout 'Picture';
+ *   expected one of ['caption', 'picture', 'title']
+ *
+ * -- in a Python traceback, at preview time, naming a slide id rather
+ * than a slide anybody can see. It is said here instead, on the slide it
+ * belongs to, with the panel that already knows how to move it.
+ */
+function reportUnplaced(unplaced, data) {
+  if (!unplaced || !unplaced.size) return;
+  const regions = [...unplaced];
+  const host = $("canvas");
+
+  const note = document.createElement("p");
+  note.className = "warn";
+  note.dataset.unplacedRegions = regions.join(",");
+  note.textContent =
+    `${regions.join(" and ")} ${regions.length === 1 ? "has" : "have"} content, ` +
+    `but the ${data.layout} layout has no placeholder for ` +
+    `${regions.length === 1 ? "it" : "them"}. Nothing is lost — it is in the ` +
+    "file — but the deck will not render until it has somewhere to go.";
+
+  const fix = document.createElement("button");
+  fix.type = "button";
+  fix.className = "link";
+  fix.id = "fix-unplaced";
+  fix.textContent = "Say where it should go";
+  fix.addEventListener("click", () => {
+    const current = slideData(state.slideIndex);
+    const panel = document.createElement("div");
+    $("panels").prepend(panel);
+    relayoutPanel(panel, {
+      slide: current,
+      layoutMap: state.library.layoutMap,
+      // The layout is not changing: asking what this one does with the
+      // slide as it stands is exactly the question, and layoutChange
+      // already answers it.
+      nextLayout: data.layout,
+      onApply: (moves) => {
+        panel.remove();
+        commitSlide(applyLayoutChange(current, state.library.layoutMap, data.layout, moves));
+        renderCanvas();
+        renderOutline();
+        const moved = Object.entries(moves).filter(([, to]) => to);
+        status(
+          moved.length
+            ? `Moved ${moved.map(([f, t]) => `${f} → ${t}`).join(", ")}.`
+            : "Dropped it.",
+          "ok"
+        );
+      },
+      onCancel: () => panel.remove(),
+    });
+  });
+
+  note.append(" ", fix);
+  host.appendChild(note);
+}
+
 function renderCanvas({ redraw = true } = {}) {
   // A session with no slides yet. There is nothing to draw and nothing
   // wrong: the deck has not been started. Saying anything about layouts
@@ -1048,7 +1114,7 @@ function renderCanvas({ redraw = true } = {}) {
     if (offered.length && !offered.includes(activeRegion)) activeRegion = null;
   }
   if (redraw) {
-    drawSlide($("canvas"), {
+    const unplaced = drawSlide($("canvas"), {
       geometry: state.library.geometry,
       layoutKey: data.layout,
       slide: shown,
@@ -1082,6 +1148,7 @@ function renderCanvas({ redraw = true } = {}) {
         paintListType($("ribbon"), regionType(region));
       },
     });
+    reportUnplaced(unplaced, data);
   }
   offerGeometry();
   renderMeta();

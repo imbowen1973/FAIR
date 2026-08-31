@@ -12,6 +12,7 @@
 
 import { fromElement, toHtml, toNodes } from "./markdom.js";
 import { plainText } from "./marks.js";
+import { RESERVED_SLIDE_KEYS } from "./library.js";
 
 const ALIGN = { l: "left", ctr: "center", r: "right", just: "justify" };
 
@@ -670,6 +671,11 @@ export function drawSlide(
   const boxes = [];
 
   for (const [region, value] of Object.entries(slide || {})) {
+    // id, layout, notes, role and the rest are the slide's own keys, not
+    // regions. They have never had placeholders and never should, so
+    // counting them as content with nowhere to go made the returned set
+    // useless -- which went unnoticed for as long as nobody read it.
+    if (RESERVED_SLIDE_KEYS.has(region)) continue;
     const rect = layout.regions[region];
     if (!rect) {
       unplaced.add(region);
