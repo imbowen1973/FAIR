@@ -26,6 +26,12 @@ import {
 
 // Decks rendered in-browser (wasm sources), keyed by source url then
 // sourcePptx. RAM only — nothing is stored anywhere.
+// Which branch of each library is being rendered, keyed by source url.
+// Absent means the default branch, which is what most libraries only
+// ever have.
+const branchBySource = new Map();
+let branchesHere = [];
+
 const memoryDecks = new Map();
 // Blob URLs for assets a wasm render produced (the funder logo), keyed
 // by source url then asset name. RAM only, like the decks.
@@ -87,7 +93,13 @@ async function loadCatalog(source) {
   if (source.url.startsWith("wasm:")) {
     const [owner, repo] = source.url.slice(5).split("/");
     const { loadLibraryFromGitHub } = await import("./wasm-renderer.js");
-    const { catalog, decks, assets } = await loadLibraryFromGitHub(owner, repo, setStatus);
+    const ref = branchBySource.get(source.url) ?? null;
+    const { catalog, decks, assets } = await loadLibraryFromGitHub(
+      owner,
+      repo,
+      setStatus,
+      ref
+    );
     memoryDecks.set(source.url, decks);
     const blobs = new Map();
     for (const [name, bytes] of assets ?? []) {
@@ -120,6 +132,45 @@ function removeSource() {
   });
 }
 
+/**
+ * Offer the branches a library has, when it has more than one.
+ *
+ * A library nobody has drafted in has exactly one branch, and a picker
+ * with one entry is a question with one answer -- so the row stays away
+ * until there is a choice to make. The workbench saves to draft/<login>,
+ * which is where that second branch usually comes from, and being unable
+ * to render it was why a fix could be made and not seen.
+ */
+async function renderBranchPicker(source) {
+  const row = $("branch-row");
+  const select = $("branch");
+  branchesHere = [];
+  if (!source || !source.url.startsWith("wasm:")) {
+    row.hidden = true;
+    return;
+  }
+  const [owner, repo] = source.url.slice(5).split("/");
+  const { fetchBranches } = await import("./wasm-renderer.js");
+  branchesHere = await fetchBranches(owner, repo);
+  if (branchesHere.length < 2) {
+    row.hidden = true;
+    return;
+  }
+  select.innerHTML = "";
+  for (const branch of branchesHere) {
+    const option = document.createElement("option");
+    option.value = branch.name;
+    option.textContent = branch.isDefault ? `${branch.name} (published)` : branch.name;
+    select.appendChild(option);
+  }
+  const chosen =
+    branchBySource.get(source.url) ??
+    branchesHere.find((b) => b.isDefault)?.name ??
+    branchesHere[0].name;
+  select.value = chosen;
+  row.hidden = false;
+}
+
 async function switchSource(source) {
   currentSource = source;
   $("remove-source").hidden = !source;
@@ -147,6 +198,11 @@ async function switchSource(source) {
   rememberLast(source.url);
   setStatus(`Loading ${source.name}…`);
   try {
+    // Before the render, so the pane can say which branch it is about to
+    // read and the author can change it without waiting for a build.
+    await renderBranchPicker(source);
+    const on = branchBySource.get(source.url);
+    if (on) setStatus(`Loading ${source.name} on ${on}…`);
     catalog = await loadCatalog(source);
     tree = buildTree(catalog);
     // Open the roots so the pane never lands on a wall of collapsed rows.
@@ -702,6 +758,14 @@ function start(info) {
   $("source").addEventListener("change", (e) => {
     const source = allSources().find((s) => s.url === e.target.value) ?? null;
     switchSource(source);
+  });
+  $("branch").addEventListener("change", (e) => {
+    if (!currentSource) return;
+    branchBySource.set(currentSource.url, e.target.value);
+    // The decks in memory are of the branch that was rendered, not this
+    // one; keeping them would insert slides from the wrong version.
+    memoryDecks.delete(currentSource.url);
+    switchSource(currentSource);
   });
   $("add-source").addEventListener("click", addSource);
   $("remove-source").addEventListener("click", removeSource);

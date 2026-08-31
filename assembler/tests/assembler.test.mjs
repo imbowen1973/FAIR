@@ -368,3 +368,46 @@ test("sessions the course does not place are marked, not disguised", () => {
   // Still fully usable: unplaced is a drafting state, not a quarantine.
   assert.deepEqual(roots[1].slideIds, ["s2-1"]);
 });
+
+
+test("the branches offered, and the published one marked", async () => {
+  // A library nobody has drafted in has one branch and gets no picker;
+  // the interesting case is the second branch, which is where the
+  // workbench saves and which the add-in could not read at all.
+  const { fetchBranches } = await import("../web/wasm-renderer.js");
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    json: async () =>
+      String(url).includes("/branches")
+        ? [{ name: "main" }, { name: "draft/ada" }]
+        : { default_branch: "main" },
+  });
+  try {
+    assert.deepEqual(await fetchBranches("o", "r"), [
+      { name: "main", isDefault: true },
+      { name: "draft/ada", isDefault: false },
+    ]);
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test("a library that cannot be listed offers no branches, and does not throw", async () => {
+  // A private repo or a rate limit. Not being able to offer a choice is
+  // not a reason to fail before anything has been rendered.
+  const { fetchBranches } = await import("../web/wasm-renderer.js");
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => ({}) });
+  try {
+    assert.deepEqual(await fetchBranches("o", "r"), []);
+  } finally {
+    globalThis.fetch = real;
+  }
+  globalThis.fetch = async () => { throw new Error("offline"); };
+  try {
+    assert.deepEqual(await fetchBranches("o", "r"), []);
+  } finally {
+    globalThis.fetch = real;
+  }
+});

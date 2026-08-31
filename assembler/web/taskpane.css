@@ -286,3 +286,9 @@ button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
   font-style: italic;
   opacity: 0.85;
 }
+
+/* Only shown when a library actually has more than one branch: a picker
+   with one entry is a question with one answer. */
+#branch-row { margin-top: 6px; }
+.branch-label { flex: none; font-size: 0.78rem; opacity: 0.8; }
+#branch { flex: 1 1 auto; min-width: 0; }

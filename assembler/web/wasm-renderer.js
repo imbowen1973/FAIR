@@ -175,9 +175,58 @@ async function ensurePyodide(status) {
   return pyodidePromise;
 }
 
-async function fetchRepoTree(owner, repo) {
+/**
+ * The branches a library has, newest activity first as GitHub returns
+ * them, with the default branch marked.
+ *
+ * Empty when the repository cannot be listed — a rate limit or a private
+ * repo — because a missing branch list is a reason to offer no choice,
+ * not a reason to fail before anything has been rendered.
+ */
+export async function fetchBranches(owner, repo) {
+  try {
+    const [info, list] = await Promise.all([
+      fetch(`https://api.github.com/repos/${owner}/${repo}`).then((r) => (r.ok ? r.json() : null)),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/branches?per_page=100`).then((r) =>
+        r.ok ? r.json() : null
+      ),
+    ]);
+    if (!Array.isArray(list)) return [];
+    const fallback = info?.default_branch ?? null;
+    return list.map((b) => ({ name: b.name, isDefault: b.name === fallback }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The commit a ref points at.
+ *
+ * Everything below is then read at that sha rather than at HEAD or at a
+ * branch name, for two reasons. A sha names one state of the library, so
+ * a render is of a thing that can be quoted back. And raw.githubusercontent
+ * caches a branch URL for a few minutes, which is why pushing a fix and
+ * re-rendering showed the old failure: the URL had not changed, so the
+ * CDN had no reason to think the bytes had.
+ */
+async function resolveRef(owner, repo, ref) {
+  const at = ref ? `/${encodeURIComponent(ref)}` : "";
   const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`
+    `https://api.github.com/repos/${owner}/${repo}/commits${at || "/HEAD"}`,
+    { headers: { Accept: "application/vnd.github.sha" } }
+  );
+  if (res.ok) {
+    const sha = (await res.text()).trim();
+    if (/^[0-9a-f]{7,40}$/.test(sha)) return sha;
+  }
+  // No sha to be had: fall back to the ref itself, which still renders,
+  // just without the guarantees above.
+  return ref || "HEAD";
+}
+
+async function fetchRepoTree(owner, repo, ref = "HEAD") {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`
   );
   if (res.status === 404) {
     throw new Error(`${owner}/${repo} not found (private repos need the server or local mode)`);
@@ -191,8 +240,8 @@ async function fetchRepoTree(owner, repo) {
   return data.tree.filter((e) => e.type === "blob").map((e) => e.path);
 }
 
-async function fetchFiles(owner, repo, paths, status) {
-  const base = `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/`;
+async function fetchFiles(owner, repo, paths, status, ref = "HEAD") {
+  const base = `https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(ref)}/`;
   const files = new Map();
   const queue = [...paths];
   let done = 0;
@@ -237,18 +286,19 @@ Path("${OUT_DIR}/catalog.json").read_text()
  * -> {catalog, decks}. Decks is Map<sourcePptx, Uint8Array>, alive only
  * in this tab's memory.
  */
-export async function loadLibraryFromGitHub(owner, repo, status = () => {}) {
+export async function loadLibraryFromGitHub(owner, repo, status = () => {}, ref = null) {
   const py = await ensurePyodide(status);
 
-  // Always the repository's default branch. This add-in assembles from
-  // published content and has no notion of a branch -- which is worth
-  // saying out loud, because the workbench saves to draft/<login>, so an
-  // author can fix a slide there, reload the add-in, and see the old
-  // failure unchanged. Reloading is not the problem and reinstalling
-  // does not help: the branch it reads has not moved.
-  status(`Reading the default branch of ${owner}/${repo}…`);
-  const paths = selectLibraryPaths(await fetchRepoTree(owner, repo));
-  const files = await fetchFiles(owner, repo, paths, status);
+  // Resolved to a commit before anything is read. Rendering "the branch"
+  // meant rendering whatever raw.githubusercontent had cached for that
+  // branch URL, so pushing a fix and re-rendering showed the old failure
+  // for as long as the CDN held it.
+  status(`Reading ${owner}/${repo}${ref ? ` on ${ref}` : ""}…`);
+  const sha = await resolveRef(owner, repo, ref);
+  const where = ref ? `${ref} (${sha.slice(0, 7)})` : `the default branch (${sha.slice(0, 7)})`;
+  status(`Reading ${owner}/${repo} at ${where}…`);
+  const paths = selectLibraryPaths(await fetchRepoTree(owner, repo, sha));
+  const files = await fetchFiles(owner, repo, paths, status, sha);
 
   // Clear only our own mount. Never /lib — that is Pyodide's stdlib.
   py.runPython(`import shutil; shutil.rmtree("${LIB_DIR}", ignore_errors=True)`);
@@ -268,9 +318,9 @@ export async function loadLibraryFromGitHub(owner, repo, status = () => {}) {
     // else has no way to tell why it is still failing.
     const detail = String(err.message ?? err).trim().split(String.fromCharCode(10)).pop();
     throw new Error(
-      `${detail} — read from the default branch of ${owner}/${repo}. ` +
-        "Edits saved in the workbench are on a draft branch until they are " +
-        "submitted, so a fix made there will not show here yet."
+      `${detail} — read from ${owner}/${repo} at ${where}. ` +
+        "The workbench saves to a draft branch, so a fix made there shows " +
+        "here only once that branch is chosen above, or submitted."
     );
   }
   const catalog = JSON.parse(catalogJson);
