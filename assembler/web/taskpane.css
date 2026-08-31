@@ -292,3 +292,13 @@ button.link.quiet { color: var(--accent); margin: 0 0 8px; font-size: 12px; }
 #branch-row { margin-top: 6px; }
 .branch-label { flex: none; font-size: 0.78rem; opacity: 0.8; }
 #branch { flex: 1 1 auto; min-width: 0; }
+
+/* Slides the render could not produce. Said once, above the tree, rather
+   than leaving a deck quietly shorter than the library it came from. */
+.render-problems {
+  margin: 0 0 10px; padding: 8px 10px; border-radius: 6px;
+  background: rgba(180, 95, 0, 0.10); font-size: 0.78rem; line-height: 1.4;
+}
+.render-problems p { margin: 0 0 4px; font-weight: 600; }
+.render-problems ul { margin: 0; padding-left: 1.1rem; }
+.render-problems li { margin: 2px 0; word-break: break-word; }

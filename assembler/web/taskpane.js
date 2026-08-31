@@ -171,6 +171,37 @@ async function renderBranchPicker(source) {
   row.hidden = false;
 }
 
+/**
+ * Say which slides could not be rendered.
+ *
+ * The render used to stop at the first one, so nothing could be
+ * assembled at all -- from a library the person here very often cannot
+ * fix. It now carries on and names them, once, above the tree.
+ */
+function reportProblems(problems) {
+  const host = $("step-tree");
+  host.querySelector(".render-problems")?.remove();
+  if (!problems || !problems.length) return;
+
+  const box = document.createElement("div");
+  box.className = "render-problems";
+  const count = problems.length;
+  const head = document.createElement("p");
+  head.textContent =
+    `${count} slide${count === 1 ? "" : "s"} could not be rendered and ` +
+    `${count === 1 ? "is" : "are"} not listed below. Everything else is here.`;
+  box.appendChild(head);
+
+  const list = document.createElement("ul");
+  for (const problem of problems.slice(0, 12)) {
+    const item = document.createElement("li");
+    item.textContent = `${problem.slideId} in ${problem.blockId}: ${problem.message}`;
+    list.appendChild(item);
+  }
+  box.appendChild(list);
+  host.prepend(box);
+}
+
 async function switchSource(source) {
   currentSource = source;
   $("remove-source").hidden = !source;
@@ -205,6 +236,10 @@ async function switchSource(source) {
     if (on) setStatus(`Loading ${source.name} on ${on}…`);
     catalog = await loadCatalog(source);
     tree = buildTree(catalog);
+    // Slides the render could not produce. They are not in the tree and
+    // cannot be inserted, so the pane says which and why rather than
+    // leaving a deck quietly shorter than the library.
+    reportProblems(catalog.problems);
     // Open the roots so the pane never lands on a wall of collapsed rows.
     expanded = new Set(tree.map((_, i) => String(i)));
     renderCompetencyPicker();

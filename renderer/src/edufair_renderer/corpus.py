@@ -193,6 +193,7 @@ def build_corpus(
     attribution: Path | None = None,
     library: Path | None = None,
     warn=lambda msg: print(f"warning: {msg}", file=sys.stderr),
+    skip_bad_slides: bool = False,
 ) -> dict:
     """Render a library: one deck per block, plus its catalog.
 
@@ -247,6 +248,7 @@ def build_corpus(
     if not outcomes_path.is_file():
         outcomes_path = None
 
+    problems: list[dict] = []
     for unit in units:
         result = render_session(
             session_path=unit["source"],
@@ -255,7 +257,11 @@ def build_corpus(
             attribution_path=attribution,
             outcomes_path=outcomes_path,
             out_dir=out_dir / "sessions" / unit["id"],
+            skip_bad_slides=skip_bad_slides,
         )
+        for bad in result.get("skipped") or []:
+            warn(f"{unit['id']}: {bad['message']}")
+            problems.append({"blockId": unit["id"], **bad})
         index_doc = json.loads(result["index"].read_text())
         meta = index_doc["session"]
         sid = str(meta.get("session") or unit["id"])
@@ -357,6 +363,10 @@ def build_corpus(
             "description": (lib.course.get("description") if lib else None),
         },
         "structure": (lib.structure if lib else []),
+        # Slides that could not be rendered, when the caller asked to
+        # carry on past them. Empty in a strict build, which is every
+        # build that has not said otherwise.
+        "problems": problems,
         "blocks": blocks_out,
         "sessions": sessions,
         "competencies": dict(sorted(competencies.items())),

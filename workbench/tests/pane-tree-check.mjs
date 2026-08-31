@@ -32,6 +32,9 @@ const IDS = ["01-intro", "02-profiles", "03-standalone", "04-orphan"];
 
 /** A catalog shaped like a real library: a course recipe with groups. */
 const WITH_STRUCTURE = {
+  problems: [
+    { slideId: "wp52-25", blockId: "01-intro", message: "region 'full' is not declared for layout 'Picture'" },
+  ],
   structure: [
     {
       kind: "module",
@@ -148,6 +151,13 @@ async function run(catalog) {
       })),
     }));
 
+  // Slides the render could not produce must be named, not silently
+  // absent. The catalog carries them; the pane says so above the tree.
+  const problems = await page.evaluate(() => {
+    const box = document.querySelector(".render-problems");
+    return box ? box.textContent.replace(/\s+/g, " ").slice(0, 200) : null;
+  });
+
   const before = await state();
 
   const reachable = await page.evaluate(() => {
@@ -225,6 +235,7 @@ async function run(catalog) {
 
   return {
     errors,
+    problems,
     reachable,
     label,
     afterLabel,
@@ -247,16 +258,28 @@ const cases = [
   ["a course recipe, as every library has", await run(WITH_STRUCTURE)],
 ];
 
+// A library with nothing wrong says nothing; one with an unrenderable
+// slide names it, so a deck is never quietly shorter than the library.
+const [[, sample], [, course]] = cases;
+const problemsWrong =
+  sample.problems !== null ||
+  !course.problems ||
+  !/wp52-25/.test(course.problems) ||
+  !/01-intro/.test(course.problems) ||
+  !/not listed below/.test(course.problems);
+
 let failed = false;
 for (const [name, r] of cases) {
   console.log(`\n--- ${name} ---`);
   console.log("roots:", JSON.stringify(r.roots));
   console.log("twisty:", JSON.stringify(r.reachable));
   console.log("rows:", JSON.stringify(r.counts));
+  console.log("problems shown:", JSON.stringify(r.problems));
   console.log(`expand-all: "${r.label}" -> "${r.afterLabel}" -> "${r.finalLabel}"`);
   if (r.errors.length) console.log("errors:", r.errors.slice(0, 4));
   if (r.failed) failed = true;
 }
+if (problemsWrong) failed = true;
 
 console.log(failed ? String.fromCharCode(10) + "FAIL" : String.fromCharCode(10) + "PASS");
 await browser.close();

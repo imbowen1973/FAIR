@@ -389,6 +389,7 @@ def _render_slide(
     base_dir: Path,
     build_dir: Path,
     code_typeface: str = DEFAULT_CODE_TYPEFACE,
+    bindings: dict | None = None,
 ):
     layout = layouts_by_name[binding.layout_name]
     slide = prs.slides.add_slide(layout)
@@ -397,9 +398,26 @@ def _render_slide(
 
     for region in slide_src.regions:
         if region.name not in binding.regions:
+            # Where that region *does* live. A region name is declared per
+            # layout, so `full` working on one slide and not on another is
+            # not a contradiction -- but the message said only that this
+            # layout has not got it, which reads as the name being wrong
+            # when the layout is the thing that is wrong.
+            elsewhere = sorted(
+                key
+                for key, other in (bindings or {}).items()
+                if region.name in getattr(other, "regions", {})
+            )
+            hint = (
+                f" {region.name!r} is declared by {', '.join(repr(k) for k in elsewhere)}"
+                f" — this slide may want one of those layouts instead."
+                if elsewhere
+                else f" No layout in this library declares {region.name!r}."
+            )
             raise RenderError(
                 f"slide {slide_src.id!r}: region {region.name!r} is not declared for "
-                f"layout {binding.key!r}; expected one of {sorted(binding.regions)}"
+                f"layout {binding.key!r}; expected one of {sorted(binding.regions)}."
+                + hint
             )
         idx = binding.regions[region.name]
         placeholder = placeholders_by_idx.get(idx)
@@ -424,6 +442,7 @@ def render_session(
     out_dir: Path,
     attribution_path: Path | None = None,
     outcomes_path: Path | None = None,
+    skip_bad_slides: bool = False,
 ) -> dict:
     """Render one session. Returns a summary dict with output paths.
 
@@ -482,17 +501,30 @@ def render_session(
     slide_id_map: dict[str, str] = {}
     index_entries: list[dict] = []
 
+    skipped: list[dict] = []
     for slide_src in session.slides:
         binding = bindings.get(slide_src.layout)
-        if binding is None:
-            raise RenderError(
-                f"slide {slide_src.id!r}: layout {slide_src.layout!r} not in layout map; "
-                f"available: {sorted(bindings)}"
+        try:
+            if binding is None:
+                raise RenderError(
+                    f"slide {slide_src.id!r}: layout {slide_src.layout!r} not in layout map; "
+                    f"available: {sorted(bindings)}"
+                )
+            slide, creation_id = _render_slide(
+                prs, layouts_by_name, binding, slide_src, session_id, base_dir,
+                build_dir, code_typeface, bindings,
             )
-        slide, creation_id = _render_slide(
-            prs, layouts_by_name, binding, slide_src, session_id, base_dir,
-            build_dir, code_typeface,
-        )
+        except RenderError as err:
+            # Strict by default: a build that quietly drops a slide is a
+            # deck that is wrong in a way nobody notices until the room.
+            if not skip_bad_slides:
+                raise
+            # Asked to carry on: the slide is left out and said so. One
+            # slide nobody can fix today should not stop the other forty
+            # being used, which is what a hard failure means for anyone
+            # assembling a deck from somebody else's library.
+            skipped.append({"slideId": slide_src.id, "message": str(err)})
+            continue
 
         dc = session.frontmatter.get("dc") or {}
         meta = {
@@ -557,5 +589,9 @@ def render_session(
         "pptx": pptx_path,
         "slide_id_map": map_path,
         "index": index_path,
-        "slide_count": len(session.slides),
+        "slide_count": len(session.slides) - len(skipped),
+        # Empty unless skip_bad_slides was asked for and something used
+        # it. Carried so a caller can say which slides are missing and
+        # why, rather than a deck quietly being shorter than the file.
+        "skipped": skipped,
     }

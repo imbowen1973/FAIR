@@ -277,6 +277,13 @@ build_corpus(
     out_dir=Path("${OUT_DIR}"),
     framework=fw if fw.exists() else None,
     credentials_dir=cd if cd.exists() else None,
+    # One slide nobody can render should not cost the other forty. This
+    # add-in assembles decks out of libraries the person using it often
+    # does not own and cannot fix, so refusing the whole corpus leaves
+    # them with nothing. The slides that fail come back in
+    # catalog["problems"] and are shown as unavailable.
+    skip_bad_slides=True,
+    warn=lambda m: None,
 )
 Path("${OUT_DIR}/catalog.json").read_text()
 `;
