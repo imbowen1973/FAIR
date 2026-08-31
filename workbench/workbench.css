@@ -1032,3 +1032,13 @@ ul.import-list {
   margin: 6px 0 0; padding-left: 1.2em; font-size: 0.8rem; color: var(--muted);
   max-height: 12rem; overflow-y: auto;
 }
+
+/* A reported problem names a block, and often a slide. Printed as text
+   it named the slide by an id that appears nowhere on screen, so acting
+   on it meant reading the file. It is a way in instead. */
+.problem-where {
+  font-weight: 600; padding: 0; border: 0; background: none;
+  color: var(--accent); cursor: pointer; font: inherit; font-weight: 600;
+  text-align: left;
+}
+.problem-where:hover { text-decoration: underline; }

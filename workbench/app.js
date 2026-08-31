@@ -3117,10 +3117,64 @@ function updateActions() {
 
 // ---- validate and preview ---------------------------------------------
 
+/**
+ * One reported problem, as something to act on.
+ *
+ * `where` is a block id, or `block/slide-id`, or a file at the library
+ * root. Printed as text it named a slide by an id that appears nowhere
+ * on screen — the rail shows titles — so finding the slide meant reading
+ * the file. Where it names something this workbench can open, it opens
+ * it.
+ */
+function problemRow(problem) {
+  const row = document.createElement("p");
+  row.className = problem.level === "warning" ? "problem warn" : "problem";
+
+  const where = String(problem.where ?? "");
+  const [blockId, slideId] = where.split("/");
+  const block = state.library.blocks.get(blockId);
+
+  if (!block) {
+    const label = document.createElement("strong");
+    label.textContent = where;
+    row.append(label, " ", problem.message);
+    return row;
+  }
+
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "link problem-where";
+  // The block's own title, and the slide's if there is one: an id is
+  // what the file calls it, not what the author does.
+  const slides = state.working.get(blockId) ?? workingSlides(block.parsed);
+  const at = slideId ? slides.findIndex((e) => e.data?.id === slideId) : -1;
+  const slideTitle = at >= 0 ? String(slides[at].data.title ?? "").slice(0, 40) : "";
+  link.textContent =
+    at >= 0
+      ? `${block.meta?.title || blockId} — slide ${at + 1}${slideTitle ? `: ${slideTitle}` : ""}`
+      : block.meta?.title || blockId;
+  link.title = where;
+  link.addEventListener("click", () => {
+    state.blockId = blockId;
+    state.slideIndex = at >= 0 ? at : 0;
+    state.courseOpen = false;
+    renderOutline();
+    renderSlide();
+    revealEditor();
+  });
+
+  row.append(link, " ", problem.message);
+  return row;
+}
+
 async function runValidate() {
   try {
     await busy("validate", "Checking", async (report) => {
-      state.problems = await validate(pendingFiles(), report);
+      // The same files Preview renders from, pictures included. Checking
+      // pendingFiles alone meant checking a library with no images in
+      // it, so every picture a block declared was reported missing —
+      // four of them, all present in the repository, none actionable.
+      state.problems = await validate(await withBinaries(report), report);
     });
     const strip = $("problems");
     strip.innerHTML = "";
@@ -3133,10 +3187,7 @@ async function runValidate() {
       status("Checked: no problems.", "ok");
     } else {
       for (const problem of [...errors, ...warnings]) {
-        const row = document.createElement("p");
-        row.className = problem.level === "warning" ? "problem warn" : "problem";
-        row.innerHTML = `<strong>${escapeHtml(problem.where)}</strong> ${escapeHtml(problem.message)}`;
-        strip.appendChild(row);
+        strip.appendChild(problemRow(problem));
       }
       const parts = [];
       if (errors.length) parts.push(`${errors.length} problem${errors.length === 1 ? "" : "s"}`);
@@ -3177,6 +3228,12 @@ async function withBinaries(report) {
       files.set(path, bytes);
     }
   }
+
+  // Pictures added in this session and not yet committed. They are held
+  // apart from pendingFiles because that set is what gets written as
+  // text, and these are bytes — but a slide referring to one is not
+  // wrong just because the commit has not happened.
+  for (const [path, bytes] of state.uploads) files.set(path, bytes);
   return files;
 }
 
