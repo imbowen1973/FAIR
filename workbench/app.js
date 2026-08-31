@@ -3600,16 +3600,44 @@ function inTextSurface(node) {
   return Boolean(el?.closest('input, textarea, [contenteditable="true"]'));
 }
 
+/**
+ * A form field, as opposed to the slide itself.
+ *
+ * A shortcut that acts on the deck should still work while an author is
+ * typing on a slide -- PowerPoint's do -- but not while they are filling
+ * in a repository name or pasting into the import box, where the deck
+ * changing under them would take the focus with it.
+ */
+function inFormField(node) {
+  const el = node instanceof Element ? node : node?.parentElement;
+  return Boolean(el?.closest("input, textarea"));
+}
+
 document.addEventListener("keydown", (e) => {
   const meta = e.ctrlKey || e.metaKey;
-  if (!meta || e.key.toLowerCase() !== "z") return;
-  if (!state.blockId || activeDoc()?.editor !== "slides") return;
-  // Typing has its own undo, and it is the right one: it restores the
-  // caret as well as the words.
-  if (inTextSurface(e.target)) return;
-  e.preventDefault();
-  if (e.shiftKey) redo();
-  else undo();
+  if (!meta || e.altKey) return;
+  const key = e.key.toLowerCase();
+  const onADeck = Boolean(state.blockId) && activeDoc()?.editor === "slides";
+
+  if (key === "z") {
+    if (!onADeck) return;
+    // Typing has its own undo, and it is the right one: it restores the
+    // caret as well as the words.
+    if (inTextSurface(e.target)) return;
+    e.preventDefault();
+    if (e.shiftKey) redo();
+    else undo();
+    return;
+  }
+
+  // PowerPoint's own shortcut for a new slide, and it works there while
+  // the caret is in a placeholder -- so it works here too. Only a form
+  // field is excluded.
+  if (key === "m") {
+    if (!onADeck || inFormField(e.target)) return;
+    e.preventDefault();
+    addSlide();
+  }
 });
 
 // ---- starting a library ------------------------------------------------

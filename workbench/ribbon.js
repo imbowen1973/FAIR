@@ -120,7 +120,7 @@ export function ribbon(host, {
   const deck = document.createElement("div");
   deck.className = "ribbon-group";
   deck.appendChild(
-    button(icon("slide", { size: 16 }), "Add a slide after this one",
+    button(icon("slide", { size: 16 }), "Add a slide after this one (Ctrl+M)",
       () => onAddSlide?.(), "mark with-icon", "add-slide-ribbon")
   );
   deck.appendChild(
