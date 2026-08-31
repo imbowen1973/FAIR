@@ -59,10 +59,12 @@ const WITH_STRUCTURE = {
       slideId: `s${i + 1}-${n}`,
       sessionId: `s${i + 1}`,
       title: `${id} slide ${n}`,
-      develops: [],
+      // One slide, two levels down, so filtering has something to find
+      // that a closed tree would otherwise hide.
+      develops: id === "02-profiles" && n === 2 ? ["C1"] : [],
     }))
   ),
-  competencies: [],
+  competencies: { C1: "A competency" },
   credentials: [],
 };
 
@@ -144,6 +146,10 @@ async function run(catalog) {
   const state = () =>
     page.evaluate(() => ({
       rows: document.querySelectorAll(".node-row").length,
+      // Top-level nodes: what "collapsed" should leave on screen.
+      roots: document.querySelectorAll('#tree > [role="treeitem"]').length,
+      glyphs: [...document.querySelectorAll('#tree > [role="treeitem"] > .node-row .twisty')]
+        .map((t) => t.textContent),
       items: [...document.querySelectorAll('[role="treeitem"]')].map((el) => ({
         open: el.getAttribute("aria-expanded"),
         label: el.querySelector(":scope > .node-row .node-label")?.textContent ?? "",
@@ -206,6 +212,21 @@ async function run(catalog) {
   const collapsedAll = await state();
   const finalLabel = (await page.textContent("#expand-all")).trim();
 
+  // Filtering by a competency must show what it found. The slide that
+  // has it sits inside a module, and the tree now opens closed.
+  let filtered = null;
+  const options = await page.evaluate(() =>
+    [...document.querySelectorAll("#competency option")].map((o) => o.value)
+  );
+  if (options.includes("C1")) {
+    await page.selectOption("#competency", "C1");
+    await page.waitForTimeout(500);
+    filtered = await page.evaluate(() => ({
+      rows: document.querySelectorAll(".node-row").length,
+      visible: [...document.querySelectorAll(".node-label")].map((l) => l.textContent),
+    }));
+  }
+
   await page.close();
 
   const first = (s) => s.items[0] ?? {};
@@ -228,14 +249,20 @@ async function run(catalog) {
     afterLabel !== "Collapse all" ||
     collapsedAll.rows >= expandedAll.rows ||
     finalLabel !== "Expand all" ||
-    // Collapsing leaves the roots open, which is how the pane loads --
-    // not an empty panel with nothing to click.
-    collapsedAll.rows !== before.rows ||
-    collapsedAll.rows === 0;
+    // Collapsed means collapsed: the top level and nothing else.
+    collapsedAll.rows !== before.roots ||
+    collapsedAll.glyphs.some((g) => g !== "▶") ||
+    collapsedAll.rows === 0 ||
+    // A course with more than one module opens closed, because the top
+    // level is the question. One module has no choice to offer, so it
+    // opens.
+    (before.roots > 1 && before.rows !== before.roots) ||
+    (before.roots === 1 && before.rows <= 1);
 
   return {
     errors,
     problems,
+    filtered,
     reachable,
     label,
     afterLabel,
@@ -243,6 +270,7 @@ async function run(catalog) {
     roots: before.items.map((i) => `${i.glyph} ${i.label}`),
     counts: {
       before: before.rows,
+      roots: before.roots,
       afterOne: afterOne.rows,
       afterTwo: afterTwo.rows,
       deep: deepOpened?.rows ?? null,
@@ -261,6 +289,18 @@ const cases = [
 // A library with nothing wrong says nothing; one with an unrenderable
 // slide names it, so a deck is never quietly shorter than the library.
 const [[, sample], [, course]] = cases;
+
+// Filtering by a competency has to show what it found. The slide that
+// carries C1 is two levels down and the tree opens closed, so an
+// unchanged wall of shut rows is not an answer to "which slides build
+// this".
+const filterWrong =
+  !course.filtered ||
+  // The slide itself is on screen, not merely its module.
+  !course.filtered.visible.some((v) => /02-profiles slide 2/.test(v)) ||
+  // ...and the way down to it is open, not just the top level.
+  !course.filtered.visible.includes("Foundations") ||
+  !course.filtered.visible.includes("02-profiles");
 const problemsWrong =
   sample.problems !== null ||
   !course.problems ||
@@ -275,11 +315,13 @@ for (const [name, r] of cases) {
   console.log("twisty:", JSON.stringify(r.reachable));
   console.log("rows:", JSON.stringify(r.counts));
   console.log("problems shown:", JSON.stringify(r.problems));
+  if (r.filtered) console.log("filtered to C1:", JSON.stringify(r.filtered));
   console.log(`expand-all: "${r.label}" -> "${r.afterLabel}" -> "${r.finalLabel}"`);
   if (r.errors.length) console.log("errors:", r.errors.slice(0, 4));
   if (r.failed) failed = true;
 }
 if (problemsWrong) failed = true;
+if (filterWrong) failed = true;
 
 console.log(failed ? String.fromCharCode(10) + "FAIL" : String.fromCharCode(10) + "PASS");
 await browser.close();

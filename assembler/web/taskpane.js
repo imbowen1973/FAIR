@@ -240,8 +240,11 @@ async function switchSource(source) {
     // cannot be inserted, so the pane says which and why rather than
     // leaving a deck quietly shorter than the library.
     reportProblems(catalog.problems);
-    // Open the roots so the pane never lands on a wall of collapsed rows.
-    expanded = new Set(tree.map((_, i) => String(i)));
+    // A course with several modules opens closed: the top level is the
+    // question ("which part of this?"), and answering it with forty rows
+    // of slides is answering a question nobody asked. One module has no
+    // choice to offer, so it opens.
+    expanded = tree.length > 1 ? new Set() : new Set(tree.map((_, i) => String(i)));
     renderCompetencyPicker();
     renderTree();
     renderFunder();
@@ -548,11 +551,32 @@ function paintExpandAll() {
   if (button) button.textContent = everythingOpen() ? "Collapse all" : "Expand all";
 }
 
-/** Expand every container, or collapse back to the roots. */
+/**
+ * Open the way down to every slide a filter kept.
+ *
+ * Only opens: a container the author shut that holds nothing matching
+ * stays shut, and clearing the filter leaves the tree as the filter left
+ * it rather than springing back to some remembered shape.
+ */
+function revealAllowed(allowed) {
+  if (!allowed) return;
+  const walk = (node, path, ancestors) => {
+    if (node.kind === "slide") {
+      if (allowed.has(node.meta?.slideId)) for (const a of ancestors) expanded.add(a);
+      return;
+    }
+    const inside = [...ancestors, path];
+    (node.children || []).forEach((child, i) => walk(child, `${path}/${i}`, inside));
+  };
+  tree.forEach((root, i) => walk(root, String(i), []));
+}
+
+/** Expand every container, or close the lot. */
 function toggleExpandAll() {
-  expanded = everythingOpen()
-    ? new Set(tree.map((_, i) => String(i)))
-    : new Set(openablePaths());
+  // Collapsed means collapsed. Leaving the roots open was "collapse back
+  // to the roots", which from the outside is a button that does not do
+  // what it says on a course with one module in it.
+  expanded = everythingOpen() ? new Set() : new Set(openablePaths());
   renderTree();
 }
 
@@ -826,6 +850,11 @@ function start(info) {
 
   $("competency").addEventListener("change", (e) => {
     competencyFilter = e.target.value;
+    // Filtering hides everything that does not match, and what remains
+    // is inside containers that may be shut — so the answer to "which
+    // slides build this competency" was an unchanged wall of closed
+    // rows. Opening the way down to each of them is the answer.
+    if (competencyFilter) revealAllowed(allowedByCompetency());
     renderTree();
   });
   $("expand-all").addEventListener("click", toggleExpandAll);
