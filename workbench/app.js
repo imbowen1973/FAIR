@@ -300,6 +300,17 @@ async function afterSignIn(token, login) {
 }
 
 /** The library picker, in the bar, once one is open. */
+/**
+ * The switcher's last entry, which is not a repository.
+ *
+ * Starting a new course was only ever offered on the way in: opening a
+ * library hides the panel that holds the form, so the only way to make
+ * a second one was to sign out. A tool whose whole claim is that a
+ * course lives in git without ceremony should not need signing out of
+ * to start one.
+ */
+const NEW_LIBRARY = " new-library";
+
 function renderRepoSwitch(current) {
   const select = $("repo-switch");
   select.innerHTML = "";
@@ -315,7 +326,30 @@ function renderRepoSwitch(current) {
     extra.textContent = current;
     select.appendChild(extra);
   }
+  const start = document.createElement("option");
+  start.value = NEW_LIBRARY;
+  start.textContent = "＋ New course…";
+  select.appendChild(start);
+
   select.value = current;
+}
+
+/**
+ * Offer the form that makes a library, from inside one.
+ *
+ * The panel is shown above the workbench rather than instead of it:
+ * nothing about the open library changes until a new one is created,
+ * and changing your mind is closing it again.
+ */
+function offerNewLibrary() {
+  const panel = $("signed-in");
+  panel.hidden = false;
+  $("setup-offer").hidden = true;
+  const form = $("new-library");
+  form.open = true;
+  form.scrollIntoView({ block: "center", behavior: "smooth" });
+  $("new-title").focus();
+  status("Fill this in to start a new course. The one you are in stays as it is.", "");
 }
 
 async function listRepos() {
@@ -3601,8 +3635,17 @@ function signOutNow() {
 $("signout").addEventListener("click", signOutNow);
 $("open").addEventListener("click", () => openRepo($("repo").value));
 $("repo-switch").addEventListener("change", (e) => {
+  const here = `${state.repo.owner}/${state.repo.repo}`;
+  if (e.target.value === NEW_LIBRARY) {
+    // Not a switch: nothing is left and nothing is at risk yet, so this
+    // asks nothing. Creating one opens it, and that is where the
+    // unsaved-changes question belongs.
+    e.target.value = here;
+    offerNewLibrary();
+    return;
+  }
   if (dirty() && !confirm("You have unsaved changes. Switch library anyway?")) {
-    e.target.value = `${state.repo.owner}/${state.repo.repo}`;
+    e.target.value = here;
     return;
   }
   openRepo(e.target.value);
@@ -3752,6 +3795,19 @@ $("create-library")?.addEventListener("click", () =>
     const blockTitle = newBlock.value.trim() || "Session one";
     if (!title) {
       status("Give the module a name.", "error");
+      return;
+    }
+    // Creating one opens it, which leaves whatever is open now. Asked
+    // here rather than when the form is opened: filling it in costs
+    // nothing and changing your mind is closing it again.
+    if (
+      state.repo &&
+      dirty() &&
+      !confirm(
+        "You have unsaved changes in the library you are in. " +
+          "Creating a new course opens it and leaves them behind. Carry on?"
+      )
+    ) {
       return;
     }
     try {
