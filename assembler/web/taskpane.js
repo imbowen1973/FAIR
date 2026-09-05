@@ -907,7 +907,8 @@ async function assemble() {
       if (inMemory) {
         const bytes = inMemory.get(step.sourcePptx);
         if (!bytes) throw new Error(`deck ${step.sourcePptx} missing from the in-browser render`);
-        base64 = arrayBufferToBase64(bytes.buffer);
+        // The bytes, not the buffer they happen to sit in.
+        base64 = arrayBufferToBase64(bytes);
       } else {
         const deckUrl = joinUrl(currentSource.url, joinUrl("data", step.sourcePptx));
         const res = await fetch(deckUrl);

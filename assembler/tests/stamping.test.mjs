@@ -163,3 +163,31 @@ test("the Word pane declares the Word host and nothing else", () => {
   assert.match(xml, /<Host Name="Document"\/>/);
   assert.doesNotMatch(xml, /<Host Name="Presentation"\/>/);
 });
+
+
+test("a deck is never encoded from the buffer a view sits in", () => {
+  // arrayBufferToBase64(bytes) is correct: the Uint8Array constructor
+  // copies a typed array element by element, so a view arrives whole.
+  //
+  // arrayBufferToBase64(bytes.buffer) is not. `.buffer` is whatever the
+  // view sits in, and a filesystem read — Pyodide's included — hands
+  // back a view into something larger. Every deck the pane assembled
+  // carried the bytes around the file as well as the file, and
+  // PowerPoint offered to repair all of them.
+  //
+  // The two calls look identical at a glance, which is why this is a
+  // check and not a comment.
+  const offenders = [];
+  for (const [path, source] of shipped()) {
+    for (const match of source.matchAll(/arrayBufferToBase64\(([^)]*)\)/g)) {
+      if (/\.buffer\s*$/.test(match[1].trim())) {
+        offenders.push(`${path.replace(REPO, "")}: ${match[0]}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "pass the bytes, not the buffer they happen to sit in"
+  );
+});

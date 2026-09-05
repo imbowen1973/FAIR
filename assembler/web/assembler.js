@@ -394,10 +394,20 @@ export function joinUrl(base, path) {
 }
 
 /** ArrayBuffer -> base64, chunked to stay clear of argument limits. */
-export function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
+export function arrayBufferToBase64(source) {
+  // A typed array is very often a *view* into a larger buffer -- which
+  // is what a filesystem read hands back, Pyodide's included. Reaching
+  // for `.buffer` then encodes everything around the file as well as
+  // the file, and PowerPoint answers a .pptx with bytes wrapped round it
+  // with "PowerPoint found a problem with content... click Repair".
+  //
+  // So a view is honoured as a view, and only what it covers is read.
+  const bytes = ArrayBuffer.isView(source)
+    ? new Uint8Array(source.buffer, source.byteOffset, source.byteLength)
+    : new Uint8Array(source);
+
   let binary = "";
-  const CHUNK = 0x8000;
+  const CHUNK = 0x8000; // argument limits, not memory, decide this
   for (let i = 0; i < bytes.length; i += CHUNK) {
     binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
   }

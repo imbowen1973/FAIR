@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  arrayBufferToBase64,
   buildInsertPlan,
   buildTree,
   groupBySource,
@@ -410,4 +411,42 @@ test("a library that cannot be listed offers no branches, and does not throw", a
   } finally {
     globalThis.fetch = real;
   }
+});
+
+
+test("a deck is encoded as the file, not as the buffer it sits in", async () => {
+  // A filesystem read hands back a view into a larger buffer — Pyodide's
+  // does — and reaching for `.buffer` encoded everything around the file
+  // as well as the file. PowerPoint answers a .pptx with foreign bytes
+  // wrapped round it by offering to repair it, which is what every deck
+  // the pane assembled was doing.
+  const store = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  const file = store.subarray(2, 6);
+
+  const decode = (b64) =>
+    [...Buffer.from(b64, "base64").values()];
+
+  assert.deepEqual(decode(arrayBufferToBase64(file)), [2, 3, 4, 5]);
+
+  // A real ArrayBuffer still works, which is the other caller.
+  const whole = new Uint8Array([9, 8, 7]).buffer;
+  assert.deepEqual(decode(arrayBufferToBase64(whole)), [9, 8, 7]);
+});
+
+test("a big deck survives the chunking", async () => {
+  // The chunk exists because String.fromCharCode.apply has an argument
+  // limit; a deck is megabytes, so the boundary is crossed every time.
+  const size = 0x8000 * 3 + 17;
+  const bytes = new Uint8Array(size);
+  for (let i = 0; i < size; i += 1) bytes[i] = i % 256;
+  const back = Buffer.from(arrayBufferToBase64(bytes), "base64");
+  assert.equal(back.length, size);
+  assert.ok(back.equals(Buffer.from(bytes)), "bytes changed crossing a chunk boundary");
+
+  // ...and the same when it is a view, which is the case that broke.
+  const padded = new Uint8Array(size + 64);
+  padded.set(bytes, 32);
+  const view = padded.subarray(32, 32 + size);
+  const fromView = Buffer.from(arrayBufferToBase64(view), "base64");
+  assert.ok(fromView.equals(Buffer.from(bytes)));
 });
