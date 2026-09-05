@@ -172,6 +172,26 @@ def test_creation_id_present_and_mapped(rendered):
         assert re.fullmatch(r"\d+#\d+", ref), f"bad sourceRef format: {ref}"
 
 
+def test_creation_id_lives_inside_csld(rendered):
+    """The creationId must sit in p:cSld/p:extLst, not at the p:sld level.
+
+    PowerPoint's insert only recognises a creationId in cSld as "already
+    there". One anywhere else gets a second copy written on insert, and a
+    slide carrying the {BB962C8B...} extension twice makes every deck the
+    assembler saves demand a repair on reopen. Bisected against
+    PowerPoint itself: the same file opens clean once the duplicate goes.
+    """
+    with zipfile.ZipFile(rendered["pptx"]) as z:
+        for n in range(1, 6):
+            root = etree.fromstring(z.read(f"ppt/slides/slide{n}.xml"))
+            everywhere = root.findall(f".//{{{P14_NS}}}creationId")
+            assert len(everywhere) == 1, f"slide{n}: {len(everywhere)} creationIds"
+            in_csld = root.findall(
+                f"{{{P_NS}}}cSld/{{{P_NS}}}extLst//{{{P14_NS}}}creationId"
+            )
+            assert len(in_csld) == 1, f"slide{n}: creationId is outside p:cSld"
+
+
 def test_creation_id_is_stable():
     from edufair_renderer.creation_id import derive_creation_id
 

@@ -36,11 +36,22 @@ def derive_creation_id(session_id: str, slide_id: str) -> int:
 
 
 def inject_creation_id(slide: PptxSlide, value: int) -> None:
-    """Add <p:extLst><p:ext uri=...><p14:creationId val=.../> to the slide root."""
+    """Add <p:extLst><p:ext uri=...><p14:creationId val=.../> inside <p:cSld>.
+
+    Placement is load-bearing. PowerPoint keeps its own creationId in
+    p:cSld/p:extLst, and that is the only place its insert code looks:
+    a creationId at the p:sld level is read for addressing but not seen
+    as "this slide already has one", so insertSlidesFromBase64 adds a
+    second. A slide carrying the {BB962C8B...} extension twice makes the
+    next interactive open demand a repair — bisected against PowerPoint
+    itself, which accepts the same file the moment the duplicate goes.
+    """
     sld = slide._element  # <p:sld>
-    ext_lst = sld.find(f"{{{P_NS}}}extLst")
+    csld = sld.find(f"{{{P_NS}}}cSld")
+    # cSld's children end with extLst, so appending keeps the order legal.
+    ext_lst = csld.find(f"{{{P_NS}}}extLst")
     if ext_lst is None:
-        ext_lst = etree.SubElement(sld, f"{{{P_NS}}}extLst")
+        ext_lst = etree.SubElement(csld, f"{{{P_NS}}}extLst")
     ext = etree.SubElement(ext_lst, f"{{{P_NS}}}ext")
     ext.set("uri", CREATION_ID_EXT_URI)
     creation = etree.SubElement(ext, f"{{{P14_NS}}}creationId", nsmap={"p14": P14_NS})
