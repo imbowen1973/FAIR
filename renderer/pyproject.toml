@@ -25,6 +25,7 @@ edufair-doctemplate = "edufair_renderer.word.inspect:main"
 edufair-doc = "edufair_renderer.word.render:main"
 edufair-prompt = "edufair_renderer.prompt:main"
 edufair-widescreen = "edufair_renderer.widescreen:main"
+edufair-heal = "edufair_renderer.heal:main"
 
 # The old names, kept working. A library's CI calls these by name, and a
 # rename that breaks every project's build on the day it lands is a
