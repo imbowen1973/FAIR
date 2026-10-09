@@ -25,6 +25,7 @@ export const MODULES = [
   "attribution",
   "corpus",
   "creation_id",
+  "ingest",
   "layoutmap",
   "library",
   "mermaid",

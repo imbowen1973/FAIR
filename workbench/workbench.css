@@ -1042,3 +1042,16 @@ ul.import-list {
   text-align: left;
 }
 .problem-where:hover { text-decoration: underline; }
+
+/* ---- tables on the slide (drawn, edited in source) ------------------ */
+.region-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9em;
+}
+.region-table th, .region-table td {
+  border: 1px solid var(--border-strong);
+  padding: 2px 6px;
+  text-align: left;
+}
+.region-table th { font-weight: 700; background: var(--bg-sunken); }

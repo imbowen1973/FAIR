@@ -23,7 +23,7 @@ export const RESERVED_SLIDE_KEYS = new Set([
   "role",
 ]);
 
-export const CONTENT_TYPES = ["ul", "ol", "p", "image", "mermaid", "video"];
+export const CONTENT_TYPES = ["ul", "ol", "p", "table", "image", "mermaid", "video"];
 
 /** Which repo paths a library render needs — mirrors wasm-renderer.js. */
 export function libraryPaths(paths) {

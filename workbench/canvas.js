@@ -504,6 +504,34 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
     return;
   }
 
+  if (type === "table") {
+    // Drawn as a real table; edited in the source view, because a grid
+    // editor is a project of its own and a wrong one eats data.
+    const table = document.createElement("table");
+    table.className = "region-table";
+    if (value.header?.length) {
+      const tr = document.createElement("tr");
+      for (const cell of value.header) {
+        const th = document.createElement("th");
+        th.textContent = String(cell ?? "");
+        tr.appendChild(th);
+      }
+      table.appendChild(tr);
+    }
+    for (const row of value.rows ?? []) {
+      const tr = document.createElement("tr");
+      for (const cell of row) {
+        const td = document.createElement("td");
+        td.textContent = String(cell ?? "");
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+    box.appendChild(table);
+    if (editable) box.title = "Tables are edited in the source view";
+    return;
+  }
+
   // Media, shown rather than named. A picture is the one thing on a slide
   // whose effect cannot be judged from its file path, so a preview that
   // prints "▨ media/x.jpg" is not a preview of anything.

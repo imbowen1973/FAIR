@@ -24,6 +24,7 @@ edufair-audit = "edufair_renderer.audit:main"
 edufair-doctemplate = "edufair_renderer.word.inspect:main"
 edufair-doc = "edufair_renderer.word.render:main"
 edufair-prompt = "edufair_renderer.prompt:main"
+edufair-import = "edufair_renderer.ingest:main"
 edufair-widescreen = "edufair_renderer.widescreen:main"
 edufair-heal = "edufair_renderer.heal:main"
 

@@ -233,7 +233,7 @@ function el(tag, className, text) {
  * onAdd(slides)      put them after the current slide
  * onReplace(slides)  make them the deck
  */
-export function importPanel(host, { layoutMap, geometry, existingIds = [], mark = 0, onAdd, onReplace, onClose }) {
+export function importPanel(host, { layoutMap, geometry, existingIds = [], mark = 0, onAdd, onReplace, onClose, onPptx }) {
   host.innerHTML = "";
   const panel = el("div", "import-panel");
   panel.append(el("h4", null, "Import slides"));
@@ -243,14 +243,19 @@ export function importPanel(host, { layoutMap, geometry, existingIds = [], mark 
       "hint",
       "Paste slides in the eduFAIR grammar, or plain markdown with " +
         "headings — headings become slides and what follows them becomes " +
-        "the body. Everything is checked against this template before " +
-        "anything is added."
+        "the body." +
+        (onPptx
+          ? " Or open an existing PowerPoint deck: its text, pictures and " +
+            "notes are rescued into slides, in your browser, and nothing " +
+            "is uploaded anywhere."
+          : "") +
+        " Everything is checked against this template before anything is added."
     )
   );
 
   const file = el("input");
   file.type = "file";
-  file.accept = ".md,.markdown,.yaml,.yml,.txt";
+  file.accept = ".md,.markdown,.yaml,.yml,.txt" + (onPptx ? ",.pptx" : "");
   file.id = "import-file";
   const label = el("label", "media-droplabel", "Open a file…");
   label.htmlFor = file.id;
@@ -323,7 +328,41 @@ export function importPanel(host, { layoutMap, geometry, existingIds = [], mark 
   area.addEventListener("input", review);
   file.addEventListener("change", async () => {
     if (!file.files?.length) return;
-    area.value = await file.files[0].text();
+    const picked = file.files[0];
+    if (/\.pptx$/i.test(picked.name) && onPptx) {
+      area.value = "";
+      summary.innerHTML = "";
+      summary.append(el("p", "hint", "Reading the deck in your browser…"));
+      add.disabled = true;
+      replace.disabled = true;
+      try {
+        const got = await onPptx(picked);
+        area.value = got.slidesMd;
+        review();
+        // The mapping is heuristic; say so per slide, before anything is
+        // added, so the author reviews rather than trusts.
+        for (const r of got.report) {
+          if (r.confidence === "low" || r.notes.length) {
+            summary.append(
+              el(
+                "p",
+                r.confidence === "low" ? "warn" : "hint",
+                `${r.id} (${r.layout}, ${r.confidence}): ` +
+                  (r.notes.join("; ") || "review the mapping")
+              )
+            );
+          }
+        }
+      } catch (err) {
+        summary.innerHTML = "";
+        summary.append(
+          el("p", "problem", `Could not read that deck: ${err.message ?? err}`)
+        );
+      }
+      file.value = "";
+      return;
+    }
+    area.value = await picked.text();
     review();
   });
   add.addEventListener("click", () => onAdd?.(ready));

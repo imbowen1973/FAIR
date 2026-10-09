@@ -61,7 +61,7 @@ import {
 } from "./canvas.js";
 import { slideMeta } from "./meta.js";
 import { paintListType, paintSwatches, ribbon } from "./ribbon.js";
-import { renderDeck, validate } from "./preview.js";
+import { ingestDeck, renderDeck, validate } from "./preview.js";
 import {
   blockDocuments,
   freePath,
@@ -564,12 +564,44 @@ function openImport() {
     );
   };
 
+  // Media an ingested deck brought with it, staged only when its slides
+  // are actually added — Cancel must leave no trace.
+  let importMedia = null;
+  const stageImportMedia = () => {
+    if (!importMedia) return;
+    let resources = blockMeta().data.resources;
+    for (const [rel, bytes] of importMedia) {
+      state.uploads.set(`blocks/${state.blockId}/${rel}`, bytes);
+      resources = withResource(resources, {
+        type: "image",
+        title: rel.split("/").pop(),
+        path: rel,
+      });
+    }
+    setBlockResources(resources);
+    importMedia = null;
+  };
+
   importPanel(panel, {
     layoutMap: state.library.layoutMap,
     geometry: state.library.geometry,
     existingIds: working().map((entry) => entry.data?.id).filter(Boolean),
     mark: slideMark(state.library.blocks.get(state.blockId)?.parsed, working()),
-    onAdd: (slides) => place(slides, false),
+    // An existing PowerPoint deck, rescued in this tab: text, pictures
+    // and notes out; the .pptx itself read and discarded, never uploaded.
+    onPptx: async (picked) => {
+      const got = await ingestDeck(
+        new Uint8Array(await picked.arrayBuffer()),
+        state.blockId,
+        (m) => m && status(m)
+      );
+      importMedia = got.media;
+      return got;
+    },
+    onAdd: (slides) => {
+      stageImportMedia();
+      place(slides, false);
+    },
     onReplace: (slides) => {
       if (
         working().length &&
@@ -577,6 +609,7 @@ function openImport() {
           `Replace all ${working().length} slides in this deck with ${slides.length}?`
         )
       ) return;
+      stageImportMedia();
       place(slides, true);
     },
     onClose: () => panel.remove(),

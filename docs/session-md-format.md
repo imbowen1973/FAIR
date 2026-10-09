@@ -275,6 +275,11 @@ typed object:
 - `{ type: ol, items: [...] }` — numbered list
 - `{ type: p, text: "..." }` — plain paragraphs (newline-separated), no
   bullets
+- `{ type: table, header: [..], rows: [[..], ..] }` — a real PowerPoint
+  table at the region's footprint, styled by the template's table style.
+  `header` is optional; every row must have the same number of cells.
+  Cells take inline emphasis. (Like images in non-picture placeholders,
+  the table shape itself carries no `<p:ph>` — the documented exception.)
 - `{ type: image, src: path }` — image, path relative to the session file
 - `{ type: mermaid, src: path }` — Mermaid source, rendered to PNG at build
   time (see below)

@@ -16,7 +16,7 @@ RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "outcomes", "dok", "
 # in block.yaml and outcomes.yaml -- and writing them again on a slide
 # is how a deck comes to disagree with the course it belongs to.
 SLIDE_ROLES = {"title", "outcomes"}
-CONTENT_TYPES = {"ul", "ol", "p", "image", "mermaid", "video"}
+CONTENT_TYPES = {"ul", "ol", "p", "table", "image", "mermaid", "video"}
 
 # How a picture meets its frame. Mirrors render.IMAGE_FITS, and is
 # declared here so the grammar can refuse an unknown one at parse time
@@ -78,6 +78,10 @@ class Region:
     src: str | None = None
     color: str | None = None  # default theme colour for the region's items
     url: str | None = None  # video: external hosting URL (https)
+    # table: optional header row and the body rows, each a list of cell
+    # strings (inline emphasis applies inside cells).
+    header: list[str] | None = None
+    rows: list[list[str]] = field(default_factory=list)
     # How a picture meets its frame: cover, contain, width, height.
     # The template knows the shape of the hole; only the author knows
     # whether this picture may lose its edges.
@@ -253,6 +257,27 @@ def _parse_region(name: str, raw, where: str) -> Region:
         return Region(
             name=name, type="p", text=text, color=_check_color(raw.get("color"), where)
         )
+    if ctype == "table":
+        rows = raw.get("rows")
+        if not isinstance(rows, list) or not rows:
+            raise SessionParseError(
+                f"{where}: region '{name}' of type table requires 'rows' (a list of rows)"
+            )
+        header = raw.get("header")
+        if header is not None and not isinstance(header, list):
+            raise SessionParseError(f"{where}: table 'header' must be a list of cells")
+        width = len(header) if header else len(rows[0])
+        cells_h = [str(c) for c in header] if header else None
+        cells_rows = []
+        for i, row in enumerate(rows):
+            if not isinstance(row, list):
+                raise SessionParseError(f"{where}: table row {i + 1} must be a list of cells")
+            if len(row) != width:
+                raise SessionParseError(
+                    f"{where}: table row {i + 1} has {len(row)} cells; expected {width}"
+                )
+            cells_rows.append([str(c) for c in row])
+        return Region(name=name, type="table", header=cells_h, rows=cells_rows)
     if ctype == "video":
         # Video is never embedded: it lives on a host (YouTube etc.) and
         # the slide carries a click-through poster. Keeps repos small.
