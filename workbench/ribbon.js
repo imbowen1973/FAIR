@@ -120,6 +120,7 @@ function splitButton({ name, menuLabel, face, onFace, build }) {
     if (opening) {
       menu.hidden = false;
       arrow.setAttribute("aria-expanded", "true");
+      keepOnScreen(menu);
     }
   }
   build(menu, () => {
@@ -138,6 +139,22 @@ function splitButton({ name, menuLabel, face, onFace, build }) {
   });
   wrap.append(faceButton, arrow, menu);
   return wrap;
+}
+
+/**
+ * A menu opens below its button, and is nudged sideways if that would
+ * put it off the screen -- on a phone the colour menu sits at the left
+ * edge and the marks menu near the right, so no one fixed side works.
+ */
+function keepOnScreen(menu) {
+  menu.style.left = "0px";
+  const margin = 8;
+  const rect = menu.getBoundingClientRect();
+  const width = document.documentElement.clientWidth || window.innerWidth;
+  let shift = 0;
+  if (rect.right > width - margin) shift = width - margin - rect.right;
+  if (rect.left + shift < margin) shift = margin - rect.left;
+  menu.style.left = `${shift}px`;
 }
 
 function closeMenus() {

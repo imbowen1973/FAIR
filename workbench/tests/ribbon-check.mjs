@@ -139,6 +139,30 @@ await page.waitForTimeout(300);
 const faceAgain = await page.evaluate(() => Boolean(document.querySelector('.canvas .region[data-region="full"] ol')));
 console.log("lists:", JSON.stringify({ listed, plain, faceAgain, colourOpen, escClosed, elsewhereClosed }));
 
+// ---- a phone: menus float over the page and stay on screen -----------
+// The bug this guards: a menu laid out inside the ribbon, pushing every
+// group apart, instead of over it.
+await page.setViewportSize({ width: 390, height: 844 });
+await page.waitForTimeout(300);
+const phone = [];
+for (const name of ["marks", "list", "colour"]) {
+  const before = await page.evaluate(() => document.getElementById("ribbon").getBoundingClientRect().height);
+  await page.locator(`#ribbon .split-arrow[data-for="${name}"]`).click();
+  phone.push(await page.evaluate(([n, h]) => {
+    const menu = document.querySelector(`#ribbon .split[data-split="${n}"] .split-menu`);
+    const r = menu.getBoundingClientRect();
+    return {
+      name: n,
+      floats: getComputedStyle(menu).position === "absolute",
+      onScreen: r.left >= 0 && r.right <= document.documentElement.clientWidth && r.width > 0,
+      ribbonSame: Math.abs(document.getElementById("ribbon").getBoundingClientRect().height - h) < 1,
+    };
+  }, [name, before]));
+  if (shot && name === "colour") await page.screenshot({ path: shot.replace(".png", "-phone.png") });
+  await page.keyboard.press("Escape");
+}
+console.log("phone:", JSON.stringify(phone));
+
 if (errors.length) console.log("errors:", errors.slice(0, 5));
 const failed =
   errors.length > 0 ||
@@ -147,7 +171,8 @@ const failed =
   !colourOpen || !escClosed || !elsewhereClosed ||
   !listed.ol || listed.face !== "1." || listed.scope !== "box" ||
   !plain ||
-  faceAgain;
+  faceAgain ||
+  phone.some((m) => !m.floats || !m.onScreen || !m.ribbonSame);
 console.log(failed ? "FAIL" : "PASS");
 await browser.close();
 process.exit(failed ? 1 : 0);

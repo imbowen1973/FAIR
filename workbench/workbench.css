@@ -1274,5 +1274,6 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
 .colour-bar.none { background: repeating-linear-gradient(45deg, var(--border-strong) 0 2px, transparent 2px 4px); }
 @media (max-width: 700px) {
   .ribbon-group + .ribbon-group { padding-left: 6px; }
-  .split-menu { left: auto; right: 0; }
+  /* Placement is ribbon.js's keepOnScreen: no fixed side fits every menu. */
+  .split-menu { max-width: calc(100vw - 16px); }
 }
