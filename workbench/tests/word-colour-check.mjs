@@ -253,6 +253,7 @@ const committed = () => {
 
 await page.locator('.canvas .region[data-region="full"]').first().click();
 await page.waitForTimeout(200);
+await page.locator('#ribbon .split-arrow[data-for="list"]').click(); // the list menu
 await page.locator('#ribbon .mark.list[data-list="none"]').first().click();
 await page.waitForTimeout(500);
 await page.locator('.canvas .region[data-region="full"]').first().click();
@@ -274,6 +275,7 @@ await page.evaluate(() => {
   sel.addRange(range);
 });
 await page.waitForTimeout(200);
+await page.locator('#ribbon .split-arrow[data-for="colour"]').click(); // the colour menu
 await page.locator("#ribbon button.swatch").nth(0).click();
 await page.waitForTimeout(700);
 

@@ -1227,3 +1227,52 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
   font-size: 0.72rem; color: var(--muted); margin-left: 6px;
 }
 .private-note { font-size: 0.82rem; color: var(--muted); margin: 0 0 8px; }
+
+/* ---- split buttons ---------------------------------------------------- */
+/* The face does the last thing chosen; the arrow opens the rest. One
+   control where there were three or seven, and the ribbon reads as
+   groups rather than a strip of glyphs. */
+.ribbon-group + .ribbon-group { padding-left: 12px; border-left: 1px solid var(--border); }
+.ribbon-group.right { border-left: 0; }
+.split { position: relative; display: inline-flex; align-items: stretch; }
+.split > button.split-face { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split > button.split-arrow {
+  min-width: 0; padding: 0 3px; border-left: 0;
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
+  display: inline-flex; align-items: center;
+}
+.split > button.split-arrow[aria-expanded="true"] { background: var(--bg-raised); color: var(--accent); }
+/* Which box the face's list choice acts on, as a small tag under it. */
+.split-face[data-scope]::after {
+  content: attr(data-scope); display: block; font-size: 8px; line-height: 1;
+  color: var(--muted); letter-spacing: 0.02em; margin-top: -1px;
+}
+.split-face.on[data-scope]::after { color: inherit; }
+.split-arrow[data-state="ul"], .split-arrow[data-state="ol"] { color: var(--accent); }
+.split-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+  display: grid; gap: 2px; min-width: 11rem; padding: 6px;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+}
+.split-menu[hidden] { display: none; }
+.split-menu .menu-heading {
+  margin: 4px 4px 2px; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; font-weight: 700;
+}
+.split-menu .menu-heading:first-child { margin-top: 0; }
+.split-menu button.menu-item { text-align: left; padding: 3px 8px; width: 100%; }
+.menu-item-label { display: inline-flex; gap: 10px; align-items: baseline; }
+.menu-glyph { display: inline-block; min-width: 1.4em; text-align: center; font-weight: 600; }
+.swatch-row { display: flex; gap: 4px; align-items: center; }
+.colour-face { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; }
+.colour-letter { font-weight: 700; font-size: 12px; }
+.colour-bar {
+  display: block; width: 14px; height: 4px; margin-top: 1px; border-radius: 1px;
+  background: var(--fg);
+}
+.colour-bar.none { background: repeating-linear-gradient(45deg, var(--border-strong) 0 2px, transparent 2px 4px); }
+@media (max-width: 700px) {
+  .ribbon-group + .ribbon-group { padding-left: 6px; }
+  .split-menu { left: auto; right: 0; }
+}
