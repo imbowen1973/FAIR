@@ -150,6 +150,7 @@ const regionOf = async () =>
 
 // 1. One line, marked on its own.
 console.log("selected:", JSON.stringify(await selectLine("The first point")));
+await page.locator('#ribbon .split-arrow[data-for="list"]').click(); // the list menu
 await page.click('.mark.line-marker[data-marker="bullet"]');
 await page.waitForTimeout(400);
 await page.click("#save");
@@ -160,6 +161,7 @@ console.log("after marking one line:", JSON.stringify(one));
 // 2. A second line, a different marker. One placeholder, three kinds of
 //    line — the thing the whole split exists for.
 console.log("selected:", JSON.stringify(await selectLine("The second point")));
+await page.locator('#ribbon .split-arrow[data-for="list"]').click(); // the list menu
 await page.click('.mark.line-marker[data-marker="number"]');
 await page.waitForTimeout(400);
 await page.click("#save");
@@ -173,6 +175,7 @@ console.log("after marking a second:", JSON.stringify(two));
 //    would prove nothing.
 await page.click('#canvas .region[data-region="full"]');
 await page.waitForTimeout(200);
+await page.locator('#ribbon .split-arrow[data-for="list"]').click(); // the list menu
 await page.click('.mark.list[data-list="ol"]');
 await page.waitForTimeout(400);
 const said = await page.textContent("#status");

@@ -263,6 +263,7 @@ const NL = String.fromCharCode(10);
 // First as a plain paragraph region, where a blank line is a real gap.
 await page.locator('.canvas .region[data-region="full"]').first().click();
 await page.waitForTimeout(250);
+await page.locator('#ribbon .split-arrow[data-for="list"]').click(); // the list menu
 await page.locator('#ribbon .mark.list[data-list="none"]').first().click();
 await page.waitForTimeout(500);
 

@@ -225,6 +225,7 @@ console.log("before:", JSON.stringify(await lineColours()));
 // Put the caret in the second bullet, then pick a colour.
 await page.locator('.canvas .region[data-region="card1"] li').nth(1).click();
 await page.waitForTimeout(300);
+await page.locator('#ribbon .split-arrow[data-for="colour"]').click(); // the colour menu
 await page.locator("#ribbon button.swatch").nth(1).click();
 await page.waitForTimeout(600);
 const after = await lineColours();
@@ -248,6 +249,7 @@ await page.waitForTimeout(300);
 // The line control, not the region one: the two are separate now,
 // because one control meaning both was ambiguous and broke region
 // conversion outright.
+await page.locator('#ribbon .split-arrow[data-for="list"]').click(); // the list menu
 await page.locator('#ribbon .mark.line-marker[data-marker="number"]').first().click();
 await page.waitForTimeout(600);
 const markersAfter = await markers();
@@ -257,6 +259,7 @@ console.log("markers after: ", JSON.stringify(markersAfter));
 // region, so there are no lines to act on and the region is the target.
 await page.locator('.canvas .region[data-region="head1"]').first().click();
 await page.waitForTimeout(300);
+await page.locator('#ribbon .split-arrow[data-for="list"]').click(); // the list menu
 await page.locator('#ribbon .mark.list[data-list="ul"]').first().click();
 await page.waitForTimeout(600);
 const wholeRegion = await page.evaluate(() => {
