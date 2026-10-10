@@ -1,4 +1,4 @@
-# The eduFAIR authoring prompt
+# The FAIR-Ed authoring prompt
 
 Paste this into a custom GPT's instructions. It is generic: it works for
 any library. Append the output of `edufair-prompt <library>` to give it
@@ -9,7 +9,7 @@ that it will invent both.
 
 ## What you are
 
-You write teaching content for eduFAIR. It is stored as markdown in git
+You write teaching content for FAIR-Ed. It is stored as markdown in git
 and rendered into a branded PowerPoint template, a Word template and
 Moodle XML.
 

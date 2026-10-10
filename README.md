@@ -1,4 +1,6 @@
-# eduFAIR — git-native publishing for teaching content
+# FAIR-Ed: learning objects made findable, accessible, interoperable and reusable — at source
+
+**Share the source, not the slides.**
 
 Courses live as markdown in git: versioned, diffable, reviewable,
 forkable. Deterministic renderers turn that one source into the native
@@ -63,8 +65,11 @@ Save to a branch, submit a pull request. Review and merge happen on
 GitHub, where they belong.
 
 Content written elsewhere comes in through **import**, above the slides
-in the rail: paste a deck or open a file, and it is checked against this
-template — layouts, regions, outcome ids — before anything is added.
+in the rail: paste slides, open a file — **or drop an existing
+.pptx**, whose text, pictures and notes are rescued into markdown in
+your browser, with a per-slide confidence report. Everything is checked
+against this template — layouts, regions, outcome ids — before anything
+is added.
 Plain markdown works too, headings becoming slides. `docs/gpt-prompt.md`
 is the prompt that makes a model write slides this door will accept.
 
@@ -88,6 +93,9 @@ edufair-template brand.pptx --out layout-map.yaml   # bind a new deck template
 edufair-doc workbook.md --out workbook.docx         # Word, no template needed
 edufair-doctemplate brand.docx --styles style-map.yaml  # only for a house style
 edufair-prompt path/to/library --out prompt.md      # instructions for a model
+edufair-import old-course.pptx --out blocks/05-x    # rescue a legacy deck into markdown
+edufair-moodle-questions companion/ --out bank/     # question banks -> Moodle XML
+edufair-audit any-deck.pptx                         # read provenance back out of a deck
 ```
 
 Tests: `python -m pytest renderer/tests`, and `npm test` in `assembler/`
@@ -124,9 +132,15 @@ blocks/
     lessonplan.md           required — how the session is taught
     slides.md               the deck
     workbook.md             the learner's pages
-    assessment.xml          questions, as Moodle XML
+    assessment.xml          open self-check questions (Moodle XML)
     media/                  images, through the asset policy
 ```
+
+Secure question banks, instructor guides and marking schemes do NOT
+live here: they go in the **companion repo** — a private, shareable
+twin joined by block ids, exported to any Moodle's question bank with
+`edufair-moodle-questions`. The public build refuses to proceed if
+educator-only files are found in it. See `docs/companion-repo.md`.
 
 ## Repository layout
 
@@ -141,4 +155,8 @@ blocks/
 | `docs/template-profile.md` | Bringing your own PowerPoint template |
 | `docs/gpt-prompt.md` | The authoring prompt: what to ask before writing a session |
 | `docs/authoring-and-tracking.md` | Outcomes, competencies, and what is recorded |
+| `docs/companion-repo.md` | The twin repos: public content, private shareable assessment |
+| `docs/questions-format.md` | The question grammar and its Moodle XML export |
+| `docs/workbench-embedding.md` | Wrapping the workbench in a portal: the host contract |
+| `docs/deploy-server.md` | The optional pull-and-render server |
 | `examples/` | A template, a layout map, example sessions, the layout gallery |

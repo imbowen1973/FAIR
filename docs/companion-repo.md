@@ -88,7 +88,7 @@ back as an event evidencing the outcomes the items `assess`.
    student.
 2. **The companion may reference the library; never the reverse.**
 3. **Same grammar, same tools, same asset policy** both sides — the
-   companion is ordinary eduFAIR content with a smaller audience, not a
+   companion is ordinary FAIR-Ed content with a smaller audience, not a
    second format.
 4. **Shareable means repo access**, nothing else: no tokens in files,
    no encrypted blobs in the public repo.
