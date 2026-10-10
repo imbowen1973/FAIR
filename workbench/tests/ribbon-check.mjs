@@ -139,29 +139,45 @@ await page.waitForTimeout(300);
 const faceAgain = await page.evaluate(() => Boolean(document.querySelector('.canvas .region[data-region="full"] ol')));
 console.log("lists:", JSON.stringify({ listed, plain, faceAgain, colourOpen, escClosed, elsewhereClosed }));
 
-// ---- a phone: menus float over the page and stay on screen -----------
-// The bug this guards: a menu laid out inside the ribbon, pushing every
-// group apart, instead of over it.
-await page.setViewportSize({ width: 390, height: 844 });
-await page.waitForTimeout(300);
-const phone = [];
-for (const name of ["marks", "list", "colour"]) {
-  const before = await page.evaluate(() => document.getElementById("ribbon").getBoundingClientRect().height);
-  await page.locator(`#ribbon .split-arrow[data-for="${name}"]`).click();
-  phone.push(await page.evaluate(([n, h]) => {
-    const menu = document.querySelector(`#ribbon .split[data-split="${n}"] .split-menu`);
-    const r = menu.getBoundingClientRect();
-    return {
-      name: n,
-      floats: getComputedStyle(menu).position === "absolute",
-      onScreen: r.left >= 0 && r.right <= document.documentElement.clientWidth && r.width > 0,
-      ribbonSame: Math.abs(document.getElementById("ribbon").getBoundingClientRect().height - h) < 1,
-    };
-  }, [name, before]));
-  if (shot && name === "colour") await page.screenshot({ path: shot.replace(".png", "-phone.png") });
-  await page.keyboard.press("Escape");
+// ---- every width: each menu under its own button, inside the window ---
+// The bugs this guards: a menu laid out inside the ribbon, pushing every
+// group apart; and one pinned to a fixed side, so the colour menu ran
+// off the left edge of a phone and off the right edge of a desktop.
+const placements = [];
+for (const [width, height] of [[390, 844], [700, 900], [1000, 900], [1500, 950]]) {
+  await page.setViewportSize({ width, height });
+  await page.waitForTimeout(250);
+  for (const name of ["marks", "list", "colour"]) {
+    const before = await page.evaluate(() => document.getElementById("ribbon").getBoundingClientRect().height);
+    await page.locator(`#ribbon .split-arrow[data-for="${name}"]`).click();
+    placements.push(await page.evaluate(([n, h, w]) => {
+      const split = document.querySelector(`#ribbon .split[data-split="${n}"]`);
+      const menu = split.querySelector(".split-menu");
+      const r = menu.getBoundingClientRect();
+      const b = split.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth;
+      return {
+        width: w, name: n,
+        floats: getComputedStyle(menu).position === "fixed",
+        inside: r.left >= 8 - 0.5 && r.right <= vw - 8 + 0.5 && r.width > 0,
+        underButton: r.top >= b.bottom - 1 && r.top <= b.bottom + 12,
+        ribbonSame: Math.abs(document.getElementById("ribbon").getBoundingClientRect().height - h) < 1,
+      };
+    }, [name, before, width]));
+    if (shot && name === "colour" && width === 390) await page.screenshot({ path: shot.replace(".png", "-phone.png") });
+    await page.keyboard.press("Escape");
+  }
 }
-console.log("phone:", JSON.stringify(phone));
+const misplaced = placements.filter((m) => !m.floats || !m.inside || !m.underButton || !m.ribbonSame);
+console.log("placements:", placements.length, "misplaced:", JSON.stringify(misplaced));
+
+// Scrolling closes an open menu rather than leaving it floating.
+await page.setViewportSize({ width: 390, height: 600 });
+await page.locator('#ribbon .split-arrow[data-for="colour"]').click();
+await page.mouse.wheel(0, 300);
+await page.waitForTimeout(300);
+const scrollClosed = await page.isHidden('#ribbon .split[data-split="colour"] .split-menu');
+console.log("closes on scroll:", scrollClosed);
 
 if (errors.length) console.log("errors:", errors.slice(0, 5));
 const failed =
@@ -172,7 +188,7 @@ const failed =
   !listed.ol || listed.face !== "1." || listed.scope !== "box" ||
   !plain ||
   faceAgain ||
-  phone.some((m) => !m.floats || !m.onScreen || !m.ribbonSame);
+  misplaced.length > 0 || !scrollClosed;
 console.log(failed ? "FAIL" : "PASS");
 await browser.close();
 process.exit(failed ? 1 : 0);

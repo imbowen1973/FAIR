@@ -1234,6 +1234,10 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
    groups rather than a strip of glyphs. */
 .ribbon-group + .ribbon-group { padding-left: 8px; border-left: 1px solid var(--border); }
 .ribbon { gap: 8px; }
+/* A long press on a phone selected the ribbon's words ("Layout") and
+   raised the copy menu over the controls. Nothing here is text to copy. */
+.ribbon { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.ribbon select, .ribbon input { -webkit-user-select: auto; user-select: auto; }
 .ribbon-icon-label { display: inline-flex; color: var(--muted); margin-right: 2px; }
 .ribbon-group.right { border-left: 0; }
 .split { position: relative; display: inline-flex; align-items: stretch; }
@@ -1251,8 +1255,10 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
 }
 .split-face.on[data-scope]::after { color: inherit; }
 .split-arrow[data-state="ul"], .split-arrow[data-state="ol"] { color: var(--accent); }
+/* Placed by ribbon.js keepOnScreen: fixed to the window, under its
+   button, never clipped or pushed off either edge. */
 .split-menu {
-  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30;
+  position: fixed; top: 0; left: 0; z-index: 30;
   display: grid; gap: 2px; min-width: 11rem; padding: 6px;
   background: var(--bg-raised); border: 1px solid var(--border);
   border-radius: 8px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
@@ -1276,6 +1282,4 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
 .colour-bar.none { background: repeating-linear-gradient(45deg, var(--border-strong) 0 2px, transparent 2px 4px); }
 @media (max-width: 700px) {
   .ribbon-group + .ribbon-group { padding-left: 6px; }
-  /* Placement is ribbon.js's keepOnScreen: no fixed side fits every menu. */
-  .split-menu { max-width: calc(100vw - 16px); }
 }
