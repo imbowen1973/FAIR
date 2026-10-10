@@ -155,6 +155,7 @@ educator-only files are found in it. See `docs/companion-repo.md`.
 | `docs/template-profile.md` | Bringing your own PowerPoint template |
 | `docs/gpt-prompt.md` | The authoring prompt: what to ask before writing a session |
 | `docs/authoring-and-tracking.md` | Outcomes, competencies, and what is recorded |
+| `docs/importing-decks.md` | What import does with text, tables and pictures from an old deck |
 | `docs/companion-repo.md` | The twin repos: public content, private shareable assessment |
 | `docs/questions-format.md` | The question grammar and its Moodle XML export |
 | `docs/workbench-embedding.md` | Wrapping the workbench in a portal: the host contract |

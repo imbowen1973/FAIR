@@ -595,7 +595,10 @@ function openImport() {
       const got = await ingestDeck(
         new Uint8Array(await picked.arrayBuffer()),
         state.blockId,
-        (m) => m && status(m)
+        (m) => m && status(m),
+        // Names the media after the deck, so a second import into this
+        // block cannot overwrite the first one's pictures.
+        picked.name
       );
       importMedia = got.media;
       return got;

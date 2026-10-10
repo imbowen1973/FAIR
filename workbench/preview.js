@@ -145,7 +145,8 @@ if "/py" not in sys.path:
 shutil.rmtree("/ingest-out", ignore_errors=True)
 from edufair_renderer.ingest import ingest_pptx
 args = json.loads(Path("/ingest-args.json").read_text())
-result = ingest_pptx(Path("/ingest-in.pptx").read_bytes(), args["block_id"])
+result = ingest_pptx(Path("/ingest-in.pptx").read_bytes(), args["block_id"],
+                     source_name=args.get("source_name"))
 for rel, data in result.media.items():
     p = Path("/ingest-out") / rel
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -163,11 +164,14 @@ json.dumps({"title": result.title, "slides_md": result.slides_md,
  * report. The source deck is never uploaded anywhere: it is read in
  * this tab and discarded.
  */
-export async function ingestDeck(bytes, blockId, status = () => {}) {
+export async function ingestDeck(bytes, blockId, status = () => {}, sourceName = null) {
   const py = await ensurePyodide(status);
   status?.("Reading the deck in your browser…");
   py.FS.writeFile("/ingest-in.pptx", bytes);
-  py.FS.writeFile("/ingest-args.json", JSON.stringify({ block_id: blockId }));
+  py.FS.writeFile(
+    "/ingest-args.json",
+    JSON.stringify({ block_id: blockId, source_name: sourceName })
+  );
   const out = JSON.parse(await py.runPythonAsync(INGEST));
   const media = new Map();
   for (const rel of out.media) {

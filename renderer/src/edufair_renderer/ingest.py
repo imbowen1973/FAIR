@@ -63,6 +63,22 @@ class _Pic:
     ext: str
     left: int
     top: int
+    width: int = 0
+    height: int = 0
+    # Sat in a picture/content placeholder: the strongest sign it is the
+    # slide's picture rather than decoration.
+    in_placeholder: bool = False
+    # PowerPoint crops as fractions of the original (left, top, right,
+    # bottom). The blob is uncropped; the crop is applied on import so the
+    # media matches what the slide showed.
+    crop: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    # The slide's own background picture: saved, never placed -- the
+    # template owns backgrounds.
+    background: bool = False
+
+    @property
+    def area(self) -> int:
+        return max(0, self.width) * max(0, self.height)
 
 
 @dataclass
@@ -111,6 +127,55 @@ def _paragraphs(text_frame) -> list[dict]:
         if text:
             out.append({"text": text, "level": para.level or 0})
     return out
+
+
+_R_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+_A_BLIP = "{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+
+
+def _blip_image(part, blip):
+    """The image a <a:blip> points at, or None."""
+    rid = blip.get(_R_EMBED) if blip is not None else None
+    if not rid:
+        return None
+    try:
+        image_part = part.related_part(rid)
+        return image_part.blob, image_part.partname.ext
+    except Exception:
+        return None
+
+
+def _picture_fill(shape, left: int, top: int) -> "_Pic | None":
+    """A shape whose fill is a picture (<p:spPr><a:blipFill>)."""
+    sppr = getattr(shape._element, "spPr", None)
+    if sppr is None:
+        return None
+    blip = sppr.find(f".//{_A_BLIP}")
+    found = _blip_image(shape.part, blip)
+    if found is None:
+        return None
+    blob, ext = found
+    return _Pic(blob=blob, ext=ext, left=left, top=top,
+                width=shape.width or 0, height=shape.height or 0)
+
+
+def _background_picture(slide, size) -> "_Pic | None":
+    """The slide's own background picture (<p:bg>), if it has one.
+
+    Only the slide's own: a background inherited from the layout or
+    master is the old template's, and there is nothing to rescue."""
+    bg = slide._element.find(
+        "{http://schemas.openxmlformats.org/presentationml/2006/main}cSld/"
+        "{http://schemas.openxmlformats.org/presentationml/2006/main}bg"
+    )
+    if bg is None:
+        return None
+    found = _blip_image(slide.part, bg.find(f".//{_A_BLIP}"))
+    if found is None:
+        return None
+    blob, ext = found
+    return _Pic(blob=blob, ext=ext, left=0, top=0, width=size[0], height=size[1],
+                background=True)
 
 
 def _table_grid(table) -> list[list[str]]:
@@ -163,14 +228,38 @@ def _harvest(shape, facts: _Facts, offset=(0, 0)) -> None:
             _harvest(child, facts, (left, top))
         return
 
-    if kind == MSO_SHAPE_TYPE.PICTURE:
+    # Any picture: free-floating (Picture) or sitting in a placeholder
+    # (PlaceholderPicture). The second is a different python-pptx type
+    # with shape_type PLACEHOLDER, and looking only for PICTURE dropped
+    # every placeholder image without a word.
+    from pptx.shapes.picture import _BasePicture
+
+    if isinstance(shape, _BasePicture):
         try:
+            image = shape.image
             facts.pics.append(
-                _Pic(blob=shape.image.blob, ext=shape.image.ext, left=left, top=top)
+                _Pic(
+                    blob=image.blob, ext=image.ext, left=left, top=top,
+                    width=shape.width or 0, height=shape.height or 0,
+                    in_placeholder=shape.is_placeholder,
+                    crop=(
+                        shape.crop_left, shape.crop_top,
+                        shape.crop_right, shape.crop_bottom,
+                    ),
+                )
             )
         except Exception:
-            facts.oddities.append("a picture could not be read and was dropped")
+            facts.oddities.append(
+                "a picture could not be read (linked, not embedded?) and was dropped"
+            )
         return
+
+    # A picture used as a shape's FILL (a rectangle filled with a photo).
+    # Its text, if any, is harvested below as ordinary text; the overlay
+    # check then sees it sits on the picture.
+    fill_pic = _picture_fill(shape, left, top)
+    if fill_pic is not None:
+        facts.pics.append(fill_pic)
 
     if getattr(shape, "has_table", False) and shape.has_table:
         rows = _table_grid(shape.table)
@@ -245,6 +334,9 @@ def extract(source) -> tuple[list[_Facts], tuple[int, int], str | None]:
         facts = _Facts(number=n)
         for shape in slide.shapes:
             _harvest(shape, facts)
+        background = _background_picture(slide, (prs.slide_width, prs.slide_height))
+        if background is not None:
+            facts.pics.append(background)
         if slide.has_notes_slide:
             notes = slide.notes_slide.notes_text_frame.text.strip()
             facts.notes = notes or None
@@ -358,11 +450,31 @@ def classify(facts: _Facts, size, media_ref) -> tuple[dict, str, list[str]]:
         notes.append(f"{len(bodies)} text areas merged — free-form layout approximated")
         return done("Full", "low")
 
-    pic_ref = media_ref(facts.pics[0], facts.number)
-    if len(facts.pics) > 1:
-        for i, pic in enumerate(facts.pics[1:], start=2):
-            kept = media_ref(pic, facts.number, index=i)
-            notes.append(f"extra picture saved as {kept} — place it on its own slide")
+    # The picture that becomes the slide's: one that sat in a placeholder
+    # if there is one, else the largest. Backgrounds never compete.
+    placed = [pic for pic in facts.pics if not pic.background]
+    for pic in facts.pics:
+        if pic.background:
+            kept = media_ref(pic, facts.number)
+            if kept:
+                notes.append(
+                    f"slide background picture saved as {kept}, not placed — "
+                    "the template now provides the background"
+                )
+    if not placed:
+        # Only a background: the slide is its text.
+        facts_without = _Facts(number=facts.number, texts=facts.texts,
+                               tables=facts.tables, notes=facts.notes)
+        slide_dict, confidence, more = classify(facts_without, size, media_ref)
+        return slide_dict, confidence, notes + more
+
+    main = max(placed, key=lambda pic: (pic.in_placeholder, pic.area))
+    pic_ref = media_ref(main, facts.number)
+    for pic in placed:
+        if pic is not main:
+            kept = media_ref(pic, facts.number)
+            if kept:
+                notes.append(f"extra picture saved as {kept} — place it on its own slide")
 
     if pic_ref is None:
         notes.append("picture in an unsupported format was dropped")
@@ -371,70 +483,224 @@ def classify(facts: _Facts, size, media_ref) -> tuple[dict, str, list[str]]:
             return done("Full", "low")
         return done("TitleOnly", "low")
 
-    if not bodies:
-        out["picture"] = {"type": "image", "src": pic_ref}
+    # Text sitting ON the picture can no longer sit on it: the template
+    # owns positions. It is kept -- as the caption, or with the body --
+    # and the report quotes it so a reviewer can see what was overlaid.
+    if title is not None and _overlap(title, main) >= OVERLAY_SHARE:
+        notes.append(f"title \"{_snip(out.get('title', ''))}\" was set over the picture")
+    overlaid = [b for b in bodies if _overlap(b, main) >= OVERLAY_SHARE]
+    beside = [b for b in bodies if b not in overlaid]
+    for b in overlaid:
+        notes.append(f"text \"{_snip(_plain(b))}\" was overlaid on the picture")
+
+    picture = {"type": "image", "src": pic_ref}
+
+    if not beside:
+        out["picture"] = picture
+        if overlaid:
+            out["caption"] = _merged_region(overlaid)
+            notes.append("overlaid text kept as the caption")
         return done("Picture", "medium")
 
-    body = bodies[0]
-    if body.chars <= CAPTION_CHARS and len(bodies) == 1:
-        out["picture"] = {"type": "image", "src": pic_ref}
-        out["caption"] = _text_region(body)
+    # A single short line under (or over) the picture is its caption.
+    # A list or several lines beside it is body text, and goes to the side.
+    if (
+        len(beside) == 1 and not overlaid
+        and len(beside[0].paragraphs) == 1 and beside[0].chars <= CAPTION_CHARS
+        and _horizontal_share(beside[0], main) >= 0.5
+    ):
+        out["picture"] = picture
+        out["caption"] = _text_region(beside[0])
         return done("Picture", "medium")
 
-    out["left"] = _text_region(body)
-    out["right"] = {"type": "image", "src": pic_ref}
-    if len(bodies) > 1:
-        merged = [p for b in bodies for p in b.paragraphs]
-        out["left"] = {"type": "ul", "items": _items(merged)}
-        notes.append("several text areas merged beside the picture")
-    return done("Split", "medium" if _columns(body, _Text([], facts.pics[0].left, facts.pics[0].top, 0, 0), slide_w) else "low")
+    # Picture and text side by side, on the side the picture was.
+    text_region = _merged_region(beside + overlaid)
+    if len(beside) > 1:
+        notes.append(f"{len(beside)} text areas merged beside the picture")
+    if overlaid:
+        notes.append("overlaid text moved beside the picture")
+    picture_left = _centre_x(main) < sum(_centre_x(b) for b in beside) / len(beside)
+    out["left"], out["right"] = (
+        (picture, text_region) if picture_left else (text_region, picture)
+    )
+    clean_split = all(_horizontal_share(b, main) < 0.2 for b in beside)
+    return done("Split", "medium" if clean_split else "low")
 
 
-def _prepare_image(blob: bytes, ext: str) -> tuple[bytes, str] | None:
-    """The asset policy at the door: resize, re-encode, strip metadata."""
+# Text overlapping the picture by at least this share of its own area
+# was set ON the picture.
+OVERLAY_SHARE = 0.5
+
+
+def _box(shape) -> tuple[int, int, int, int]:
+    return shape.left, shape.top, shape.left + shape.width, shape.top + shape.height
+
+
+def _overlap(text: "_Text", pic: "_Pic") -> float:
+    """Share of the text's area that lies on the picture."""
+    tl, tt, tr, tb = _box(text)
+    pl, pt, pr, pb = _box(pic)
+    w = max(0, min(tr, pr) - max(tl, pl))
+    h = max(0, min(tb, pb) - max(tt, pt))
+    area = max(1, text.width * text.height)
+    return (w * h) / area
+
+
+def _horizontal_share(text: "_Text", pic: "_Pic") -> float:
+    """Share of the text's width that sits within the picture's columns:
+    high for a caption under a picture, low for text beside it."""
+    tl, _, tr, _ = _box(text)
+    pl, _, pr, _ = _box(pic)
+    return max(0, min(tr, pr) - max(tl, pl)) / max(1, text.width)
+
+
+def _centre_x(shape) -> float:
+    return shape.left + shape.width / 2
+
+
+def _plain(text: "_Text") -> str:
+    return " ".join(p["text"].replace("**", "") for p in text.paragraphs)
+
+
+def _snip(s: str, n: int = 50) -> str:
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _merged_region(texts: list["_Text"]):
+    """Several text areas as one region, in reading order."""
+    texts = sorted(texts, key=lambda t: (t.top, t.left))
+    paragraphs = [p for t in texts for p in t.paragraphs]
+    if len(paragraphs) == 1 and len(paragraphs[0]["text"]) <= CAPTION_CHARS:
+        return {"type": "p", "text": paragraphs[0]["text"]}
+    return {"type": "ul", "items": _items(paragraphs)}
+
+
+def _prepare_image(
+    blob: bytes, ext: str, crop=(0.0, 0.0, 0.0, 0.0), cap: int | None = None
+) -> tuple[bytes, str] | None:
+    """The asset policy at the door: crop as shown, resize, re-encode,
+    strip metadata, and fit under the repo's byte cap.
+
+    Resizing alone is not enough: a 2000px photograph or a PNG with
+    transparency can still exceed the cap, and the library's own build
+    then refuses the commit. So quality comes down first (JPEG), then
+    the image shrinks, until it fits."""
     from PIL import Image
 
+    from .assets import MAX_IMAGE_BYTES
+
+    cap = cap or MAX_IMAGE_BYTES
     try:
         im = Image.open(io.BytesIO(blob))
         im.load()
     except Exception:
         return None
+
+    left, top, right, bottom = (max(0.0, float(c or 0)) for c in crop)
+    if left or top or right or bottom:
+        w, h = im.size
+        box = (
+            round(w * left), round(h * top),
+            round(w * (1 - right)), round(h * (1 - bottom)),
+        )
+        if box[2] > box[0] and box[3] > box[1]:
+            im = im.crop(box)
+
     edge = max(im.size)
     if edge > MAX_EDGE:
         scale = MAX_EDGE / edge
         im = im.resize((round(im.width * scale), round(im.height * scale)), Image.LANCZOS)
     has_alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
-    buf = io.BytesIO()
-    if has_alpha:
-        im.convert("RGBA").save(buf, format="PNG", optimize=True)
-        return buf.getvalue(), "png"
-    im.convert("RGB").save(buf, format="JPEG", quality=JPEG_QUALITY, optimize=True, progressive=True)
-    return buf.getvalue(), "jpg"
+    im = im.convert("RGBA" if has_alpha else "RGB")
+
+    def encode(img, quality):
+        buf = io.BytesIO()
+        if has_alpha:
+            img.save(buf, format="PNG", optimize=True)
+        else:
+            img.save(buf, format="JPEG", quality=quality, optimize=True, progressive=True)
+        return buf.getvalue()
+
+    for quality in (JPEG_QUALITY, 72, 62) if not has_alpha else (None,):
+        data = encode(im, quality)
+        if len(data) <= cap:
+            return data, ("png" if has_alpha else "jpg")
+    while min(im.size) > 64:
+        im = im.resize((round(im.width * 0.85), round(im.height * 0.85)), Image.LANCZOS)
+        data = encode(im, 62)
+        if len(data) <= cap:
+            break
+    return data, ("png" if has_alpha else "jpg")
 
 
-def ingest_pptx(source, block_id: str, title: str | None = None) -> IngestResult:
+# An image on at least this many slides, and on at least this share of
+# them, is the old deck's branding (a logo in the corner), not content.
+BRANDING_MIN_SLIDES = 3
+BRANDING_SHARE = 0.5
+
+
+def _slug(text: str, limit: int = 24) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return slug[:limit].strip("-") or "deck"
+
+
+def ingest_pptx(
+    source, block_id: str, title: str | None = None, source_name: str | None = None
+) -> IngestResult:
     slides, size, deck_title = extract(source)
     media: dict[str, bytes] = {}
-    by_hash: dict[str, str] = {}
+    by_key: dict[tuple, str] = {}
 
-    def media_ref(pic: _Pic, slide_no: int, index: int = 1) -> str | None:
-        digest = hashlib.sha1(pic.blob).hexdigest()[:10]
-        if digest in by_hash:
-            return by_hash[digest]
-        prepared = _prepare_image(pic.blob, pic.ext)
+    # Media names say which deck and slide a picture came from, and end in
+    # a content hash so they cannot collide. Numbering by slide alone
+    # meant a second deck imported into the same block overwrote the
+    # first deck's pictures, and its slides then showed the wrong image.
+    if source_name is None and isinstance(source, (str, Path)):
+        source_name = Path(source).name
+    prefix = _slug(Path(source_name).stem if source_name else block_id)
+
+    def media_ref(pic: _Pic, slide_no: int) -> str | None:
+        key = (hashlib.sha1(pic.blob).hexdigest(), pic.crop)
+        if key in by_key:
+            return by_key[key]
+        prepared = _prepare_image(pic.blob, pic.ext, crop=pic.crop)
         if prepared is None:
             return None
         data, ext = prepared
-        name = f"media/img-{slide_no:02d}-{index}.{ext}"
+        name = f"media/{prefix}-s{slide_no:02d}-{hashlib.sha1(data).hexdigest()[:8]}.{ext}"
         media[name] = data
-        by_hash[digest] = name
+        by_key[key] = name
         return name
+
+    # The old deck's branding -- the same picture on most slides -- is
+    # the old template's job, which the new template now does. Dropped,
+    # with one note, rather than placed on every slide as content.
+    seen_on: dict[str, set[int]] = {}
+    for facts in slides:
+        for pic in facts.pics:
+            seen_on.setdefault(hashlib.sha1(pic.blob).hexdigest(), set()).add(facts.number)
+    branding = {
+        digest for digest, numbers in seen_on.items()
+        if len(numbers) >= BRANDING_MIN_SLIDES
+        and len(numbers) >= BRANDING_SHARE * len(slides)
+    }
+    branding_noted = False
+    if branding:
+        for facts in slides:
+            facts.pics = [
+                pic for pic in facts.pics
+                if hashlib.sha1(pic.blob).hexdigest() not in branding
+            ]
 
     blocks: list[str] = []
     report: list[dict] = []
     first_title: str | None = None
     for facts in slides:
         slide_dict, confidence, notes = classify(facts, size, media_ref)
+        if branding and not branding_noted:
+            notes.insert(0, f"{len(branding)} picture(s) repeated on most slides "
+                            "(a logo?) dropped as the old deck's branding")
+            branding_noted = True
         if first_title is None and slide_dict.get("title"):
             first_title = slide_dict["title"]
         sid = f"s-{facts.number:02d}"
@@ -518,7 +784,7 @@ def main(argv: list[str] | None = None) -> int:
     slug = args.block_id or re.sub(r"[^a-z0-9]+", "-", args.pptx.stem.lower()).strip("-")
     out_dir = args.out or Path("blocks") / slug
 
-    result = ingest_pptx(args.pptx, slug, title=args.title)
+    result = ingest_pptx(args.pptx, slug, title=args.title, source_name=args.pptx.name)
     write_block(result, out_dir, args.pptx.name)
 
     low = sum(1 for r in result.report if r["confidence"] == "low")
