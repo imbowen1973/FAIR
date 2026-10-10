@@ -85,6 +85,10 @@ class Region:
     # table: relative column widths (any positive numbers; only the
     # proportions matter). Absent = sized from the content.
     widths: list[float] | None = None
+    # table: merged cells. (row, col) of each merge's top-left cell in
+    # the full grid (header is row 0 when present) -> (rowspan, colspan).
+    # Covered cells are "" in header/rows.
+    spans: dict[tuple[int, int], tuple[int, int]] = field(default_factory=dict)
     # How a picture meets its frame: cover, contain, width, height.
     # The template knows the shape of the hole; only the author knows
     # whether this picture may lose its edges.
@@ -230,6 +234,62 @@ def _parse_list_items(raw, where: str, depth: int = 0) -> list[ListItem]:
     return items
 
 
+MERGE_LEFT = "<"
+MERGE_UP = "^"
+_ESCAPED = {"\\<": "<", "\\^": "^"}
+
+
+def _resolve_merges(grid: list[list[str]], where: str) -> dict:
+    """Table merge markers -> spans, validated.
+
+    A cell that is exactly "<" belongs to the cell on its left; exactly
+    "^" to the cell above. Markers chain, so the interior of a 2x2 block
+    may use either. Every merge must cover a whole rectangle with its
+    text in the top-left cell. A literal "<" or "^" is written "\\<" or
+    "\\^". Returns {(row, col): (rowspan, colspan)} for each merge.
+    """
+    n_rows, n_cols = len(grid), len(grid[0])
+
+    def origin(r: int, c: int) -> tuple[int, int]:
+        while True:
+            value = grid[r][c]
+            if value == MERGE_LEFT:
+                if c == 0:
+                    raise SessionParseError(
+                        f"{where}: table row {r + 1}: '<' in the first column has "
+                        "nothing to its left to merge into"
+                    )
+                c -= 1
+            elif value == MERGE_UP:
+                if r == 0:
+                    raise SessionParseError(
+                        f"{where}: table column {c + 1}: '^' in the first row has "
+                        "nothing above it to merge into"
+                    )
+                r -= 1
+            else:
+                return r, c
+
+    groups: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for r in range(n_rows):
+        for c in range(n_cols):
+            groups.setdefault(origin(r, c), []).append((r, c))
+
+    spans = {}
+    for (r0, c0), cells in groups.items():
+        if len(cells) == 1:
+            continue
+        r1 = max(r for r, _ in cells)
+        c1 = max(c for _, c in cells)
+        if min(c for _, c in cells) < c0 or len(cells) != (r1 - r0 + 1) * (c1 - c0 + 1):
+            raise SessionParseError(
+                f"{where}: table merge starting at row {r0 + 1}, column {c0 + 1} is "
+                "not a rectangle — every cell in the block must be '<' or '^'"
+            )
+        spans[(r0, c0)] = (r1 - r0 + 1, c1 - c0 + 1)
+    return spans
+
+
 def _parse_region(name: str, raw, where: str) -> Region:
     # A plain string anywhere is a single unadorned text paragraph —
     # titles, column headings, captions.
@@ -295,8 +355,26 @@ def _parse_region(name: str, raw, where: str) -> Region:
                     "one per column (only their proportions matter)"
                 )
             widths = [float(w) for w in widths]
+        grid = ([cells_h] if cells_h else []) + cells_rows
+        spans = _resolve_merges(grid, f"{where}: region '{name}'")
+        covered = {
+            (r0 + i, c0 + j)
+            for (r0, c0), (rs, cs) in spans.items()
+            for i in range(rs)
+            for j in range(cs)
+            if (i, j) != (0, 0)
+        }
+        grid = [
+            ["" if (r, c) in covered else _ESCAPED.get(v, v) for c, v in enumerate(row)]
+            for r, row in enumerate(grid)
+        ]
+        if cells_h:
+            cells_h, cells_rows = grid[0], grid[1:]
+        else:
+            cells_rows = grid
         return Region(
-            name=name, type="table", header=cells_h, rows=cells_rows, widths=widths
+            name=name, type="table", header=cells_h, rows=cells_rows,
+            widths=widths, spans=spans,
         )
     if ctype == "video":
         # Video is never embedded: it lives on a host (YouTube etc.) and

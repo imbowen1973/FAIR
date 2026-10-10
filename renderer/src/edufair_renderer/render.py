@@ -436,7 +436,8 @@ def _fill_table(slide, placeholder, region, code_typeface: str) -> None:
     n_cols = len(body[0]) if body else len(header or [])
 
     fit = fit_table(
-        header, body, placeholder.width, placeholder.height, widths=region.widths
+        header, body, placeholder.width, placeholder.height,
+        widths=region.widths, spans=region.spans,
     )
 
     frame = slide.shapes.add_table(
@@ -454,6 +455,12 @@ def _fill_table(slide, placeholder, region, code_typeface: str) -> None:
     # leaves no blank space behind it.
     for row in table.rows:
         row.height = Emu(fit.row_minimum)
+
+    # Real PowerPoint merges: gridSpan/rowSpan on the top-left cell,
+    # hMerge/vMerge on the cells it covers. Those covered cells hold ""
+    # (the parser saw to it), so the merged cell shows one text.
+    for (r, c), (rowspan, colspan) in region.spans.items():
+        table.cell(r, c).merge(table.cell(r + rowspan - 1, c + colspan - 1))
 
     size = Pt(fit.font_pt)
     sz = str(int(round(fit.font_pt * 100)))

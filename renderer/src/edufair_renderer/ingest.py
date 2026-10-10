@@ -83,7 +83,10 @@ class IngestResult:
     report: list[dict]  # {slide, id, layout, confidence, notes}
 
 
-_BULLET_GLYPHS = re.compile(r"^[\s•‣◦·⁃\-–—o]+\s*")
+# A typed bullet: a glyph FOLLOWED BY WHITESPACE. The space is what
+# makes it a bullet -- without it, "oxygen" lost its "o" and "-5"
+# became "5", which in a cold-chain table turns -20 °C into 20 °C.
+_BULLET_GLYPHS = re.compile(r"^\s*(?:[•‣◦·⁃\-–—o]\s+)+")
 _DIAGRAM_URI = "http://schemas.openxmlformats.org/drawingml/2006/diagram"
 _A_T = "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
 
@@ -108,6 +111,33 @@ def _paragraphs(text_frame) -> list[dict]:
         if text:
             out.append({"text": text, "level": para.level or 0})
     return out
+
+
+def _table_grid(table) -> list[list[str]]:
+    """A table's cells as the grammar writes them, merges as markers.
+
+    A merge's text lives in its top-left cell; every cell it covers
+    becomes "<" (same row as the top-left) or "^" (a row below), which
+    the parser turns back into the same merge. Cells are not
+    bullet-stripped -- they are not lists, and a leading "-" in a table
+    is usually a sign -- and a cell that literally reads "<" or "^" is
+    escaped so it is not taken for a marker.
+    """
+    n_rows, n_cols = len(table.rows), len(table.columns)
+    grid: list[list[str | None]] = [[None] * n_cols for _ in range(n_rows)]
+    for r in range(n_rows):
+        for c in range(n_cols):
+            if grid[r][c] is not None:
+                continue  # already claimed by a merge above or to the left
+            cell = table.cell(r, c)
+            text = cell.text.strip()
+            grid[r][c] = {"<": "\\<", "^": "\\^"}.get(text, text)
+            if cell.is_merge_origin:
+                for i in range(r, min(n_rows, r + cell.span_height)):
+                    for j in range(c, min(n_cols, c + cell.span_width)):
+                        if (i, j) != (r, c):
+                            grid[i][j] = "<" if i == r else "^"
+    return grid
 
 
 def _font_size(text_frame) -> int:
@@ -143,9 +173,7 @@ def _harvest(shape, facts: _Facts, offset=(0, 0)) -> None:
         return
 
     if getattr(shape, "has_table", False) and shape.has_table:
-        rows = [
-            [_clean(cell.text) for cell in row.cells] for row in shape.table.rows
-        ]
+        rows = _table_grid(shape.table)
         header = rows[0] if len(rows) > 1 else None
         body = rows[1:] if len(rows) > 1 else rows
         # The deck's own column proportions, kept as whole percentages:

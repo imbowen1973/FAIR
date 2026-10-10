@@ -12,7 +12,7 @@
 
 import { fromElement, toHtml, toNodes } from "./markdom.js";
 import { plainText } from "./marks.js";
-import { RESERVED_SLIDE_KEYS } from "./library.js";
+import { RESERVED_SLIDE_KEYS, tableSpans } from "./library.js";
 
 const ALIGN = { l: "left", ctr: "center", r: "right", just: "justify" };
 
@@ -525,24 +525,22 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
       }
       table.appendChild(cols);
     }
-    if (value.header?.length) {
-      const tr = document.createElement("tr");
-      for (const cell of value.header) {
-        const th = document.createElement("th");
-        th.textContent = String(cell ?? "");
-        tr.appendChild(th);
-      }
-      table.appendChild(tr);
-    }
-    for (const row of value.rows ?? []) {
+    // Merges drawn as real colspan/rowspan, from the same "<" and "^"
+    // markers the renderer reads.
+    const hasHeader = Boolean(value.header?.length);
+    const grid = [...(hasHeader ? [value.header] : []), ...(value.rows ?? [])];
+    tableSpans(grid).forEach((row, r) => {
       const tr = document.createElement("tr");
       for (const cell of row) {
-        const td = document.createElement("td");
-        td.textContent = String(cell ?? "");
-        tr.appendChild(td);
+        if (!cell) continue; // covered by a merge
+        const el = document.createElement(hasHeader && r === 0 ? "th" : "td");
+        el.textContent = cell.text;
+        if (cell.colspan > 1) el.colSpan = cell.colspan;
+        if (cell.rowspan > 1) el.rowSpan = cell.rowspan;
+        tr.appendChild(el);
       }
       table.appendChild(tr);
-    }
+    });
     box.appendChild(table);
     if (editable) box.title = "Tables are edited in the source view";
     return;

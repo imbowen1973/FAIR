@@ -282,6 +282,20 @@ typed object:
   relative column widths, one positive number per column, of which only
   the proportions matter (`[60, 25, 15]`); without it, columns are sized
   from their content. Import fills it from the original deck.
+  **Merged cells** are written in place: a cell that is exactly `<`
+  belongs to the cell on its left, exactly `^` to the cell above, and
+  the merge's text sits in its top-left cell. Rows keep their full
+  width, so the grid still lines up when read. A merge must be a whole
+  rectangle (either marker works inside a block); a literal `<` or `^`
+  cell is written `\<` or `\^`. Import writes these from the deck's
+  own merges.
+
+  ```yaml
+  header: [Product, Storage, "<"]     # "Storage" spans two columns
+  rows:
+  - [Vaccines, 2 to 8 °C, Never freeze]
+  - [Insulin, "^", Discard if frozen] # one range cell for both
+  ```
   **The type size is not authored:** PowerPoint has no autofit for
   tables, so the renderer picks the largest size (18pt down to 8pt) at
   which the whole table fits its frame without breaking a word. (Like

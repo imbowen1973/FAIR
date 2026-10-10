@@ -127,21 +127,36 @@ def fit_table(
     frame_width: int,
     frame_height: int,
     widths: list[float] | None = None,
+    spans: dict[tuple[int, int], tuple[int, int]] | None = None,
     max_pt: float = MAX_PT,
     min_pt: float = MIN_PT,
 ) -> TableFit:
+    """`spans` maps a merge's top-left (row, col) in the full grid --
+    header is row 0 when present -- to (rowspan, colspan). Covered cells
+    are expected to be empty."""
     all_rows = ([header] if header else []) + rows
     n_cols = len(all_rows[0])
     frame_w = frame_width / EMU_PER_PT
     frame_h = frame_height / EMU_PER_PT
+    spans = spans or {}
+    first_body = 1 if header else 0
 
-    body_cols = [[row[c] for row in rows] for c in range(n_cols)]
+    # A cell that spans columns does not say how wide any ONE column
+    # should be; it is checked against their combined width instead.
+    def own_column(r: int, c: int) -> bool:
+        return spans.get((r, c), (1, 1))[1] == 1
+
+    body_cols = [
+        [all_rows[r][c] for r in range(first_body, len(all_rows)) if own_column(r, c)]
+        for c in range(n_cols)
+    ]
     weights = [_text_weight(cells) for cells in body_cols]
     # The longest word in each column, in ems, header measured bold.
     word_em = [
         max(
             _longest_word(body_cols[c]) * CHAR_EM,
-            (_longest_word([header[c]]) * HEADER_EM) if header else 0.0,
+            (_longest_word([header[c]]) * HEADER_EM)
+            if header and own_column(0, c) else 0.0,
         )
         for c in range(n_cols)
     ]
@@ -164,16 +179,29 @@ def fit_table(
         lr, tb = _margins(font_pt)
         cols = columns(font_pt, lr)
         heights = []
+        tall = []  # (first row, rowspan, height the merged cell needs)
         words_fit = True
         for r, row in enumerate(all_rows):
             em = HEADER_EM if (header and r == 0) else CHAR_EM
             lines = 1
             for c, text in enumerate(row):
-                cpl = int((cols[c] - 2 * lr) // (font_pt * em))
-                if cpl < 1 or _longest_word([text]) > cpl:
+                rowspan, colspan = spans.get((r, c), (1, 1))
+                width = sum(cols[c:c + colspan])
+                cpl = int((width - 2 * lr) // (font_pt * em))
+                if text and (cpl < 1 or _longest_word([text]) > cpl):
                     words_fit = False
-                lines = max(lines, _wrapped_lines(text, cpl))
+                cell_lines = _wrapped_lines(text, cpl) if text else 1
+                if rowspan > 1:
+                    tall.append((r, rowspan, cell_lines * font_pt * LINE_HEIGHT + 2 * tb))
+                else:
+                    lines = max(lines, cell_lines)
             heights.append(lines * font_pt * LINE_HEIGHT + 2 * tb)
+        # A cell merged down several rows needs their combined height;
+        # any shortfall goes on the last row it covers.
+        for r, rowspan, need in tall:
+            have = sum(heights[r:r + rowspan])
+            if need > have:
+                heights[r + rowspan - 1] += need - have
         return cols, heights, words_fit, lr, tb
 
     steps = int(round((max_pt - min_pt) / STEP_PT))
