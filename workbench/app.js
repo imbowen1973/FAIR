@@ -1639,9 +1639,9 @@ function renderRibbon({ slides = true, steps = slides } = {}) {
         status(
           kind
             ? "The whole placeholder is now a list. To mark only some lines, " +
-                "select them and use the tinted buttons under “selected lines”."
+                "select them and choose from “selected lines” in the list menu."
             : "The whole placeholder is plain lines now. To mark only some, " +
-                "select them and use the tinted buttons under “selected lines”.",
+                "select them and choose from “selected lines” in the list menu.",
           ""
         );
       }
@@ -4112,7 +4112,44 @@ async function loadVersion(commit) {
 
 // ---- wiring ------------------------------------------------------------
 
+// The build this script belongs to. Stamped at deploy, like the page's
+// own build marker (publish-pane.yml).
+const BUILD = "dev";
+const RELOADED_FOR = "fair.wb.reloaded-for";
+
+/**
+ * A page from one deploy running a script from the next.
+ *
+ * Every file is versioned, but the version only stops the BROWSER cache
+ * serving an old file: GitHub Pages serves whatever is deployed now for
+ * any version. So in the minute after a merge, a cached old page asks
+ * for "app.js?v=old", gets the new script, and the new script's
+ * stylesheet is never asked for -- a ribbon of split buttons with no
+ * styles, menus spilling across the toolbar. The two stamps disagree
+ * exactly then, so: reload once, which fetches the page afresh.
+ */
+function reloadIfMixed() {
+  const page = document.querySelector(".build code")?.textContent?.trim();
+  if (BUILD === "dev" || !page || page === "dev" || page === BUILD) return false;
+  try {
+    if (sessionStorage.getItem(RELOADED_FOR) === BUILD) {
+      status(
+        `This tab is running parts of two builds (${page} and ${BUILD}). ` +
+          "Reload in a minute or two, once the new one has reached you.",
+        "error"
+      );
+      return false;
+    }
+    sessionStorage.setItem(RELOADED_FOR, BUILD);
+  } catch {
+    return false; // no way to stop a loop, so do not start one
+  }
+  location.reload();
+  return true;
+}
+
 async function boot() {
+  if (reloadIfMixed()) return;
   // A closing tab gets no 600ms: write the draft now.
   window.addEventListener("pagehide", flushDraft);
   document.addEventListener("visibilitychange", () => {

@@ -1232,7 +1232,9 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
 /* The face does the last thing chosen; the arrow opens the rest. One
    control where there were three or seven, and the ribbon reads as
    groups rather than a strip of glyphs. */
-.ribbon-group + .ribbon-group { padding-left: 12px; border-left: 1px solid var(--border); }
+.ribbon-group + .ribbon-group { padding-left: 8px; border-left: 1px solid var(--border); }
+.ribbon { gap: 8px; }
+.ribbon-icon-label { display: inline-flex; color: var(--muted); margin-right: 2px; }
 .ribbon-group.right { border-left: 0; }
 .split { position: relative; display: inline-flex; align-items: stretch; }
 .split > button.split-face { border-top-right-radius: 0; border-bottom-right-radius: 0; }
@@ -1274,5 +1276,6 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
 .colour-bar.none { background: repeating-linear-gradient(45deg, var(--border-strong) 0 2px, transparent 2px 4px); }
 @media (max-width: 700px) {
   .ribbon-group + .ribbon-group { padding-left: 6px; }
-  .split-menu { left: auto; right: 0; }
+  /* Placement is ribbon.js's keepOnScreen: no fixed side fits every menu. */
+  .split-menu { max-width: calc(100vw - 16px); }
 }

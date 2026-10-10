@@ -80,6 +80,10 @@ jobs:
           sed -i -E 's#src="app[.]js#&?v='"$V"'#; s#href="workbench[.]css#&?v='"$V"'#' workbench/index.html
           # And show it, so "which build am I on?" is answerable at a glance.
           sed -i "s#>dev<#>$V<#" taskpane.html word-taskpane.html workbench/index.html
+          # The script's own copy, so it can tell when it has been loaded
+          # by a page from another deploy (app.js reloadIfMixed).
+          sed -i 's#^const BUILD = "dev";#const BUILD = "'"$V"'";#' workbench/app.js
+          grep -q '^const BUILD = "'"$V"'";' workbench/app.js || { echo "app.js: BUILD not stamped"; exit 1; }
 
           # A module that escaped stamping would quietly reintroduce the
           # stale-cache bug, so fail the deploy rather than ship it.
