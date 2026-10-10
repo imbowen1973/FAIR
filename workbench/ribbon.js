@@ -318,7 +318,6 @@ export function ribbon(host, {
   // whose face repeats the last of them, as Office does.
   const marks = document.createElement("div");
   marks.className = "ribbon-group";
-  marks.appendChild(el("span", "ribbon-label", "Text"));
   for (const mark of ["bold", "italic", "underline"]) {
     const [label, title, command] = COMMANDS[mark];
     const b = button(label, title, () => applyMark(mark, onCommand), "mark");
@@ -463,13 +462,19 @@ export function ribbon(host, {
 
   const right = document.createElement("div");
   right.className = "ribbon-group right";
+  // A glyph, not a word: the menu itself shows the layout's name, so
+  // "Layout" beside it only took room. The name still reaches a screen
+  // reader through the label and aria-label.
   const label = document.createElement("label");
-  label.className = "ribbon-label";
-  label.textContent = "Layout";
+  label.className = "ribbon-icon-label";
   label.htmlFor = "ribbon-layout";
+  label.title = "Slide layout";
+  label.appendChild(icon("layout", { size: 16 }));
   const select = document.createElement("select");
   select.id = "ribbon-layout";
   select.className = "layout";
+  select.title = "Slide layout";
+  select.setAttribute("aria-label", "Slide layout");
   for (const key of layouts) {
     const option = document.createElement("option");
     option.value = key;
