@@ -202,6 +202,18 @@ def build_corpus(
     files and is still honoured, so a library mid-migration builds.
     """
     if library is not None:
+        # The no-answers gate (companion-repo.md): question banks and
+        # instructor guides belong in the private companion repo. A
+        # public library holding one is the cheap catastrophic mistake —
+        # answers one search away from students — so the build refuses.
+        from .questions import educator_files_in_library
+
+        leaked = educator_files_in_library(library)
+        if leaked:
+            raise CorpusError(
+                "educator-only files in a public library — move them to the "
+                "companion repo (docs/companion-repo.md):\n  " + "\n  ".join(leaked)
+            )
         lib = load_library(library)
         root = library
     elif sessions_dir is not None:
