@@ -27,10 +27,13 @@
 // the source editor, because an editor that silently does not appear is
 // worse than one that says why.
 
-const CREPE = "https://esm.sh/@milkdown/crepe@7?bundle";
+// Pinned, not @7: workbench.css overrides Crepe's theme selector by
+// selector, and a floating version could rename one under a deploy
+// nobody made. Bump deliberately, and re-check the editor when you do.
+const CREPE = "https://esm.sh/@milkdown/crepe@7.22.2?bundle";
 const STYLES = [
-  "https://cdn.jsdelivr.net/npm/@milkdown/crepe@7/lib/theme/common/style.css",
-  "https://cdn.jsdelivr.net/npm/@milkdown/crepe@7/lib/theme/frame/style.css",
+  "https://cdn.jsdelivr.net/npm/@milkdown/crepe@7.22.2/lib/theme/common/style.css",
+  "https://cdn.jsdelivr.net/npm/@milkdown/crepe@7.22.2/lib/theme/frame/style.css",
 ];
 
 let modulePromise = null;

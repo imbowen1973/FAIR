@@ -35,7 +35,12 @@ test("readAuth takes only a well-formed auth message", () => {
     token: "t",
     login: "ada",
     repo: null,
+    companion: null,
   });
+  assert.equal(
+    readAuth({ type: "edufair:auth", token: "t", repo: "o/lib", companion: "o/lib-private" }).companion,
+    "o/lib-private"
+  );
   assert.equal(readAuth({ type: "edufair:auth", token: "" }), null);
   assert.equal(readAuth({ type: "edufair:auth" }), null);
   assert.equal(readAuth({ type: "something-else", token: "t" }), null);

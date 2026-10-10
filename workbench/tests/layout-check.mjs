@@ -107,7 +107,7 @@ await page.waitForTimeout(300);
 const narrow = await where();
 console.log("1150px:", JSON.stringify(narrow));
 
-// The media button must be an icon, not a box-drawing character.
+// The media button: a picture glyph and the word, so it reads as "insert a picture".
 await page.setViewportSize({ width: 1500, height: 950 });
 await page.waitForTimeout(300);
 const media = await page.evaluate(() => {
@@ -121,7 +121,6 @@ const media = await page.evaluate(() => {
   return {
     found: true,
     isIcon: Boolean(svg),
-    // Nothing left over from the character it replaced.
     text: b.textContent.trim(),
     drawn: svg ? svg.getBBox().width > 8 && svg.getBBox().height > 6 : false,
     clickable: hit === b || b.contains(hit),
@@ -189,16 +188,16 @@ const store = await page.evaluate(() => {
     session: sessionStorage.getItem(KEY),
     local: localStorage.getItem(KEY),
   });
-  const off = read();
-  // Turn it on: the token must move to disk, not be copied to it.
-  box.checked = true;
-  box.dispatchEvent(new Event("change"));
-  const on = read();
-  // And back off again: the copy on disk has to go immediately.
+  const first = read();
+  // Turn it off: the copy on disk has to go immediately.
   box.checked = false;
   box.dispatchEvent(new Event("change"));
+  const off = read();
+  // And back on: the token must move to disk, not be copied to it.
+  box.checked = true;
+  box.dispatchEvent(new Event("change"));
   const back = read();
-  return { off, on, back };
+  return { first, off, back };
 });
 console.log("token store:", JSON.stringify(store));
 
@@ -208,17 +207,17 @@ const failed =
   errors.length > 0 ||
   !wide.beside || wide.below || !wide.onScreen || !wide.hasId || !wide.hasNotes ||
   !narrow.below || narrow.beside || !narrow.hasId || !narrow.hasNotes ||
-  !media.found || !media.isIcon || media.text !== "" || !media.drawn || !media.clickable ||
+  !media.found || !media.isIcon || media.text !== "Picture" || !media.drawn || !media.clickable ||
   !asked.shown || !asked.onScreen || !asked.inFront || !asked.says ||
   asked.target !== "left" ||
   // Nothing was lost. The new layout may add an empty region of its own,
   // which is why this is containment rather than equality.
   !before.every((text) => after.includes(text)) ||
   !undoButton.found || !undoButton.enabled || !undoButton.clickable ||
-  // Session only by default; on disk when asked; nowhere stale after.
+  // On this device by default; this tab only when asked; nowhere stale.
+  !store.first.local || store.first.session ||
   !store.off.session || store.off.local ||
-  !store.on.local || store.on.session ||
-  !store.back.session || store.back.local ||
+  !store.back.local || store.back.session ||
   undone.layout !== "Full" ||
   !before.every((text) => undone.regions.includes(text)) ||
   // Undo put the deck back as it was, not merely close to it.

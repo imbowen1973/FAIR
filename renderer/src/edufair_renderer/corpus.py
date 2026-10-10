@@ -194,6 +194,7 @@ def build_corpus(
     library: Path | None = None,
     warn=lambda msg: print(f"warning: {msg}", file=sys.stderr),
     skip_bad_slides: bool = False,
+    companion: Path | None = None,
 ) -> dict:
     """Render a library: one deck per block, plus its catalog.
 
@@ -415,6 +416,11 @@ def build_corpus(
         if geometry.is_file():
             (out_dir / "layout-geometry.json").write_bytes(geometry.read_bytes())
 
+    if companion is not None:
+        if lib is None:
+            raise CorpusError("--companion needs a library build, not --sessions")
+        catalog["companion"] = _overlay_companion(companion, lib, blocks_out, out_dir)
+
     out = out_dir / "catalog.json"
     out.write_text(json.dumps(catalog, indent=2) + "\n", encoding="utf-8")
     return {
@@ -424,6 +430,76 @@ def build_corpus(
         "competencies": len(competencies),
         "outcomes": len(catalogue),
         "credentials": len(credentials),
+        "companion": catalog.get("companion"),
+    }
+
+
+# What a companion block's files are, by name. Anything else in the
+# block folder is carried as an educator file of its own name.
+_COMPANION_KINDS = {
+    "questions.yaml": ("questions", "Question bank"),
+    "instructorguide.md": ("instructorguide", "Instructor guide"),
+}
+
+
+def _overlay_companion(companion_root: Path, lib, blocks_out: list[dict], out_dir: Path) -> dict:
+    """Merge the private twin into this build, per block (companion-repo.md).
+
+    Each companion file becomes a resource of its block, flagged
+    `audience: educator`, and is copied under educator/ -- one folder a
+    publisher can leave out. A block's question bank is also exported as
+    Moodle XML beside it. The companion's cross-checks run first: every
+    companion block must exist in the library and every `assesses:` id
+    in its outcomes. Without --companion none of this runs, so the public
+    build is byte-identical whether a companion exists or not.
+    """
+    from .moodlexml import block_xml
+    from .questions import QuestionsError, load_companion, validate_against_library
+
+    try:
+        twin = load_companion(companion_root, require_banks=False)
+    except QuestionsError as e:
+        raise CorpusError(f"companion: {e}") from None
+    problems = validate_against_library(twin, lib.root)
+    blocks_dir = companion_root / "blocks"
+    known = {b["blockId"] for b in blocks_out}
+    for folder in sorted(p for p in blocks_dir.glob("*") if p.is_dir()) if blocks_dir.is_dir() else []:
+        if folder.name not in known and folder.name not in twin.banks:
+            problems.append(f"blocks/{folder.name}: no such block in the library")
+    if problems:
+        raise CorpusError("companion does not match its library:\n  " + "\n  ".join(problems))
+
+    course_name = lib.title or "FAIR-Ed"
+    by_id = {b["blockId"]: b for b in blocks_out}
+    files = 0
+    for block_id, block in by_id.items():
+        folder = blocks_dir / block_id
+        if not folder.is_dir():
+            continue
+        for src in sorted(p for p in folder.rglob("*") if p.is_file()):
+            rel = src.relative_to(folder).as_posix()
+            dest = out_dir / "educator" / "blocks" / block_id / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(src.read_bytes())
+            kind, title = _COMPANION_KINDS.get(rel, ("file", src.stem.replace("-", " ").capitalize()))
+            block["resources"].append({
+                "type": kind, "title": title,
+                "path": f"educator/blocks/{block_id}/{rel}", "audience": "educator",
+            })
+            files += 1
+        if block_id in twin.banks:
+            xml = out_dir / "educator" / "blocks" / block_id / "questions.moodle.xml"
+            xml.write_text(block_xml(block_id, twin.banks[block_id], course_name), encoding="utf-8")
+            block["resources"].append({
+                "type": "moodle-xml", "title": "Question bank (Moodle XML)",
+                "path": f"educator/blocks/{block_id}/questions.moodle.xml", "audience": "educator",
+            })
+            files += 1
+    return {
+        "library": twin.library_ref,
+        "license": twin.license,
+        "questions": sum(len(items) for items in twin.banks.values()),
+        "files": files,
     }
 
 
@@ -447,6 +523,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="directory of credential yaml definitions")
     ap.add_argument("--attribution", type=Path, default=None,
                     help="attribution.yaml (default: beside the sessions directory)")
+    ap.add_argument("--companion", type=Path, default=None,
+                    help="the private companion repo: its banks and guides join the "
+                         "catalog as educator resources, under educator/ in --out")
     args = ap.parse_args(argv)
 
     if args.library is None and args.sessions is None:
@@ -469,6 +548,7 @@ def main(argv: list[str] | None = None) -> int:
             out_dir=args.out,
             framework=args.framework, credentials_dir=args.credentials,
             attribution=args.attribution,
+            companion=args.companion,
         )
     except (CorpusError, LibraryError) as e:
         print(f"error: {e}", file=sys.stderr)
@@ -477,6 +557,9 @@ def main(argv: list[str] | None = None) -> int:
         f"wrote {summary['catalog']}: {summary['sessions']} sessions, "
         f"{summary['slides']} slides, {summary['competencies']} competencies, "
         f"{summary['credentials']} credentials"
+        + (f"; companion: {summary['companion']['questions']} questions, "
+           f"{summary['companion']['files']} educator files under educator/"
+           if summary.get("companion") else "")
     )
     return 0
 

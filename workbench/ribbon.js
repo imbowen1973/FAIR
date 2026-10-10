@@ -202,12 +202,16 @@ export function ribbon(host, {
   // be empty -- a region with a paragraph in it could never become one.
   const mediaGroup = document.createElement("div");
   mediaGroup.className = "ribbon-group";
+  // Icon AND word: the glyph alone was not read as "insert a picture".
+  const pictureLabel = document.createElement("span");
+  pictureLabel.append(icon("media", { size: 16 }), el("span", "mark-text", "Picture"));
   mediaGroup.appendChild(
     button(
-      icon("media", { size: 16 }),
-      "Put a picture or a video in the selected region",
+      pictureLabel,
+      "Insert a picture or a video into the selected region",
       () => onMedia?.(),
-      "mark with-icon"
+      "mark with-icon with-text",
+      "insert-media"
     )
   );
   host.appendChild(mediaGroup);

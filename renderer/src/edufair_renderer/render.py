@@ -335,6 +335,8 @@ def _region_is_empty(region: Region) -> bool:
     """
     if region.type in ("image", "video", "mermaid"):
         return not (region.src or region.url)
+    if region.type == "smartart":
+        return not region.nodes
     if region.items:
         return False
     return not (region.text or "").strip()
@@ -411,30 +413,73 @@ def _shrink_on_overflow(placeholder) -> None:
 
 
 def _fill_table(slide, placeholder, region, code_typeface: str) -> None:
-    """A real PowerPoint table at the placeholder's footprint.
+    """A real PowerPoint table, fitted to the placeholder's footprint.
 
     Tables cannot live inside a text placeholder, so this is the same
     documented exception as images in non-picture placeholders: the
-    graphic frame takes the placeholder's exact geometry and the empty
-    placeholder is removed. Styling (banding, header emphasis) comes
-    from the template's default table style, not from here.
+    graphic frame takes the placeholder's position and the empty
+    placeholder is removed. Banding and header emphasis come from the
+    template's default table style.
+
+    What does NOT come from the style is the type size. PowerPoint has
+    no autofit for tables and treats row height as a minimum, so at the
+    style's default size a table of sentences grows straight out of its
+    frame. tablefit chooses column widths and the largest size that
+    keeps the whole table inside the frame; rows get a one-line
+    minimum and PowerPoint grows each to its real content.
     """
+    from pptx.util import Emu, Pt
+
+    from .tablefit import fit_table
+
     header = region.header
     body = region.rows
     n_rows = len(body) + (1 if header else 0)
     n_cols = len(body[0]) if body else len(header or [])
 
+    fit = fit_table(
+        header, body, placeholder.width, placeholder.height,
+        widths=region.widths, spans=region.spans,
+    )
+
     frame = slide.shapes.add_table(
         n_rows, n_cols,
         placeholder.left, placeholder.top,
-        placeholder.width, placeholder.height,
+        placeholder.width, fit.height,
     )
     table = frame.table
     table.first_row = bool(header)
 
+    for c, width in enumerate(fit.column_widths):
+        table.columns[c].width = Emu(width)
+    # A minimum, not a prediction: PowerPoint grows each row to its real
+    # content, so a wrap the estimate expected but that never happens
+    # leaves no blank space behind it.
+    for row in table.rows:
+        row.height = Emu(fit.row_minimum)
+
+    # Real PowerPoint merges: gridSpan/rowSpan on the top-left cell,
+    # hMerge/vMerge on the cells it covers. Those covered cells hold ""
+    # (the parser saw to it), so the merged cell shows one text.
+    for (r, c), (rowspan, colspan) in region.spans.items():
+        table.cell(r, c).merge(table.cell(r + rowspan - 1, c + colspan - 1))
+
+    size = Pt(fit.font_pt)
+    sz = str(int(round(fit.font_pt * 100)))
+
     def fill(cell, text):
+        cell.margin_left = cell.margin_right = Emu(fit.margin_lr)
+        cell.margin_top = cell.margin_bottom = Emu(fit.margin_tb)
         tf = cell.text_frame
+        tf.word_wrap = True
         write_runs(tf.paragraphs[0], text, code_typeface=code_typeface)
+        for paragraph in tf.paragraphs:
+            for run in paragraph.runs:
+                run.font.size = size
+            # An empty cell has no run to carry a size; its height comes
+            # from the end-of-paragraph mark, which would otherwise keep
+            # the style's 18pt and hold the row open.
+            paragraph._p.get_or_add_endParaRPr().set("sz", sz)
 
     row_at = 0
     if header:
@@ -445,6 +490,53 @@ def _fill_table(slide, placeholder, region, code_typeface: str) -> None:
         for c, text in enumerate(row):
             fill(table.cell(row_at + r, c), text)
 
+    sp = placeholder._element
+    sp.getparent().remove(sp)
+
+
+def _fill_smartart(slide, placeholder, region: Region, base_dir: Path,
+                   code_typeface: str) -> None:
+    """Real SmartArt, laid out by PowerPoint, at the placeholder's footprint.
+
+    The content tree comes from the slide; the layout, style and colours
+    from the definition file import saved beside it. Like a table, a
+    diagram cannot live inside a text placeholder: the frame takes the
+    placeholder's position and the empty placeholder goes. Node text
+    keeps its inline emphasis; colours resolve through the template's
+    theme, because the definition names theme slots, not colours.
+    """
+    from pptx.oxml import parse_xml
+    from pptx.text.text import _Paragraph
+
+    from .smartart import SmartArtError, add_to_slide, read_definition
+
+    path = _asset_path(base_dir, region.src)
+    if not path.exists():
+        raise RenderError(f"SmartArt definition not found: {region.src}")
+    try:
+        definition = read_definition(path.read_bytes())
+    except SmartArtError as e:
+        raise RenderError(f"{region.src}: {e}") from None
+
+    def write_paragraph(p, text):
+        scratch = parse_xml(f'<a:p xmlns:a="{A_NS}"/>')
+        write_runs(_Paragraph(scratch, None), text, code_typeface=code_typeface)
+        for child in list(scratch):
+            p.append(child)
+
+    def shape(nodes):
+        return [[n.text, n.assistant, shape(n.children)] for n in nodes]
+
+    # Model ids derive from the content, so a render is repeatable byte
+    # for byte and an edit changes only what it touched.
+    seed = json.dumps([definition.layout_id, shape(region.nodes)], ensure_ascii=False)
+    try:
+        add_to_slide(
+            slide, placeholder.left, placeholder.top, placeholder.width,
+            placeholder.height, region.nodes, definition, seed, write_paragraph,
+        )
+    except SmartArtError as e:
+        raise RenderError(f"{region.src}: {e}") from None
     sp = placeholder._element
     sp.getparent().remove(sp)
 
@@ -482,6 +574,8 @@ def _fill_region(
         _fill_image(slide, placeholder, image, region.fit or DEFAULT_IMAGE_FIT)
     elif region.type == "video":
         _fill_video(slide, placeholder, region, base_dir, build_dir)
+    elif region.type == "smartart":
+        _fill_smartart(slide, placeholder, region, base_dir, code_typeface)
     else:  # pragma: no cover - parser guarantees the type set
         raise RenderError(f"unknown region type {region.type!r}")
 

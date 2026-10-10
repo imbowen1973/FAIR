@@ -17,12 +17,24 @@ import {
 import { BROKER_URL, CLIENT_ID } from "./config.js";
 import { draftBranch, GitHub, parseRepo, resolveDraftBranch } from "./github.js";
 import {
+  companionFor,
   forgetBranch,
   lastBranch,
   lastRepo,
   rememberBranch,
+  rememberCompanion,
   rememberRepo,
 } from "./prefs.js";
+import {
+  checkPairing,
+  checkQuestions,
+  COMPANION_FILE,
+  companionDocuments,
+  companionPaths,
+  starterCompanionYaml,
+  starterGuide,
+  starterQuestions,
+} from "./companion.js";
 import { decorate } from "./icons.js";
 import { needsAsking, relayoutPanel } from "./relayout.js";
 import { provisionInto, provisionLibrary, repoNameFrom } from "./provision.js";
@@ -73,6 +85,7 @@ import {
   MEDIA_DIR,
 } from "./documents.js";
 import { tabs } from "./tabs.js";
+import { clearDraft, loadDraft, saveDraft } from "./drafts.js";
 import { markdownEditor } from "./mdeditor.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "./yaml.js";
 import { linkFor, prepareUpload, safeName, toBase64 } from "./attach.js";
@@ -168,6 +181,12 @@ const state = {
   // leak one per repaint or flicker as the image reloads.
   mediaUrls: new Map(),
   problems: [],
+  // The private twin, when one is connected (companion.js):
+  // {owner, repo, defaultBranch, branch, files, edits, canWrite, license}.
+  // Its own files and edits, never mixed into the library's: the same
+  // path -- blocks/01/... -- exists in both repos and means different
+  // files.
+  companion: null,
 };
 
 function status(message, kind = "") {
@@ -204,7 +223,7 @@ async function busy(button, label, work) {
 }
 
 function dirty() {
-  return changedFiles().length > 0;
+  return changedFiles().length > 0 || companionChanged().length > 0;
 }
 
 window.addEventListener("beforeunload", (e) => {
@@ -424,6 +443,9 @@ async function openRepo(fullName) {
     state.library = readLibrary(files);
     state.edits = new Map();
     state.working = new Map();
+    state.uploads = new Map();
+    state.companion = null;
+    const restored = restoreDraft();
     state.blockId = [...state.library.blocks.keys()][0] ?? null;
     state.slideIndex = 0;
 
@@ -436,7 +458,11 @@ async function openRepo(fullName) {
     renderBranchNote();
     renderOutline();
     renderSlide();
-    if (state.canWrite) {
+    renderCompanionToggle();
+    updateActions();
+    if (restored) {
+      status(...restored);
+    } else if (state.canWrite) {
       status("");
     } else {
       status(
@@ -447,6 +473,10 @@ async function openRepo(fullName) {
         "error"
       );
     }
+    // The private twin this browser paired with the course, if any. A
+    // token that cannot read it leaves the course open, content only.
+    const paired = companionFor(fullName);
+    if (paired) await openCompanion(paired, { quiet: true });
   } catch (err) {
     status(err.message, "error");
   }
@@ -541,7 +571,9 @@ function openImport() {
   const host = $("panels");
   const panel = document.createElement("div");
   host.prepend(panel);
-  panel.scrollIntoView({ block: "start" });
+  // After it is built (below): scrolled to while empty, scroll anchoring
+  // held the slide still and the panel grew upwards out of view.
+  requestAnimationFrame(() => panel.scrollIntoView({ block: "start" }));
 
   const place = (slides, replace) => {
     const list = working();
@@ -574,6 +606,10 @@ function openImport() {
     let resources = blockMeta().data.resources;
     for (const [rel, bytes] of importMedia) {
       state.uploads.set(`blocks/${state.blockId}/${rel}`, bytes);
+      // A SmartArt definition travels with the slides that name it, but
+      // it is not a resource: declared, it would open as a document tab
+      // and be offered to learners in the catalogue.
+      if (!/\.(png|jpe?g|gif)$/i.test(rel)) continue;
       resources = withResource(resources, {
         type: "image",
         title: rel.split("/").pop(),
@@ -595,7 +631,10 @@ function openImport() {
       const got = await ingestDeck(
         new Uint8Array(await picked.arrayBuffer()),
         state.blockId,
-        (m) => m && status(m)
+        (m) => m && status(m),
+        // Names the media after the deck, so a second import into this
+        // block cannot overwrite the first one's pictures.
+        picked.name
       );
       importMedia = got.media;
       return got;
@@ -1544,9 +1583,9 @@ function renderRibbon({ slides = true, steps = slides } = {}) {
       // A second press closes it. A button that only ever opens leaves
       // the panel to be dismissed some other way, and there is no other
       // way that is obvious.
-      const open = $("panels").querySelector(".media-picker");
+      const open = openPicker();
       if (open) {
-        open.closest("#panels > *")?.remove();
+        open.remove();
         return;
       }
       const region = activeRegion;
@@ -1798,7 +1837,9 @@ function revealEditor() {
 
 /** The documents in the current block, over the pending file map. */
 function documents() {
-  return blockDocuments(currentBlock(), pendingFiles());
+  const own = blockDocuments(currentBlock(), pendingFiles());
+  if (!state.companion || !state.blockId) return own;
+  return [...own, ...companionDocuments(state.blockId, companionPending())];
 }
 
 /** The document on screen, defaulting to the deck. */
@@ -1810,7 +1851,18 @@ function activeDoc() {
 
 /** A document's current text: the edited version if there is one. */
 function docText(doc) {
+  if (doc.repo === "companion") {
+    const c = state.companion;
+    return c?.edits.get(doc.path) ?? c?.files.get(doc.path) ?? "";
+  }
   return state.edits.get(doc.path) ?? state.files.get(doc.path) ?? "";
+}
+
+/** Write a document's text into whichever repo owns it. */
+function setDocText(doc, text) {
+  if (doc.repo === "companion") state.companion?.edits.set(doc.path, text);
+  else state.edits.set(doc.path, text);
+  updateActions();
 }
 
 function openDoc(id) {
@@ -2008,6 +2060,14 @@ function renderBlock() {
  */
 function createDocument(doc) {
   const block = currentBlock();
+  if (doc.repo === "companion") {
+    // Never declared in block.yaml: the library must not name anything
+    // in the private repo.
+    setDocText(doc, companionStarter(doc));
+    renderBlock();
+    status(`Created ${doc.path.split("/").pop()} in the private companion.`, "ok");
+    return;
+  }
   const text =
     doc.editor === "assessment"
       ? starterFor("assessment", doc.title, block)
@@ -2060,6 +2120,11 @@ function createBanner(doc) {
 function renderDocument(doc) {
   const host = $("document");
   host.innerHTML = "";
+
+  if (doc.repo === "companion") {
+    renderCompanionDocument(host, doc);
+    return;
+  }
 
   if (doc.editor === "attachment") {
     renderAttachment(host, doc);
@@ -2572,12 +2637,32 @@ function blockRelative(next) {
   return src.startsWith(mine) ? { src: src.slice(mine.length) } : {};
 }
 
-/** Fill a placeholder: a panel above the slide, not a modal. */
+// The width at which the details column sits beside the slide
+// (workbench.css): wide enough for the picker to go there too.
+const SIDE_BY_SIDE = "(min-width: 1181px)";
+
+/** The open picture picker's panel, wherever it was put. */
+function openPicker() {
+  for (const id of ["side-panels", "panels"]) {
+    const found = $(id)?.querySelector(".media-picker");
+    if (found) return found.closest(`#${id} > *`);
+  }
+  return null;
+}
+
+/**
+ * Fill a placeholder: a panel, not a modal. Beside the slide when there
+ * is a column for it -- above, it pushed the slide being filled off the
+ * screen, so the picture and the hole it was for could not be seen
+ * together. Above the slide on a narrower window, where that column
+ * has gone underneath.
+ */
 function openMediaPicker(region, value, kind) {
-  const host = $("panels");
+  openPicker()?.remove();
+  const beside = window.matchMedia?.(SIDE_BY_SIDE).matches && !$("sidebar").hidden;
+  const host = $(beside ? "side-panels" : "panels");
   const panel = document.createElement("div");
   host.prepend(panel);
-  panel.scrollIntoView({ block: "start" });
 
   const set = (next) => {
     const current = slideData(state.slideIndex);
@@ -2589,6 +2674,7 @@ function openMediaPicker(region, value, kind) {
   mediaPicker(panel, {
     region,
     kind,
+    onClose: () => panel.remove(),
     images: availableImages(),
     resolve: mediaHelpers().resolve,
     current: value,
@@ -2638,6 +2724,11 @@ function openMediaPicker(region, value, kind) {
       }
     },
   });
+  // Scrolled to once it has content. Scrolling to the empty panel and
+  // filling it afterwards let scroll anchoring hold the slide still, so
+  // the panel grew upwards out of view and seemed never to have opened.
+  if (beside) $("sidebar").scrollTop = 0;
+  else panel.scrollIntoView({ block: "start" });
 }
 
 // ---- assessments -------------------------------------------------------
@@ -3159,15 +3250,90 @@ function renderBranchNote() {
   host.append(document.createTextNode("editing "), name, back);
 }
 
+// ---- drafts kept in this browser ----------------------------------------
+
+let draftTimer = null;
+
+/** Write the unsaved work to this browser, soon (edits come in bursts). */
+function scheduleDraft() {
+  if (!state.repo || !state.library) return;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(flushDraft, 600);
+}
+
+function flushDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = null;
+  if (!state.repo || !state.library) return;
+  const { owner, repo } = state.repo;
+  const text = changedFiles().filter((f) => typeof f.content === "string");
+  saveDraft(owner, repo, workingBranch(), {
+    changed: text, uploads: state.uploads, base: state.files,
+  });
+  const c = state.companion;
+  if (c) {
+    saveDraft(c.owner, c.repo, companionBranch(), {
+      changed: companionChanged(), uploads: new Map(), base: c.files,
+    });
+  }
+}
+
+/**
+ * A slides.md held as a text edit would override every later change to
+ * its slides: pendingFiles writes the working deck, then the edits on
+ * top. Edits to a deck are therefore turned back into its working
+ * slides, which is where the slide editor reads and writes.
+ */
+function adoptSlideEdits() {
+  for (const block of state.library.blocks.values()) {
+    const path = block.slidesPath;
+    if (!path || !state.edits.has(path)) continue;
+    state.edits.delete(path);
+    state.working.set(block.id, workingSlides(block.parsed));
+  }
+}
+
+/** Put back what was left unsaved here last time; returns the message. */
+function restoreDraft() {
+  const { owner, repo } = state.repo;
+  const draft = loadDraft(owner, repo, workingBranch(), state.files);
+  if (!draft) return null;
+  for (const [path, text] of draft.files) state.edits.set(path, text);
+  for (const [path, bytes] of draft.uploads) state.uploads.set(path, bytes);
+  state.library = readLibrary(pendingFiles());
+  adoptSlideEdits();
+  const count = draft.files.size + draft.uploads.size;
+  const when = draft.savedAt ? new Date(draft.savedAt).toLocaleString() : "earlier";
+  // Returned, not shown: opening the library says its own things after
+  // this, and the author needs to see that their work came back.
+  return [
+    `Restored ${count} unsaved change${count === 1 ? "" : "s"} from ${when}, ` +
+      "kept in this browser. Save to put them on GitHub." +
+      (draft.moved.length
+        ? ` ${draft.moved.length} of these files changed on GitHub since: ` +
+          `${draft.moved.join(", ")} — yours is shown; check before saving.`
+        : "") +
+      (draft.left ? ` ${draft.left} picture(s) were too large to keep and need attaching again.` : ""),
+    draft.moved.length || draft.left ? "error" : "ok",
+  ];
+}
+
 function updateActions() {
-  const changed = changedFiles();
+  const own = changedFiles();
+  const privateChanges = companionChanged();
+  const changed = [...own, ...privateChanges];
+  scheduleDraft();
   $("dirty").textContent = changed.length
-    ? `${changed.length} file${changed.length === 1 ? "" : "s"} changed`
+    ? `${changed.length} file${changed.length === 1 ? "" : "s"} changed` +
+      (privateChanges.length ? ` (${privateChanges.length} private)` : "")
     : "no changes";
   state.host?.emit("dirty", { files: changed.length });
-  const writable = state.canWrite !== false;
+  // Writable if every repo with changes in it can take them.
+  const writable =
+    (own.length === 0 || state.canWrite !== false) &&
+    (privateChanges.length === 0 || state.companion?.canWrite !== false);
   const blocking = state.problems.filter((p) => p.level !== "warning").length;
-  const why = !writable ? "This token cannot push to this repository." : "";
+  const why = !writable ? "This token cannot push to every repository with changes in it." : "";
   // The toolbar is drawn only once a library is open, so these are
   // absent for the whole of the sign-in screen.
   const saveButton = document.getElementById("save");
@@ -3244,7 +3410,11 @@ async function runValidate() {
       // pendingFiles alone meant checking a library with no images in
       // it, so every picture a block declared was reported missing —
       // four of them, all present in the repository, none actionable.
-      state.problems = await validate(await withBinaries(report), report);
+      state.problems = await validate(
+        await withBinaries(report),
+        report,
+        state.companion ? companionPending() : null
+      );
     });
     const strip = $("problems");
     strip.innerHTML = "";
@@ -3331,11 +3501,340 @@ async function previewDeck() {
   }
 }
 
+// ---- the private companion -----------------------------------------------
+//
+// Question banks and instructor guides, in a private repo of their own
+// (companion.js, docs/companion-repo.md). Its files are read and saved
+// separately from the course's, and its tabs are marked private.
+
+function companionPending() {
+  const c = state.companion;
+  return c ? new Map([...c.files, ...c.edits]) : new Map();
+}
+
+function companionChanged() {
+  const c = state.companion;
+  if (!c) return [];
+  const out = [];
+  for (const [path, text] of c.edits) {
+    if (c.files.get(path) !== text) out.push({ path, content: text });
+  }
+  return out;
+}
+
+function companionBranch() {
+  return state.companion?.branch || state.companion?.defaultBranch;
+}
+
+function companionStarter(doc) {
+  if (doc.type === "questions") {
+    return starterQuestions(ownedOutcomes(state.blockId).map((o) => o.id));
+  }
+  const block = currentBlock();
+  return starterGuide(block?.meta?.title || block?.id || "Session");
+}
+
+function renderCompanionToggle() {
+  const button = $("companion-toggle");
+  if (!button) return;
+  const c = state.companion;
+  button.classList.toggle("on", Boolean(c));
+  button.textContent = c ? `🔒 ${c.owner}/${c.repo}` : "＋ Private companion";
+  button.title = c
+    ? `Question banks and instructor guides are read from and saved to ${c.owner}/${c.repo}` +
+      (c.canWrite ? "." : " — read-only for this token.")
+    : "Connect a private repo for question banks and instructor guides";
+  $("companion-disconnect").hidden = !c;
+  $("companion-repo").value = c ? `${c.owner}/${c.repo}` : "";
+}
+
+/** What was left unsaved in the companion here last time. */
+function restoreCompanionDraft() {
+  const c = state.companion;
+  const draft = loadDraft(c.owner, c.repo, companionBranch(), c.files);
+  if (!draft) return 0;
+  for (const [path, text] of draft.files) c.edits.set(path, text);
+  return draft.files.size;
+}
+
+/**
+ * Connect the private companion. Refused if it is public (the answers
+ * would be one search away), if it is the course itself, or if its
+ * companion.yaml names a different course. An empty repo is set up:
+ * companion.yaml naming this course is written as an unsaved change.
+ */
+async function openCompanion(fullName, { quiet = false } = {}) {
+  const parsed = parseRepo(fullName);
+  if (!parsed) {
+    status("That is not an owner/repo.", "error");
+    return false;
+  }
+  const library = `${state.repo.owner}/${state.repo.repo}`;
+  if (fullName.toLowerCase() === library.toLowerCase()) {
+    status("The companion has to be a different repository from the course.", "error");
+    return false;
+  }
+  const { owner, repo } = parsed;
+  try {
+    if (!quiet) status(`Reading ${fullName}…`, "busy");
+    const info = await state.gh.repo(owner, repo);
+    if (!info.private) {
+      status(
+        `${fullName} is public, so anyone could read its answers. Make it ` +
+          "private on GitHub (Settings → General → Danger zone), then connect it.",
+        "error"
+      );
+      return false;
+    }
+    const defaultBranch = info.default_branch;
+    const remembered = lastBranch(owner, repo);
+    const branch =
+      remembered && remembered !== defaultBranch &&
+      (await state.gh.branchExists(owner, repo, remembered))
+        ? remembered
+        : defaultBranch;
+    const paths = await state.gh.pathsOrEmpty(owner, repo, branch);
+    const files = new Map();
+    for (const path of companionPaths(paths)) {
+      files.set(path, await state.gh.file(owner, repo, path, branch));
+    }
+    const pairing = checkPairing(files.get(COMPANION_FILE), library);
+    if (!pairing.ok) {
+      status(`${fullName} is not this course's companion: ${pairing.problem}.`, "error");
+      return false;
+    }
+    state.companion = {
+      owner, repo, defaultBranch, branch, files, edits: new Map(),
+      canWrite: Boolean(info.permissions?.push), license: pairing.license ?? null,
+    };
+    if (pairing.setup) {
+      state.companion.edits.set(COMPANION_FILE, starterCompanionYaml(library));
+    }
+    const restored = restoreCompanionDraft();
+    rememberCompanion(library, `${owner}/${repo}`);
+    renderCompanionToggle();
+    renderTabs();
+    updateActions();
+    if (!quiet || restored || pairing.setup) {
+      const banks = [...files.keys()].filter((p) => p.endsWith("/questions.yaml")).length;
+      status(
+        `Connected the private companion ${fullName}: Questions and Instructor ` +
+          "guide tabs are in each session, marked 🔒." +
+          (pairing.setup ? " It was empty, so companion.yaml naming this course is ready to Save." : "") +
+          (banks ? ` ${banks} question bank${banks === 1 ? "" : "s"} found.` : "") +
+          (restored ? ` Restored ${restored} unsaved private change${restored === 1 ? "" : "s"}.` : "") +
+          (state.companion.canWrite ? "" : " This token can read it but not save to it."),
+        state.companion.canWrite ? "ok" : "error"
+      );
+    }
+    return true;
+  } catch (err) {
+    // Content only, said plainly: a token that reaches the course but not
+    // its companion is an ordinary case, not a failure of the course.
+    status(
+      quiet
+        ? `The private companion ${fullName} could not be read with this token, ` +
+            `so the course is open without it. (${err.message})`
+        : `Could not open ${fullName}: ${err.message}`,
+      quiet ? "" : "error"
+    );
+    return false;
+  }
+}
+
+function disconnectCompanion() {
+  const c = state.companion;
+  if (!c) return;
+  flushDraft(); // unsaved private work stays in this browser for next time
+  rememberCompanion(`${state.repo.owner}/${state.repo.repo}`, null);
+  state.companion = null;
+  if (String(state.docByBlock.get(state.blockId) ?? "").startsWith("companion:")) {
+    state.docByBlock.delete(state.blockId);
+  }
+  renderCompanionToggle();
+  renderBlock();
+  updateActions();
+  status(
+    `Disconnected ${c.owner}/${c.repo}. Nothing in it was changed; unsaved ` +
+      "private edits are kept in this browser for when it is connected again.",
+    "ok"
+  );
+}
+
+async function saveCompanion() {
+  const c = state.companion;
+  const changed = companionChanged();
+  if (!changed.length) return true;
+  if (!c.canWrite) {
+    status(
+      `This token cannot save to ${c.owner}/${c.repo}. Give it Contents and ` +
+        "Pull requests write access on that repository too.",
+      "error"
+    );
+    return false;
+  }
+  try {
+    const branch = await resolveDraftBranch(state.gh, c.owner, c.repo, state.login);
+    status(`Saving the private companion to ${branch}…`, "busy");
+    const created = await state.gh.ensureBranch(c.owner, c.repo, branch, c.defaultBranch);
+    const message =
+      `Edit educator files for ${state.blockId}\n\n` +
+      changed.map((f) => `- ${f.path}`).join("\n");
+    const sha = await state.gh.commit(c.owner, c.repo, branch, message, changed);
+    for (const file of changed) c.files.set(file.path, file.content);
+    c.edits = new Map();
+    clearDraft(c.owner, c.repo, companionBranch());
+    clearDraft(c.owner, c.repo, branch);
+    rememberBranch(c.owner, c.repo, branch);
+    c.branch = branch;
+    renderTabs();
+    status(
+      `Private companion saved to ${branch} (${sha.slice(0, 7)})${created ? " — branch created" : ""}.`,
+      "ok"
+    );
+    return true;
+  } catch (err) {
+    status(`Saving the private companion failed: ${err.message}`, "error");
+    return false;
+  } finally {
+    updateActions();
+  }
+}
+
+/** Open (or find) the companion's pull request; its URL, or null. */
+async function submitCompanion() {
+  const c = state.companion;
+  if (!c) return null;
+  const branch = await resolveDraftBranch(state.gh, c.owner, c.repo, state.login);
+  if (!(await state.gh.branchExists(c.owner, c.repo, branch))) return null;
+  const existing = await state.gh.pullForBranch(c.owner, c.repo, branch);
+  if (existing) return existing.html_url;
+  try {
+    const pull = await state.gh.openPull(c.owner, c.repo, {
+      head: branch,
+      base: c.defaultBranch,
+      title: `Update educator files for ${state.library.course.title || state.repo.repo}`,
+      body:
+        "Question banks and instructor guides, authored in the FAIR-Ed workbench. " +
+        `Companion to ${state.repo.owner}/${state.repo.repo}.`,
+    });
+    return pull.html_url;
+  } catch (err) {
+    // Nothing to review (the branch is level with the base) is not a failure.
+    if (err.status === 422) return null;
+    throw err;
+  }
+}
+
+/** The outcome ids the course defines, for checking what a bank assesses. */
+function knownOutcomes() {
+  const outcomes = catalogueDoc().outcomes;
+  return outcomes && typeof outcomes === "object" ? new Set(Object.keys(outcomes)) : null;
+}
+
+function renderCompanionDocument(host, doc) {
+  const c = state.companion;
+  const note = document.createElement("p");
+  note.className = "private-note";
+  note.textContent =
+    `🔒 Educators only — saved to the private companion ${c.owner}/${c.repo}, ` +
+    "never to the course.";
+  host.appendChild(note);
+
+  const existing = docText(doc);
+  if (!existing) host.appendChild(createBanner(doc));
+  const text = existing || companionStarter(doc);
+
+  if (doc.editor === "markdown") {
+    const editorHost = document.createElement("div");
+    host.appendChild(editorHost);
+    markdownEditor(editorHost, { text, onChange: (next) => setDocText(doc, next) });
+    return;
+  }
+
+  // The bank: its source, checked as it is typed, and the questions it
+  // holds listed underneath. Check runs the full rules.
+  const wrap = document.createElement("div");
+  wrap.className = "questions-editor";
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.spellcheck = false;
+  area.setAttribute("aria-label", "Question bank (questions.yaml)");
+  const verdict = document.createElement("div");
+  verdict.className = "bank-check";
+  const list = document.createElement("ul");
+  list.className = "bank-items";
+
+  const show = (value) => {
+    const { items, problems } = checkQuestions(value, { outcomes: knownOutcomes() });
+    verdict.className = `bank-check ${problems.length ? "bad" : "ok"}`;
+    verdict.innerHTML = "";
+    if (problems.length) {
+      verdict.append(`${problems.length} thing${problems.length === 1 ? "" : "s"} to fix:`);
+      const ul = document.createElement("ul");
+      for (const p of problems.slice(0, 12)) {
+        const li = document.createElement("li");
+        li.textContent = p;
+        ul.appendChild(li);
+      }
+      verdict.appendChild(ul);
+    } else {
+      verdict.textContent = `${items.length} question${items.length === 1 ? "" : "s"}, all well formed.`;
+    }
+    list.innerHTML = "";
+    for (const item of items) {
+      const li = document.createElement("li");
+      li.append(document.createTextNode(item.stem.slice(0, 140) || item.id));
+      const type = document.createElement("span");
+      type.className = "q-type";
+      type.textContent = item.type;
+      const out = document.createElement("span");
+      out.className = "q-out";
+      out.textContent = item.assesses.length ? `assesses ${item.assesses.join(", ")}` : "";
+      li.append(type, out);
+      list.appendChild(li);
+    }
+  };
+  let timer = null;
+  area.addEventListener("input", () => {
+    setDocText(doc, area.value);
+    clearTimeout(timer);
+    timer = setTimeout(() => show(area.value), 300);
+  });
+  const help = document.createElement("p");
+  help.className = "hint";
+  help.textContent =
+    "One question per item: mcq, multi, truefalse, short, numeric, match or cloze. " +
+    "Each names the outcomes it assesses. Exported to Moodle with edufair-moodle-questions " +
+    "or edufair-corpus --companion.";
+  wrap.append(area, verdict, list, help);
+  host.appendChild(wrap);
+  show(text);
+}
+
 // ---- save and submit ---------------------------------------------------
 
+/**
+ * Save everything pending, each file to the repo that owns it: the
+ * course's to its draft branch, the companion's to the companion's.
+ * Two commits, two branches, one button.
+ */
 async function save() {
+  const own = changedFiles().length;
+  const privateChanges = companionChanged().length;
+  if (!own && !privateChanges) return true;
+  if (own && !(await saveLibrary())) return false;
+  if (privateChanges) {
+    const before = own ? $("status").textContent : "";
+    if (!(await saveCompanion())) return false;
+    if (before) status(`${before} ${$("status").textContent}`, "ok");
+  }
+  return true;
+}
+
+async function saveLibrary() {
   const changed = changedFiles();
-  if (!changed.length) return;
+  if (!changed.length) return true;
   const { owner, repo, defaultBranch } = state.repo;
   const branch = await resolveDraftBranch(state.gh, owner, repo, state.login);
 
@@ -3376,6 +3875,9 @@ async function save() {
     state.library = readLibrary(state.files);
 
     state.gh.onRebased = null;
+    // Nothing is unsaved now; the draft was for the branch it was made on.
+    clearDraft(owner, repo, workingBranch());
+    clearDraft(owner, repo, branch);
     // So the next visit opens here rather than on the published version.
     rememberBranch(owner, repo, branch);
     state.repo.branch = branch;
@@ -3418,10 +3920,21 @@ async function submit() {
   const branch = await resolveDraftBranch(state.gh, owner, repo, state.login);
   try {
     // No point asking for a pull request against a branch that never landed.
-    if (changedFiles().length && !(await save())) return;
+    if (dirty() && !(await save())) return;
+    // The companion's review is its own pull request, in its own repo.
+    const privatePull = await submitCompanion();
+    if (privatePull && !(await state.gh.branchExists(owner, repo, branch))) {
+      status(`Opened for review in the private companion: ${privatePull}`, "ok");
+      window.open(privatePull, "_blank", "noopener");
+      return;
+    }
     const existing = await state.gh.pullForBranch(owner, repo, branch);
     if (existing) {
-      status(`Already open for review: ${existing.html_url}`, "ok");
+      status(
+        `Already open for review: ${existing.html_url}` +
+          (privatePull ? ` — and the private companion: ${privatePull}` : ""),
+        "ok"
+      );
       state.host?.emit("submitted", { prUrl: existing.html_url, existing: true });
       window.open(existing.html_url, "_blank", "noopener");
       return;
@@ -3437,7 +3950,11 @@ async function submit() {
         "Review and merge here; the deck is rendered from this markdown at " +
         "the point of use and is never stored.",
     });
-    status(`Opened for review: ${pull.html_url}`, "ok");
+    status(
+      `Opened for review: ${pull.html_url}` +
+        (privatePull ? ` — and the private companion: ${privatePull}` : ""),
+      "ok"
+    );
     state.host?.emit("submitted", { prUrl: pull.html_url, repo: `${owner}/${repo}`, branch });
     window.open(pull.html_url, "_blank", "noopener");
   } catch (err) {
@@ -3571,12 +4088,15 @@ async function loadVersion(commit) {
       }
       state.working.delete(state.blockId);
       state.library = readLibrary(pendingFiles());
+      adoptSlideEdits();
       state.slideIndex = 0;
       renderTabs();
       renderOutline();
       renderSlide();
       updateActions();
-      const changed = [...loaded.keys()].filter((p) => state.edits.has(p)).length;
+      // Counted against the branch: a deck's edit has already moved from
+      // the edits into its working slides.
+      const changed = [...loaded].filter(([p, text]) => state.files.get(p) !== text).length;
       status(
         changed
           ? `Loaded ${sha.slice(0, 7)}: ${changed} file${changed === 1 ? "" : "s"} ` +
@@ -3593,6 +4113,12 @@ async function loadVersion(commit) {
 // ---- wiring ------------------------------------------------------------
 
 async function boot() {
+  // A closing tab gets no 600ms: write the draft now.
+  window.addEventListener("pagehide", flushDraft);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushDraft();
+  });
+
   $("rail-toggle").addEventListener("click", () => {
     const panes = document.querySelector(".panes");
     setRail(!panes.classList.contains("rail-open"));
@@ -3614,8 +4140,11 @@ async function boot() {
     state.host.onAuth((next) => {
       state.gh = new GitHub(next.token);
     });
-    if (auth.repo) await openRepo(auth.repo);
-    else {
+    if (auth.repo) {
+      await openRepo(auth.repo);
+      // The portal's word wins over this browser's remembered pairing.
+      if (auth.companion && state.repo) await openCompanion(auth.companion, { quiet: true });
+    } else {
       const previous = lastRepo();
       if (previous) await openRepo(previous);
     }
@@ -3697,6 +4226,38 @@ function signOutNow() {
 
 $("signout").addEventListener("click", signOutNow);
 $("open").addEventListener("click", () => openRepo($("repo").value));
+// The private companion: connect, change, disconnect.
+$("companion-toggle").addEventListener("click", () => {
+  const form = $("companion-form");
+  form.hidden = !form.hidden;
+  $("companion-toggle").setAttribute("aria-expanded", String(!form.hidden));
+  if (!form.hidden) $("companion-repo").focus();
+});
+$("companion-cancel").addEventListener("click", () => {
+  $("companion-form").hidden = true;
+  $("companion-toggle").setAttribute("aria-expanded", "false");
+});
+$("companion-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const wanted = $("companion-repo").value.trim();
+  if (!wanted) return;
+  const current = state.companion ? `${state.companion.owner}/${state.companion.repo}` : null;
+  if (current && current.toLowerCase() !== wanted.toLowerCase() && companionChanged().length &&
+      !confirm(`Unsaved changes in ${current} stay in this browser. Switch companion anyway?`)) {
+    return;
+  }
+  if (current) flushDraft();
+  if (await openCompanion(wanted)) {
+    $("companion-form").hidden = true;
+    $("companion-toggle").setAttribute("aria-expanded", "false");
+  }
+});
+$("companion-disconnect").addEventListener("click", () => {
+  disconnectCompanion();
+  $("companion-form").hidden = true;
+  $("companion-toggle").setAttribute("aria-expanded", "false");
+});
+
 $("repo-switch").addEventListener("change", (e) => {
   const here = `${state.repo.owner}/${state.repo.repo}`;
   if (e.target.value === NEW_LIBRARY) {

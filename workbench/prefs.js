@@ -70,3 +70,31 @@ export function lastRepo() {
 export function rememberRepo(fullName) {
   return write(REPO_KEY, fullName || null);
 }
+
+// The private companion paired with a library (docs/companion-repo.md).
+// Remembered here because the library must never name it: publishing the
+// public half must not advertise the private one.
+const COMPANION_KEY = "fair.wb.companion";
+
+function pairs() {
+  try {
+    const parsed = JSON.parse(read(COMPANION_KEY) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** "owner/repo" of the companion paired with a library, or null. */
+export function companionFor(library) {
+  const value = pairs()[String(library).toLowerCase()];
+  return typeof value === "string" && value.includes("/") ? value : null;
+}
+
+export function rememberCompanion(library, companion) {
+  const map = pairs();
+  const key = String(library).toLowerCase();
+  if (companion) map[key] = companion;
+  else delete map[key];
+  return write(COMPANION_KEY, JSON.stringify(map));
+}

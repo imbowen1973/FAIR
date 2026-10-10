@@ -66,10 +66,10 @@ GitHub, where they belong.
 
 Content written elsewhere comes in through **import**, above the slides
 in the rail: paste slides, open a file — **or drop an existing
-.pptx**, whose text, pictures and notes are rescued into markdown in
-your browser, with a per-slide confidence report. Everything is checked
-against this template — layouts, regions, outcome ids — before anything
-is added.
+.pptx**, whose text, tables, pictures, SmartArt and notes are rescued
+into markdown in your browser, with a per-slide confidence report.
+Everything is checked against this template — layouts, regions, outcome
+ids — before anything is added.
 Plain markdown works too, headings becoming slides. `docs/gpt-prompt.md`
 is the prompt that makes a model write slides this door will accept.
 
@@ -95,6 +95,7 @@ edufair-doctemplate brand.docx --styles style-map.yaml  # only for a house style
 edufair-prompt path/to/library --out prompt.md      # instructions for a model
 edufair-import old-course.pptx --out blocks/05-x    # rescue a legacy deck into markdown
 edufair-moodle-questions companion/ --out bank/     # question banks -> Moodle XML
+edufair-corpus lib/ --out build --companion companion/  # + educator files, under educator/
 edufair-audit any-deck.pptx                         # read provenance back out of a deck
 ```
 
@@ -140,7 +141,10 @@ Secure question banks, instructor guides and marking schemes do NOT
 live here: they go in the **companion repo** — a private, shareable
 twin joined by block ids, exported to any Moodle's question bank with
 `edufair-moodle-questions`. The public build refuses to proceed if
-educator-only files are found in it. See `docs/companion-repo.md`.
+educator-only files are found in it. In the workbench, **＋ Private
+companion** connects it: each session gains 🔒 Questions and Instructor
+guide tabs, saved to the private repo, never the course. See
+`docs/companion-repo.md`.
 
 ## Repository layout
 
@@ -155,6 +159,7 @@ educator-only files are found in it. See `docs/companion-repo.md`.
 | `docs/template-profile.md` | Bringing your own PowerPoint template |
 | `docs/gpt-prompt.md` | The authoring prompt: what to ask before writing a session |
 | `docs/authoring-and-tracking.md` | Outcomes, competencies, and what is recorded |
+| `docs/importing-decks.md` | What import does with text, tables and pictures from an old deck |
 | `docs/companion-repo.md` | The twin repos: public content, private shareable assessment |
 | `docs/questions-format.md` | The question grammar and its Moodle XML export |
 | `docs/workbench-embedding.md` | Wrapping the workbench in a portal: the host contract |

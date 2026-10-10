@@ -671,14 +671,76 @@ button.viewtab.on {
 }
 .viewnote { margin: 0 0 0 8px; color: var(--warn-fg, #a15c00); }
 
-/* Milkdown paints itself; this is the frame it sits in. */
+/* Milkdown's Crepe editor, made to look like part of the workbench.
+   Crepe's own theme is a light "page" with a 60px/120px gutter and
+   42px serif headings. Every rule here is scoped .rich .milkdown — one
+   class more specific than Crepe's — because Crepe's stylesheet loads
+   at runtime, after this one, and would otherwise win every tie. That
+   is how the old override lost: its padding never applied.
+
+   Colours are Crepe's own variables pointed at the workbench tokens, so
+   the editor follows light and dark mode with everything else. Setting
+   the background alone (as before) left Crepe's black text on a dark
+   page. */
 .rich {
   border: 1px solid var(--border); border-radius: 8px;
   background: var(--bg-raised); min-height: 58vh;
 }
-.rich .milkdown { background: transparent; }
-.rich .ProseMirror { padding: 14px 18px; min-height: 54vh; }
-.rich .ProseMirror:focus { outline: none; }
+.rich .milkdown {
+  --crepe-color-background: var(--bg-raised);
+  --crepe-color-on-background: var(--fg);
+  --crepe-color-surface: var(--bg-sunken);
+  --crepe-color-surface-low: var(--bg-sunken);
+  --crepe-color-on-surface: var(--fg);
+  --crepe-color-on-surface-variant: var(--muted);
+  --crepe-color-outline: var(--border-strong);
+  --crepe-color-primary: var(--accent);
+  --crepe-color-secondary: var(--border);
+  --crepe-color-on-secondary: var(--fg);
+  --crepe-color-inverse: var(--fg);
+  --crepe-color-on-inverse: var(--bg);
+  --crepe-color-inline-code: var(--danger);
+  --crepe-color-error: var(--danger);
+  --crepe-color-hover: var(--bg-sunken);
+  --crepe-color-selected: color-mix(in srgb, var(--accent) 22%, transparent);
+  --crepe-color-inline-area: var(--bg-sunken);
+  --crepe-base-font-size: 15px;
+  --crepe-font-title: "Segoe UI", system-ui, sans-serif;
+  --crepe-font-default: "Segoe UI", system-ui, sans-serif;
+  --crepe-font-code: Consolas, "Courier New", monospace;
+  background: transparent;
+  color: var(--fg);
+}
+/* Room on the left for Crepe's block handle (two 32px buttons), and a
+   readable measure on wide screens instead of a line the width of the
+   monitor. */
+.rich .milkdown .ProseMirror {
+  padding: 22px 32px 32px 76px;
+  min-height: 54vh;
+  max-width: 900px;
+  line-height: 1.55;
+}
+.rich .milkdown .ProseMirror:focus { outline: none; }
+
+/* Document headings, not poster headings. A lesson plan's h1 is its
+   title; at Crepe's 42px it broke one word per line on a phone. */
+.rich .milkdown .ProseMirror h1,
+.rich .milkdown .ProseMirror h2,
+.rich .milkdown .ProseMirror h3,
+.rich .milkdown .ProseMirror h4,
+.rich .milkdown .ProseMirror h5,
+.rich .milkdown .ProseMirror h6 {
+  font-weight: 650;
+  color: var(--fg);
+  overflow-wrap: break-word;
+}
+.rich .milkdown .ProseMirror h1 { font-size: 1.6em; line-height: 1.25; margin-top: 0.6em; }
+.rich .milkdown .ProseMirror h2 { font-size: 1.35em; line-height: 1.3; margin-top: 1.2em; }
+.rich .milkdown .ProseMirror h3 { font-size: 1.15em; line-height: 1.35; margin-top: 1em; }
+.rich .milkdown .ProseMirror h4 { font-size: 1.05em; line-height: 1.4; margin-top: 0.9em; }
+.rich .milkdown .ProseMirror h5,
+.rich .milkdown .ProseMirror h6 { font-size: 1em; line-height: 1.4; margin-top: 0.8em; }
+.rich .milkdown .ProseMirror > :first-child { margin-top: 0; }
 .viewbody { min-width: 0; }
 
 /* Outcomes grouped by the session that owns them; competencies shown as
@@ -773,7 +835,18 @@ button.tab.addbtn { gap: 5px; }
   header { padding: 10px 12px; }
   .bar { flex-wrap: wrap; gap: 6px; }
   textarea.mdsource, .mdpreview, .rich { min-height: 44vh; }
-  .rich .ProseMirror { min-height: 40vh; padding: 12px 14px; }
+  .rich .milkdown .ProseMirror { min-height: 40vh; padding: 14px 14px 24px; }
+  .rich .milkdown { --crepe-base-font-size: 16px; } /* 16px stops iOS zooming on focus */
+}
+
+/* The block handle (+ and drag dots) is driven by hover. A touch screen
+   has no hover, so it appeared wherever the last tap landed and moved
+   with every touch — the "random" part. On touch and narrow screens it
+   goes; typing "/" still opens the same block menu, and the left gutter
+   it needed goes with it. */
+@media (hover: none), (max-width: 700px) {
+  .rich .milkdown .milkdown-block-handle { display: none !important; }
+  .rich .milkdown .ProseMirror { padding-left: 14px; }
 }
 
 /* The recipe's own levels in the rail: a lesson sits inside its module,
@@ -1055,3 +1128,102 @@ ul.import-list {
   text-align: left;
 }
 .region-table th { font-weight: 700; background: var(--bg-sunken); }
+
+/* ---- SmartArt on the slide (shown as Mermaid, edited in source) ------ */
+/* The slide is the template's surface, not the app's, so the drawing
+   takes the theme's colours (set in smartart.js) and only the badge and
+   the fallback outline use the app's own. */
+.smartart {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.smartart-drawing {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.smartart-drawing svg {
+  max-width: 100%;
+  max-height: 100%;
+  height: auto;
+}
+.smartart-outline {
+  margin: 0;
+  padding-left: 1.2em;
+  font-size: 0.8em;
+  align-self: flex-start;
+}
+.smartart-badge {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font: 600 10px/1.6 system-ui, sans-serif;
+  color: var(--accent-fg);
+  background: var(--accent);
+  opacity: 0.85;
+  pointer-events: none;
+}
+.stage.compact .smartart-badge { display: none; }
+
+/* ---- the picture button and panel ------------------------------------ */
+/* A word beside the glyph: the picture icon alone was not read as
+   "insert a picture". */
+button.mark.with-text > span { display: inline-flex; align-items: center; gap: 5px; }
+button.mark.with-text .mark-text { font-size: 12px; font-weight: 600; }
+
+.media-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 8px;
+}
+.media-head h4 { margin: 0; }
+button.media-close {
+  border: 0; background: none; font-size: 18px; line-height: 1;
+  padding: 2px 6px; border-radius: 4px; color: var(--muted); cursor: pointer;
+}
+button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
+
+/* Beside the slide, in the details column: it is the column's width,
+   not the editor's, so the grid packs two thumbnails a row. */
+#side-panels .media-picker { max-width: none; padding: 12px; }
+#side-panels .media-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+#side-panels .media-link { flex-wrap: wrap; }
+#side-panels .media-link input { min-width: 0; flex: 1 1 140px; }
+
+/* ---- the private companion ------------------------------------------- */
+.bar-repo { flex-wrap: wrap; }
+.companion-toggle { font-size: 12px; white-space: nowrap; }
+.companion-toggle.on { color: var(--fg); font-weight: 600; }
+.companion-form {
+  flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 12px; margin-top: 6px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg-raised);
+}
+.companion-form input { flex: 1 1 220px; min-width: 0; }
+.companion-form .hint { flex-basis: 100%; margin: 0; }
+/* An educator-only tab: marked, so nobody mistakes where it is saved. */
+.tab.private .tab-label::before { content: "🔒 "; }
+.tab.private { border-style: dashed; }
+.questions-editor textarea {
+  width: 100%; min-height: 24em; font: 13px/1.5 Consolas, ui-monospace, monospace;
+  padding: 10px; border: 1px solid var(--border-strong); border-radius: 6px;
+  background: var(--bg); color: var(--fg); box-sizing: border-box;
+}
+.questions-editor .bank-check { margin: 8px 0; font-size: 0.86rem; }
+.questions-editor .bank-check.ok { color: var(--ok); }
+.questions-editor .bank-check.bad { color: var(--danger); }
+.questions-editor .bank-check ul { margin: 4px 0 0; padding-left: 1.2em; }
+.bank-items { margin: 10px 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.bank-items li {
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+  background: var(--bg-sunken); font-size: 0.86rem;
+}
+.bank-items .q-type, .bank-items .q-out {
+  font-size: 0.72rem; color: var(--muted); margin-left: 6px;
+}
+.private-note { font-size: 0.82rem; color: var(--muted); margin: 0 0 8px; }

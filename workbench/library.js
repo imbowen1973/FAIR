@@ -23,7 +23,7 @@ export const RESERVED_SLIDE_KEYS = new Set([
   "role",
 ]);
 
-export const CONTENT_TYPES = ["ul", "ol", "p", "table", "image", "mermaid", "video"];
+export const CONTENT_TYPES = ["ul", "ol", "p", "table", "image", "mermaid", "video", "smartart"];
 
 /** Which repo paths a library render needs — mirrors wasm-renderer.js. */
 export function libraryPaths(paths) {
@@ -606,7 +606,7 @@ export function asPlainText(value) {
   const type = value.type ?? null;
   if (type === "ul" || type === "ol") return listLines(value.items).join("\n");
   if (type === null || type === "p" || type === "text") return String(value.text ?? "");
-  // image, video, mermaid: there is no honest text for these.
+  // image, video, mermaid, smartart: no honest single text for these.
   return null;
 }
 
@@ -681,4 +681,50 @@ export function asListType(value, kind) {
   // the `p` wrapper that can hold them.
   const bare = lines.length === 1 && !Object.keys(extras).length;
   return bare ? text : { type: "p", ...extras, text };
+}
+
+/**
+ * Table merge markers -> what to draw, mirroring the renderer's parser.
+ *
+ * A cell that is exactly "<" belongs to the cell on its left; exactly
+ * "^" to the cell above; "\<" and "\^" are the literal characters.
+ * Returns a grid the same shape as the input where each entry is either
+ * null (covered by a merge: draw nothing) or {text, rowspan, colspan}.
+ * Anything malformed is drawn unmerged rather than thrown: the preview
+ * must not die on a typo the renderer will report properly.
+ */
+export function tableSpans(grid) {
+  const rows = grid.length;
+  const cols = rows ? grid[0].length : 0;
+  const origin = (r, c) => {
+    for (let guard = 0; guard < rows + cols + 1; guard++) {
+      const v = grid[r]?.[c];
+      if (v === "<" && c > 0) c -= 1;
+      else if (v === "^" && r > 0) r -= 1;
+      else return [r, c];
+    }
+    return [r, c];
+  };
+  const groups = new Map();
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const [r0, c0] = origin(r, c);
+      const key = `${r0},${c0}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push([r, c]);
+    }
+  }
+  const unescape = (v) => (v === "\\<" ? "<" : v === "\\^" ? "^" : String(v ?? ""));
+  const out = grid.map((row) => row.map((v) => ({ text: unescape(v), rowspan: 1, colspan: 1 })));
+  for (const [key, cells] of groups) {
+    if (cells.length === 1) continue;
+    const [r0, c0] = key.split(",").map(Number);
+    const r1 = Math.max(...cells.map(([r]) => r));
+    const c1 = Math.max(...cells.map(([, c]) => c));
+    if (cells.length !== (r1 - r0 + 1) * (c1 - c0 + 1)) continue; // not a rectangle
+    out[r0][c0].rowspan = r1 - r0 + 1;
+    out[r0][c0].colspan = c1 - c0 + 1;
+    for (const [r, c] of cells) if (r !== r0 || c !== c0) out[r][c] = null;
+  }
+  return out;
 }

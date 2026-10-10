@@ -275,11 +275,32 @@ typed object:
 - `{ type: ol, items: [...] }` — numbered list
 - `{ type: p, text: "..." }` — plain paragraphs (newline-separated), no
   bullets
-- `{ type: table, header: [..], rows: [[..], ..] }` — a real PowerPoint
-  table at the region's footprint, styled by the template's table style.
-  `header` is optional; every row must have the same number of cells.
-  Cells take inline emphasis. (Like images in non-picture placeholders,
-  the table shape itself carries no `<p:ph>` — the documented exception.)
+- `{ type: table, header: [..], rows: [[..], ..], widths: [..] }` — a
+  real PowerPoint table at the region's footprint, styled by the
+  template's table style. `header` is optional; every row must have the
+  same number of cells. Cells take inline emphasis. `widths` is optional:
+  relative column widths, one positive number per column, of which only
+  the proportions matter (`[60, 25, 15]`); without it, columns are sized
+  from their content. Import fills it from the original deck.
+  **Merged cells** are written in place: a cell that is exactly `<`
+  belongs to the cell on its left, exactly `^` to the cell above, and
+  the merge's text sits in its top-left cell. Rows keep their full
+  width, so the grid still lines up when read. A merge must be a whole
+  rectangle (either marker works inside a block); a literal `<` or `^`
+  cell is written `\<` or `\^`. Import writes these from the deck's
+  own merges.
+
+  ```yaml
+  header: [Product, Storage, "<"]     # "Storage" spans two columns
+  rows:
+  - [Vaccines, 2 to 8 °C, Never freeze]
+  - [Insulin, "^", Discard if frozen] # one range cell for both
+  ```
+  **The type size is not authored:** PowerPoint has no autofit for
+  tables, so the renderer picks the largest size (18pt down to 8pt) at
+  which the whole table fits its frame without breaking a word. (Like
+  images in non-picture placeholders, the table shape itself carries no
+  `<p:ph>` — the documented exception.)
 - `{ type: image, src: path }` — image, path relative to the session file
 - `{ type: mermaid, src: path }` — Mermaid source, rendered to PNG at build
   time (see below)
@@ -288,6 +309,9 @@ typed object:
   generated play-button panel) hyperlinked to the URL; clicking it in
   the presentation opens the video. Video files themselves are never
   committed.
+- `{ type: smartart, layout, family, definition: path, nodes: [...] }` —
+  real PowerPoint SmartArt. Import writes these from a deck's SmartArt;
+  see *SmartArt* below.
 
 A list item is either a string or `{ text: str, items: [...], color: ... }`
 for nesting. Maximum nesting depth is 5 (python-pptx paragraph levels 0–4).
@@ -387,6 +411,46 @@ card's tab — a rounded-top strip filled accent1–4 respectively, centred
 bold text, styled entirely by the layout, so author markdown stays
 plain (`head1: "Detect"`). Each `cardN` is that card's body panel and
 takes any text content type (`ul`, `ol`, `p`).
+
+### SmartArt
+
+A SmartArt graphic is content and shape stored together, and the format
+keeps them apart. The **content** — a tree of short texts — is in the
+slide; the **shape** — which of PowerPoint's diagram layouts draws it,
+in what style — is a definition file in the block's `media/`, written by
+import from the deck the SmartArt came from.
+
+```yaml
+full:
+  type: smartart
+  layout: process3          # the PowerPoint layout, by its short name
+  family: process           # what kind of diagram that is
+  definition: media/smartart-process3-fcc10e64.xml
+  nodes:
+  - text: Receive
+    items: [Check the logger]   # sub-points belong to their step
+  - Verify
+  - Store at **2–8 °C**         # inline emphasis works
+  - text: |-                    # two paragraphs in one shape
+      Dispatch
+      within 24 h
+```
+
+- `nodes` is a tree, written like list items: a string, or
+  `{text, items}`. An org chart's assistant is `{text, assistant: true}`.
+- The render gives PowerPoint **real, editable SmartArt**: the data
+  model PowerPoint itself writes, generated from the tree against the
+  definition, so PowerPoint lays it out at the template's placeholder.
+  Edit the tree — add a step, reword a node — and the diagram follows.
+  Colours resolve through the template's theme.
+- `family` (`process`, `cycle`, `hierarchy`, `list`, `relationship`,
+  `matrix`, `pyramid`) is what the workbench uses to **show** it: it
+  cannot run PowerPoint's layout engine, so it draws the tree as the
+  Mermaid diagram that means the same thing. The workbench displays
+  SmartArt; it does not create it.
+- `definition` is required. The file holds PowerPoint's layout, style
+  and colour definitions exactly as the original deck carried them, and
+  is shared by every diagram drawn the same way.
 
 ### Mermaid resolution
 

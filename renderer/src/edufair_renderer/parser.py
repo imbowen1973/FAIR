@@ -16,7 +16,7 @@ RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "outcomes", "dok", "
 # in block.yaml and outcomes.yaml -- and writing them again on a slide
 # is how a deck comes to disagree with the course it belongs to.
 SLIDE_ROLES = {"title", "outcomes"}
-CONTENT_TYPES = {"ul", "ol", "p", "table", "image", "mermaid", "video"}
+CONTENT_TYPES = {"ul", "ol", "p", "table", "image", "mermaid", "video", "smartart"}
 
 # How a picture meets its frame. Mirrors render.IMAGE_FITS, and is
 # declared here so the grammar can refuse an unknown one at parse time
@@ -47,6 +47,45 @@ def _check_color(color, where: str) -> str | None:
 
 class SessionParseError(Exception):
     """Raised when a session file violates the session.md grammar."""
+
+
+@dataclass
+class SmartArtNode:
+    text: str
+    children: list["SmartArtNode"] = field(default_factory=list)
+    # An org chart's assistant: drawn beside its manager, not under.
+    assistant: bool = False
+
+
+SMARTART_FAMILIES = ("process", "cycle", "hierarchy", "list", "relationship", "matrix", "pyramid")
+
+
+def _parse_smartart_nodes(raw, where: str, depth: int = 0) -> list[SmartArtNode]:
+    if depth >= MAX_LIST_DEPTH:
+        raise SessionParseError(f"{where}: SmartArt nesting exceeds {MAX_LIST_DEPTH} levels")
+    if not isinstance(raw, list) or (depth == 0 and not raw):
+        raise SessionParseError(f"{where}: smartart 'nodes' must be a non-empty list")
+    out = []
+    for entry in raw:
+        if isinstance(entry, (str, int, float)) and not isinstance(entry, bool):
+            out.append(SmartArtNode(text=str(entry)))
+        elif isinstance(entry, dict) and "text" in entry:
+            unknown = set(entry) - {"text", "items", "assistant"}
+            if unknown:
+                raise SessionParseError(
+                    f"{where}: smartart node {entry['text']!r} has unknown key(s) "
+                    f"{sorted(unknown)}; a node has text, items and assistant"
+                )
+            out.append(SmartArtNode(
+                text=str(entry["text"]),
+                children=_parse_smartart_nodes(entry.get("items") or [], where, depth + 1),
+                assistant=bool(entry.get("assistant", False)),
+            ))
+        else:
+            raise SessionParseError(
+                f"{where}: smartart node must be a string or {{text, items}}, got {entry!r}"
+            )
+    return out
 
 
 @dataclass
@@ -82,10 +121,25 @@ class Region:
     # strings (inline emphasis applies inside cells).
     header: list[str] | None = None
     rows: list[list[str]] = field(default_factory=list)
+    # table: relative column widths (any positive numbers; only the
+    # proportions matter). Absent = sized from the content.
+    widths: list[float] | None = None
+    # table: merged cells. (row, col) of each merge's top-left cell in
+    # the full grid (header is row 0 when present) -> (rowspan, colspan).
+    # Covered cells are "" in header/rows.
+    spans: dict[tuple[int, int], tuple[int, int]] = field(default_factory=dict)
     # How a picture meets its frame: cover, contain, width, height.
     # The template knows the shape of the hole; only the author knows
     # whether this picture may lose its edges.
     fit: str | None = None
+    # smartart: the content tree, which of PowerPoint's diagram layouts
+    # draws it (short name, e.g. "process3"), and what kind of diagram
+    # that is ("process", "cycle", "hierarchy", ...). `src` is the
+    # definition file in media/ -- the layout, style and colours the
+    # render hands PowerPoint.
+    nodes: list["SmartArtNode"] = field(default_factory=list)
+    layout: str | None = None
+    family: str | None = None
 
 
 @dataclass
@@ -227,6 +281,62 @@ def _parse_list_items(raw, where: str, depth: int = 0) -> list[ListItem]:
     return items
 
 
+MERGE_LEFT = "<"
+MERGE_UP = "^"
+_ESCAPED = {"\\<": "<", "\\^": "^"}
+
+
+def _resolve_merges(grid: list[list[str]], where: str) -> dict:
+    """Table merge markers -> spans, validated.
+
+    A cell that is exactly "<" belongs to the cell on its left; exactly
+    "^" to the cell above. Markers chain, so the interior of a 2x2 block
+    may use either. Every merge must cover a whole rectangle with its
+    text in the top-left cell. A literal "<" or "^" is written "\\<" or
+    "\\^". Returns {(row, col): (rowspan, colspan)} for each merge.
+    """
+    n_rows, n_cols = len(grid), len(grid[0])
+
+    def origin(r: int, c: int) -> tuple[int, int]:
+        while True:
+            value = grid[r][c]
+            if value == MERGE_LEFT:
+                if c == 0:
+                    raise SessionParseError(
+                        f"{where}: table row {r + 1}: '<' in the first column has "
+                        "nothing to its left to merge into"
+                    )
+                c -= 1
+            elif value == MERGE_UP:
+                if r == 0:
+                    raise SessionParseError(
+                        f"{where}: table column {c + 1}: '^' in the first row has "
+                        "nothing above it to merge into"
+                    )
+                r -= 1
+            else:
+                return r, c
+
+    groups: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for r in range(n_rows):
+        for c in range(n_cols):
+            groups.setdefault(origin(r, c), []).append((r, c))
+
+    spans = {}
+    for (r0, c0), cells in groups.items():
+        if len(cells) == 1:
+            continue
+        r1 = max(r for r, _ in cells)
+        c1 = max(c for _, c in cells)
+        if min(c for _, c in cells) < c0 or len(cells) != (r1 - r0 + 1) * (c1 - c0 + 1):
+            raise SessionParseError(
+                f"{where}: table merge starting at row {r0 + 1}, column {c0 + 1} is "
+                "not a rectangle — every cell in the block must be '<' or '^'"
+            )
+        spans[(r0, c0)] = (r1 - r0 + 1, c1 - c0 + 1)
+    return spans
+
+
 def _parse_region(name: str, raw, where: str) -> Region:
     # A plain string anywhere is a single unadorned text paragraph —
     # titles, column headings, captions.
@@ -277,7 +387,42 @@ def _parse_region(name: str, raw, where: str) -> Region:
                     f"{where}: table row {i + 1} has {len(row)} cells; expected {width}"
                 )
             cells_rows.append([str(c) for c in row])
-        return Region(name=name, type="table", header=cells_h, rows=cells_rows)
+        widths = raw.get("widths")
+        if widths is not None:
+            if (
+                not isinstance(widths, list)
+                or len(widths) != width
+                or not all(
+                    isinstance(w, (int, float)) and not isinstance(w, bool) and w > 0
+                    for w in widths
+                )
+            ):
+                raise SessionParseError(
+                    f"{where}: table 'widths' must be {width} positive numbers, "
+                    "one per column (only their proportions matter)"
+                )
+            widths = [float(w) for w in widths]
+        grid = ([cells_h] if cells_h else []) + cells_rows
+        spans = _resolve_merges(grid, f"{where}: region '{name}'")
+        covered = {
+            (r0 + i, c0 + j)
+            for (r0, c0), (rs, cs) in spans.items()
+            for i in range(rs)
+            for j in range(cs)
+            if (i, j) != (0, 0)
+        }
+        grid = [
+            ["" if (r, c) in covered else _ESCAPED.get(v, v) for c, v in enumerate(row)]
+            for r, row in enumerate(grid)
+        ]
+        if cells_h:
+            cells_h, cells_rows = grid[0], grid[1:]
+        else:
+            cells_rows = grid
+        return Region(
+            name=name, type="table", header=cells_h, rows=cells_rows,
+            widths=widths, spans=spans,
+        )
     if ctype == "video":
         # Video is never embedded: it lives on a host (YouTube etc.) and
         # the slide carries a click-through poster. Keeps repos small.
@@ -291,6 +436,24 @@ def _parse_region(name: str, raw, where: str) -> Region:
             raise SessionParseError(f"{where}: video 'poster' must be a path")
         return Region(
             name=name, type="video", url=url, src=poster, fit=raw.get("fit")
+        )
+    if ctype == "smartart":
+        definition = raw.get("definition")
+        if not isinstance(definition, str) or not definition:
+            raise SessionParseError(
+                f"{where}: region '{name}' of type smartart requires 'definition' "
+                "(the media/*.xml file import wrote beside it)"
+            )
+        family = raw.get("family")
+        if family is not None and family not in SMARTART_FAMILIES:
+            raise SessionParseError(
+                f"{where}: smartart family {family!r} is not one of {list(SMARTART_FAMILIES)}"
+            )
+        layout = raw.get("layout")
+        return Region(
+            name=name, type="smartart", src=definition,
+            nodes=_parse_smartart_nodes(raw.get("nodes"), f"{where}: region '{name}'"),
+            layout=str(layout) if layout is not None else None, family=family,
         )
     # image / mermaid
     src = raw.get("src")

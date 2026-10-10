@@ -12,7 +12,8 @@
 
 import { fromElement, toHtml, toNodes } from "./markdom.js";
 import { plainText } from "./marks.js";
-import { RESERVED_SLIDE_KEYS } from "./library.js";
+import { RESERVED_SLIDE_KEYS, tableSpans } from "./library.js";
+import { drawSmartArt } from "./smartart.js";
 
 const ALIGN = { l: "left", ctr: "center", r: "right", just: "justify" };
 
@@ -111,7 +112,7 @@ function legible(colour, background, theme) {
  */
 function shrinkToFit(box, minScale = 0.35) {
   const overflowing = () => box.scrollHeight > box.clientHeight + 1;
-  const sized = [...box.querySelectorAll("p, li")];
+  const sized = [...box.querySelectorAll("p, li, th, td")];
   if (!sized.length || !overflowing()) return 1;
 
   // Read the sizes the layout set; never clear them first. They are the
@@ -509,26 +510,48 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
     // editor is a project of its own and a wrong one eats data.
     const table = document.createElement("table");
     table.className = "region-table";
-    if (value.header?.length) {
-      const tr = document.createElement("tr");
-      for (const cell of value.header) {
-        const th = document.createElement("th");
-        th.textContent = String(cell ?? "");
-        tr.appendChild(th);
+    // The renderer fits a table between 8pt and 18pt (tablefit.py), so the
+    // preview starts no larger than the deck can be; shrinkToFit then
+    // takes it down the way the renderer will.
+    table.style.fontSize = `${Math.min(style.sizePt || 18, 18) * scale}px`;
+    if (Array.isArray(value.widths) && value.widths.length) {
+      // The source's own proportions (an imported deck, or an author's).
+      table.style.tableLayout = "fixed";
+      const total = value.widths.reduce((a, b) => a + b, 0) || 1;
+      const cols = document.createElement("colgroup");
+      for (const w of value.widths) {
+        const col = document.createElement("col");
+        col.style.width = `${(100 * w) / total}%`;
+        cols.appendChild(col);
       }
-      table.appendChild(tr);
+      table.appendChild(cols);
     }
-    for (const row of value.rows ?? []) {
+    // Merges drawn as real colspan/rowspan, from the same "<" and "^"
+    // markers the renderer reads.
+    const hasHeader = Boolean(value.header?.length);
+    const grid = [...(hasHeader ? [value.header] : []), ...(value.rows ?? [])];
+    tableSpans(grid).forEach((row, r) => {
       const tr = document.createElement("tr");
       for (const cell of row) {
-        const td = document.createElement("td");
-        td.textContent = String(cell ?? "");
-        tr.appendChild(td);
+        if (!cell) continue; // covered by a merge
+        const el = document.createElement(hasHeader && r === 0 ? "th" : "td");
+        el.textContent = cell.text;
+        if (cell.colspan > 1) el.colSpan = cell.colspan;
+        if (cell.rowspan > 1) el.rowSpan = cell.rowspan;
+        tr.appendChild(el);
       }
       table.appendChild(tr);
-    }
+    });
     box.appendChild(table);
     if (editable) box.title = "Tables are edited in the source view";
+    return;
+  }
+
+  if (type === "smartart") {
+    // Shown as the diagram it means; the deck gets the real SmartArt.
+    // Like a table, its text is edited in the source view.
+    drawSmartArt(box, value, theme);
+    if (editable) box.dataset.editable = "smartart";
     return;
   }
 
@@ -678,7 +701,7 @@ export function drawSlide(
   };
 
   const stage = document.createElement("div");
-  stage.className = "stage" + (editable ? " editable" : "");
+  stage.className = "stage" + (editable ? " editable" : "") + (compact ? " compact" : "");
   stage.style.aspectRatio = String(geometry.slide?.aspect || 1.7778);
   stage.style.background = theme.bg1 || "#fff";
   stage.style.color = theme.tx1 || "#000";
