@@ -23,11 +23,16 @@ const SRC = join(
   "edufair_renderer"
 );
 
-/** Intra-package imports: `from .x import y` and `from . import x`. */
+/**
+ * Intra-package imports: `from .x import y` and `from . import x` --
+ * indented ones included. A deferred import inside a function is still
+ * an import the browser has to satisfy, and matching only the top level
+ * missed `questions`, which build_corpus imports on every library build.
+ */
 function localImports(source) {
   const names = new Set();
-  for (const m of source.matchAll(/^from\s+\.(\w+)\s+import/gm)) names.add(m[1]);
-  for (const m of source.matchAll(/^from\s+\.\s+import\s+(.+)$/gm)) {
+  for (const m of source.matchAll(/^\s*from\s+\.(\w+)\s+import/gm)) names.add(m[1]);
+  for (const m of source.matchAll(/^\s*from\s+\.\s+import\s+(.+)$/gm)) {
     for (const part of m[1].split(",")) names.add(part.trim().split(/\s+/)[0]);
   }
   return names;

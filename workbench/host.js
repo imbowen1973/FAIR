@@ -55,6 +55,9 @@ export function readAuth(data) {
     token: data.token,
     login: typeof data.login === "string" ? data.login : null,
     repo: typeof data.repo === "string" ? data.repo : null,
+    // The private twin to open beside it, when this educator may read it
+    // (docs/companion-repo.md). The portal knows; the frame cannot guess.
+    companion: typeof data.companion === "string" ? data.companion : null,
   };
 }
 

@@ -66,10 +66,17 @@ export function tabs(host, { documents, active, onOpen, onAdd, onRemove }) {
       tab.title = `${doc.path} has not been created yet`;
     }
     tab.append(el("span", "tab-label", doc.title));
+    if (doc.private) {
+      // Educator-only, in the private companion repo: marked, so where a
+      // document is saved is never a surprise.
+      tab.classList.add("private");
+      tab.title = `${doc.title} — in the private companion repo, for educators only`;
+    }
 
     // The deck and the lesson plan are required, so neither offers a
     // close button -- an author cannot remove them by accident.
-    if (!["slides", "lessonplan", "outcomes", "course", "back"].includes(doc.type)) {
+    // Companion tabs are a fixed pair, so neither has one either.
+    if (!doc.private && !["slides", "lessonplan", "outcomes", "course", "back"].includes(doc.type)) {
       const close = el("button", "tab-close");
       close.type = "button";
       close.title = `Remove ${doc.title} from this block`;

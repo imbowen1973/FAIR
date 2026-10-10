@@ -24,7 +24,7 @@ message is origin-checked, both directions.
 | Direction | Message | Meaning |
 |---|---|---|
 | frame → host | `{type:"edufair:ready", version}` | the workbench is loaded and waiting |
-| host → frame | `{type:"edufair:auth", token, login?, repo?}` | credentials; `repo` ("owner/name") opens that library immediately |
+| host → frame | `{type:"edufair:auth", token, login?, repo?, companion?}` | credentials; `repo` ("owner/name") opens that library immediately; `companion` opens its private twin beside it (question banks, instructor guides — `companion-repo.md`). Send it only to educators whose token can read it; one that cannot degrades to the course alone |
 | host → frame | `edufair:auth` again, any time | **token rotation** — short-lived tokens refresh silently |
 | frame → host | `{type:"edufair:opened", repo, branch}` | a library was opened |
 | frame → host | `{type:"edufair:dirty", files}` | unsaved-change count changed |

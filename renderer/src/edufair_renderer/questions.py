@@ -205,8 +205,11 @@ class Companion:
     banks: dict[str, list[Item]]  # block id -> items
 
 
-def load_companion(root: Path) -> Companion:
-    """The private twin: companion.yaml plus one bank per block."""
+def load_companion(root: Path, require_banks: bool = True) -> Companion:
+    """The private twin: companion.yaml plus one bank per block.
+
+    A companion may hold only instructor guides; the Moodle export needs
+    banks and says so, the catalog overlay does not."""
     meta = {}
     meta_path = root / COMPANION_FILE
     if meta_path.exists():
@@ -220,7 +223,7 @@ def load_companion(root: Path) -> Companion:
     if blocks.is_dir():
         for bank in sorted(blocks.glob(f"*/{QUESTIONS_FILE}")):
             banks[bank.parent.name] = load_questions(bank)
-    if not banks:
+    if require_banks and not banks:
         raise QuestionsError(
             f"{root}: no blocks/*/{QUESTIONS_FILE} — not a companion repo, or an empty one"
         )

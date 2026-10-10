@@ -1194,3 +1194,36 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
 #side-panels .media-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 #side-panels .media-link { flex-wrap: wrap; }
 #side-panels .media-link input { min-width: 0; flex: 1 1 140px; }
+
+/* ---- the private companion ------------------------------------------- */
+.bar-repo { flex-wrap: wrap; }
+.companion-toggle { font-size: 12px; white-space: nowrap; }
+.companion-toggle.on { color: var(--fg); font-weight: 600; }
+.companion-form {
+  flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 12px; margin-top: 6px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg-raised);
+}
+.companion-form input { flex: 1 1 220px; min-width: 0; }
+.companion-form .hint { flex-basis: 100%; margin: 0; }
+/* An educator-only tab: marked, so nobody mistakes where it is saved. */
+.tab.private .tab-label::before { content: "🔒 "; }
+.tab.private { border-style: dashed; }
+.questions-editor textarea {
+  width: 100%; min-height: 24em; font: 13px/1.5 Consolas, ui-monospace, monospace;
+  padding: 10px; border: 1px solid var(--border-strong); border-radius: 6px;
+  background: var(--bg); color: var(--fg); box-sizing: border-box;
+}
+.questions-editor .bank-check { margin: 8px 0; font-size: 0.86rem; }
+.questions-editor .bank-check.ok { color: var(--ok); }
+.questions-editor .bank-check.bad { color: var(--danger); }
+.questions-editor .bank-check ul { margin: 4px 0 0; padding-left: 1.2em; }
+.bank-items { margin: 10px 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.bank-items li {
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+  background: var(--bg-sunken); font-size: 0.86rem;
+}
+.bank-items .q-type, .bank-items .q-out {
+  font-size: 0.72rem; color: var(--muted); margin-left: 6px;
+}
+.private-note { font-size: 0.82rem; color: var(--muted); margin: 0 0 8px; }

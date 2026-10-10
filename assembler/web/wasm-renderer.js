@@ -29,8 +29,12 @@ export const MODULES = [
   "layoutmap",
   "library",
   "mermaid",
+  // The companion's grammar: build_corpus imports it for the public
+  // build's no-answers gate, and moodlexml for the --companion overlay.
+  "moodlexml",
   "outcomes",
   "parser",
+  "questions",
   "render",
   "smartart",
   "runs",

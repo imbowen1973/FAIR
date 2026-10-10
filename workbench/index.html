@@ -112,6 +112,23 @@
       <div class="bar-repo">
         <h2 id="course-title"></h2>
         <select id="repo-switch" aria-label="Switch library"></select>
+        <!-- The private twin: question banks and instructor guides in a
+             repo of their own (docs/companion-repo.md). -->
+        <button id="companion-toggle" class="link companion-toggle" type="button"
+                aria-expanded="false" aria-controls="companion-form">＋ Private companion</button>
+        <form id="companion-form" class="companion-form" hidden>
+          <input id="companion-repo" type="text" placeholder="owner/course-private"
+                 aria-label="Companion repository" autocomplete="off"/>
+          <button id="companion-connect" type="submit" class="primary">Connect</button>
+          <button id="companion-disconnect" type="button" hidden>Disconnect</button>
+          <button id="companion-cancel" type="button" class="link">Cancel</button>
+          <p class="hint">
+            A private repo for what only educators may see — question banks,
+            instructor guides — joined to this course by its session ids. The
+            course itself never names it. Create it on GitHub as a private
+            repository first; an empty one is set up for you.
+          </p>
+        </form>
       </div>
       <div class="actions">
         <span id="branch-note" class="branch-note" hidden></span>

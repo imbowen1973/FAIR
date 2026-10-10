@@ -45,16 +45,36 @@ model: public CI needs nothing private; private CI reads the public.
 
 ## Tooling: the companion is an overlay
 
-- `edufair-corpus <library> --companion <companion>` merges the trees
-  per block: companion resources appear in the catalog as resources of
-  their block, flagged `audience: educator`. Without `--companion`
-  nothing changes — the public build is byte-identical whether the
-  companion exists or not.
-- **Workbench/portal**: the portal, which already owns tokens, opens
-  both repos when the signed-in educator may read both; a block's tabs
-  gain Questions and Instructor guide. A token that reaches only the
-  library degrades silently to content-only. Saves route to whichever
-  repo owns the file — two branches, two PRs, same verbs.
+- **`edufair-corpus <library> --companion <companion>`** merges the
+  trees per block. Every companion file becomes a resource of its block
+  in `catalog.json`, flagged `audience: educator`, and is copied under
+  `educator/` in the output — one folder a publisher leaves out. Each
+  block's bank is also exported to Moodle XML beside it
+  (`questions.moodle.xml`), and the catalog gains a `companion` entry
+  (its library, licence, question and file counts). The cross-checks run
+  first and stop the build on any mismatch: a companion block the
+  library does not have, or an `assesses:` id its `outcomes.yaml` does
+  not define. A companion holding only instructor guides is fine.
+  Without `--companion` nothing changes — the public build is
+  byte-identical whether a companion exists or not.
+- **Workbench.** *＋ Private companion* beside the library picker
+  connects it by `owner/repo`. Every session then gains two tabs marked
+  🔒 — **Questions** (the bank, checked as you type: shape of each item,
+  outcomes that exist) and **Instructor guide** (a document) — and
+  **Check** runs the same Python cross-checks the companion's CI does.
+  Each file is saved to the repo that owns it: **Save** makes one commit
+  on the course's draft branch and one on the companion's, and
+  **Submit** opens a pull request in each. The workbench refuses a
+  companion that is public (the answers would be one search away), one
+  whose `companion.yaml` names a different course, and the course
+  itself; an empty private repo is set up by writing `companion.yaml`.
+  The pairing is remembered in the browser — the library never names
+  its companion — and reconnects when the course is reopened. A token
+  that can read the course but not the companion opens the course alone
+  and says so. Unsaved private edits are kept locally like any other.
+- **Portal.** The host's `edufair:auth` message may carry
+  `companion: "owner/repo"` beside `repo`; the portal, which knows who
+  may read what, sends it only to educators (`workbench-embedding.md`).
 - **Provenance**: a credential award pins a *pair* —
   `library@sha + companion@sha` — so "what was taught" and "what was
   assessed" are both exact, while only the first is public.
@@ -96,11 +116,11 @@ back as an event evidencing the outcomes the items `assess`.
 ## Build order
 
 1. Spec `questions.yaml` item schema (the portable subset, feedback,
-   `assesses`) — the one new grammar.
+   `assesses`) — the one new grammar. **Done.**
 2. `edufair-moodle-questions`: items → Moodle XML (the "mergeable into
-   Moodle" deliverable).
+   Moodle" deliverable). **Done.**
 3. `--companion` overlay in `edufair-corpus` + companion-side CI
    validation (block ids, outcome refs, the no-answers gate on the
-   library).
+   library). **Done.**
 4. Portal/workbench dual-repo opening (rides the host contract — the
-   portal already decides which repos a session may reach).
+   portal already decides which repos a session may reach). **Done.**

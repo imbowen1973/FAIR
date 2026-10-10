@@ -176,6 +176,23 @@ export class GitHub {
         path
       );
     }
+    // A private repository reads as missing anonymously. With a token,
+    // ask the API instead: the companion repo is private by design, and
+    // so are some libraries.
+    if (res.status === 404 && this.token) {
+      const api = await fetch(
+        `${API}/repos/${owner}/${name}/contents/${path.split("/").map(encodeURIComponent).join("/")}` +
+          `?ref=${encodeURIComponent(ref)}`,
+        {
+          headers: {
+            Accept: "application/vnd.github.raw",
+            "X-GitHub-Api-Version": "2022-11-28",
+            Authorization: `Bearer ${this.token}`,
+          },
+        }
+      ).catch(() => null);
+      if (api?.ok) return api.text();
+    }
     if (!res.ok) {
       const where = `${owner}/${name} on ${ref}`;
       const why =
@@ -183,8 +200,8 @@ export class GitHub {
           ? ` — GitHub would not accept that address. The branch name is the ` +
             `usual reason.`
           : res.status === 404
-            ? ` — no such file on that branch. A private repository reads as ` +
-              `missing here too: these reads are anonymous.`
+            ? ` — no such file on that branch, or a private repository this ` +
+              `token cannot read.`
             : "";
       throw new GitHubError(
         `cannot read ${path} from ${where} (${res.status})${why}`,
