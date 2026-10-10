@@ -1,4 +1,4 @@
-# eduFAIR — git-native publishing for teaching content
+# FAIR-Ed — git-native publishing for teaching content
 
 Courses live as markdown in git: versioned, diffable, reviewable,
 forkable. Deterministic renderers turn that one source into the native

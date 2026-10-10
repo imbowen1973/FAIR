@@ -4,7 +4,7 @@ A session's lesson plan, workbook and teacher resources are markdown in
 the repo. This renders them into Word on the same terms the deck renderer
 works to:
 
-**eduFAIR defines meaning. Appearance comes from the styles.**
+**FAIR-Ed defines meaning. Appearance comes from the styles.**
 
 A document says what each thing *is* — a heading, a list, a figure, a
 callout — and a *named style* says what that looks like. Nothing in the
