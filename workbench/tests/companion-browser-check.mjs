@@ -47,13 +47,19 @@ const REPOS = {
   "t/lib-private": { files: COMPANION, private: true, refs: { main: "priv-0" } },
   "t/public-answers": { files: COMPANION, private: false, refs: { main: "pub-0" } },
   "t/other-private": { files: { "companion.yaml": "library: t/another-course\n" }, private: true, refs: { main: "o-0" } },
+  // Created on GitHub and never touched: no commits, so no branches.
+  // GitHub answers 409 "Git Repository is empty" to tree and ref reads.
+  "t/empty-private": { files: {}, private: true, refs: {}, empty: true },
 };
+const refWrites = []; // {repo, branch}
 const commits = []; // {repo, branch, paths}
 const blobs = new Map(); // sha -> {repo, content}
 let counter = 0;
 
 const browser = await chromium.launch({ channel: "msedge" });
 const page = await browser.newPage({ viewport: { width: 1500, height: 950 } });
+// "Switch companion with unsaved changes?" -- yes.
+page.on("dialog", (d) => d.accept());
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e.message)));
 
@@ -73,6 +79,20 @@ await page.route("https://api.github.com/**", async (route) => {
   const repo = REPOS[name];
   const rest = m[2] ?? "";
   if (!rest) return json({ default_branch: "main", private: repo.private, permissions: { push: true } });
+  if (repo.empty && method === "GET" && (rest.startsWith("/git/trees/") || rest.startsWith("/git/ref"))) {
+    return json({ message: "Git Repository is empty." }, 409);
+  }
+  if (rest.startsWith("/contents/") && method === "PUT") {
+    // The contents API: the one way to make the first commit.
+    const body = req.postDataJSON();
+    const path = rest.slice("/contents/".length);
+    const sha = `init-${++counter}`;
+    repo.empty = false;
+    repo.refs[body.branch] = sha;
+    commits.push({ repo: name, sha, paths: [path], first: true });
+    refWrites.push({ repo: name, branch: body.branch });
+    return json({ commit: { sha } });
+  }
   if (rest.startsWith("/git/trees/") && method === "GET") {
     return json({ truncated: false, tree: Object.keys(repo.files).map((p) => ({ path: p, type: "blob" })) });
   }
@@ -89,11 +109,13 @@ await page.route("https://api.github.com/**", async (route) => {
   }
   if (r && method === "PATCH") {
     repo.refs[r[1]] = req.postDataJSON().sha;
+    refWrites.push({ repo: name, branch: r[1] });
     return json({});
   }
   if (rest === "/git/refs" && method === "POST") {
     const body = req.postDataJSON();
     repo.refs[body.ref.replace("refs/heads/", "")] = body.sha;
+    refWrites.push({ repo: name, branch: body.ref.replace("refs/heads/", "") });
     return json({});
   }
   if (rest === "/git/blobs" && method === "POST") {
@@ -261,6 +283,25 @@ const reopened = await page.evaluate(() => ({
 }));
 console.log("reopened:", JSON.stringify(reopened));
 
+// ---- an empty private repo: the first save creates its main branch ----
+await page.click("#companion-toggle");
+await page.fill("#companion-repo", "t/empty-private");
+await page.click("#companion-connect");
+await page.waitForFunction(() => document.getElementById("companion-toggle").textContent.includes("t/empty-private"), null, { timeout: 10000 });
+const emptyStatus = await page.textContent("#status");
+await page.click(".tab.private[data-doc='companion:questions.yaml']");
+await page.click("#document .create-row button.primary");
+await page.waitForTimeout(300);
+const writesBefore = refWrites.length;
+await page.evaluate(() => document.getElementById("save").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+await page.waitForFunction(() => /Private companion started/.test(document.getElementById("status").textContent), null, { timeout: 15000 });
+const emptySaved = {
+  status: await page.textContent("#status"),
+  branches: [...new Set(refWrites.slice(writesBefore).map((w) => `${w.repo}@${w.branch}`))],
+  files: commits.filter((c) => c.repo === "t/empty-private").flatMap((c) => c.paths).sort(),
+};
+console.log("empty repo:", JSON.stringify({ emptyStatus, ...emptySaved }));
+
 const contents = [...blobs.values()].filter((b) => b.content !== undefined);
 
 if (errors.length) console.log("errors:", errors.slice(0, 5));
@@ -291,6 +332,9 @@ const failed =
   // A refused connection leaves the working one in place.
   !refusedSelf.still.includes("t/lib-private") ||
   !reopened.toggle.includes("t/lib-private") ||
+  !/It was empty/.test(emptyStatus) ||
+  JSON.stringify(emptySaved.branches) !== JSON.stringify(["t/empty-private@main"]) ||
+  JSON.stringify(emptySaved.files) !== JSON.stringify(["blocks/01-misuse/questions.yaml", "companion.yaml"]) ||
   reopened.dirty !== "1 file changed (1 private)";
 console.log(failed ? "FAIL" : "PASS");
 await browser.close();
