@@ -574,6 +574,10 @@ function openImport() {
     let resources = blockMeta().data.resources;
     for (const [rel, bytes] of importMedia) {
       state.uploads.set(`blocks/${state.blockId}/${rel}`, bytes);
+      // A SmartArt definition travels with the slides that name it, but
+      // it is not a resource: declared, it would open as a document tab
+      // and be offered to learners in the catalogue.
+      if (!/\.(png|jpe?g|gif)$/i.test(rel)) continue;
       resources = withResource(resources, {
         type: "image",
         title: rel.split("/").pop(),

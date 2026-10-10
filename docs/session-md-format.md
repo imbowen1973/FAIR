@@ -309,6 +309,9 @@ typed object:
   generated play-button panel) hyperlinked to the URL; clicking it in
   the presentation opens the video. Video files themselves are never
   committed.
+- `{ type: smartart, layout, family, definition: path, nodes: [...] }` —
+  real PowerPoint SmartArt. Import writes these from a deck's SmartArt;
+  see *SmartArt* below.
 
 A list item is either a string or `{ text: str, items: [...], color: ... }`
 for nesting. Maximum nesting depth is 5 (python-pptx paragraph levels 0–4).
@@ -408,6 +411,46 @@ card's tab — a rounded-top strip filled accent1–4 respectively, centred
 bold text, styled entirely by the layout, so author markdown stays
 plain (`head1: "Detect"`). Each `cardN` is that card's body panel and
 takes any text content type (`ul`, `ol`, `p`).
+
+### SmartArt
+
+A SmartArt graphic is content and shape stored together, and the format
+keeps them apart. The **content** — a tree of short texts — is in the
+slide; the **shape** — which of PowerPoint's diagram layouts draws it,
+in what style — is a definition file in the block's `media/`, written by
+import from the deck the SmartArt came from.
+
+```yaml
+full:
+  type: smartart
+  layout: process3          # the PowerPoint layout, by its short name
+  family: process           # what kind of diagram that is
+  definition: media/smartart-process3-fcc10e64.xml
+  nodes:
+  - text: Receive
+    items: [Check the logger]   # sub-points belong to their step
+  - Verify
+  - Store at **2–8 °C**         # inline emphasis works
+  - text: |-                    # two paragraphs in one shape
+      Dispatch
+      within 24 h
+```
+
+- `nodes` is a tree, written like list items: a string, or
+  `{text, items}`. An org chart's assistant is `{text, assistant: true}`.
+- The render gives PowerPoint **real, editable SmartArt**: the data
+  model PowerPoint itself writes, generated from the tree against the
+  definition, so PowerPoint lays it out at the template's placeholder.
+  Edit the tree — add a step, reword a node — and the diagram follows.
+  Colours resolve through the template's theme.
+- `family` (`process`, `cycle`, `hierarchy`, `list`, `relationship`,
+  `matrix`, `pyramid`) is what the workbench uses to **show** it: it
+  cannot run PowerPoint's layout engine, so it draws the tree as the
+  Mermaid diagram that means the same thing. The workbench displays
+  SmartArt; it does not create it.
+- `definition` is required. The file holds PowerPoint's layout, style
+  and colour definitions exactly as the original deck carried them, and
+  is shared by every diagram drawn the same way.
 
 ### Mermaid resolution
 

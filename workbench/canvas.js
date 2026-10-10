@@ -13,6 +13,7 @@
 import { fromElement, toHtml, toNodes } from "./markdom.js";
 import { plainText } from "./marks.js";
 import { RESERVED_SLIDE_KEYS, tableSpans } from "./library.js";
+import { drawSmartArt } from "./smartart.js";
 
 const ALIGN = { l: "left", ctr: "center", r: "right", just: "justify" };
 
@@ -546,6 +547,14 @@ function fillRegion(box, value, style, theme, scale, commit, editable, media0 = 
     return;
   }
 
+  if (type === "smartart") {
+    // Shown as the diagram it means; the deck gets the real SmartArt.
+    // Like a table, its text is edited in the source view.
+    drawSmartArt(box, value, theme);
+    if (editable) box.dataset.editable = "smartart";
+    return;
+  }
+
   // Media, shown rather than named. A picture is the one thing on a slide
   // whose effect cannot be judged from its file path, so a preview that
   // prints "▨ media/x.jpg" is not a preview of anything.
@@ -692,7 +701,7 @@ export function drawSlide(
   };
 
   const stage = document.createElement("div");
-  stage.className = "stage" + (editable ? " editable" : "");
+  stage.className = "stage" + (editable ? " editable" : "") + (compact ? " compact" : "");
   stage.style.aspectRatio = String(geometry.slide?.aspect || 1.7778);
   stage.style.background = theme.bg1 || "#fff";
   stage.style.color = theme.tx1 || "#000";

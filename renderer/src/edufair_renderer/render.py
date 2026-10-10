@@ -335,6 +335,8 @@ def _region_is_empty(region: Region) -> bool:
     """
     if region.type in ("image", "video", "mermaid"):
         return not (region.src or region.url)
+    if region.type == "smartart":
+        return not region.nodes
     if region.items:
         return False
     return not (region.text or "").strip()
@@ -492,6 +494,53 @@ def _fill_table(slide, placeholder, region, code_typeface: str) -> None:
     sp.getparent().remove(sp)
 
 
+def _fill_smartart(slide, placeholder, region: Region, base_dir: Path,
+                   code_typeface: str) -> None:
+    """Real SmartArt, laid out by PowerPoint, at the placeholder's footprint.
+
+    The content tree comes from the slide; the layout, style and colours
+    from the definition file import saved beside it. Like a table, a
+    diagram cannot live inside a text placeholder: the frame takes the
+    placeholder's position and the empty placeholder goes. Node text
+    keeps its inline emphasis; colours resolve through the template's
+    theme, because the definition names theme slots, not colours.
+    """
+    from pptx.oxml import parse_xml
+    from pptx.text.text import _Paragraph
+
+    from .smartart import SmartArtError, add_to_slide, read_definition
+
+    path = _asset_path(base_dir, region.src)
+    if not path.exists():
+        raise RenderError(f"SmartArt definition not found: {region.src}")
+    try:
+        definition = read_definition(path.read_bytes())
+    except SmartArtError as e:
+        raise RenderError(f"{region.src}: {e}") from None
+
+    def write_paragraph(p, text):
+        scratch = parse_xml(f'<a:p xmlns:a="{A_NS}"/>')
+        write_runs(_Paragraph(scratch, None), text, code_typeface=code_typeface)
+        for child in list(scratch):
+            p.append(child)
+
+    def shape(nodes):
+        return [[n.text, n.assistant, shape(n.children)] for n in nodes]
+
+    # Model ids derive from the content, so a render is repeatable byte
+    # for byte and an edit changes only what it touched.
+    seed = json.dumps([definition.layout_id, shape(region.nodes)], ensure_ascii=False)
+    try:
+        add_to_slide(
+            slide, placeholder.left, placeholder.top, placeholder.width,
+            placeholder.height, region.nodes, definition, seed, write_paragraph,
+        )
+    except SmartArtError as e:
+        raise RenderError(f"{region.src}: {e}") from None
+    sp = placeholder._element
+    sp.getparent().remove(sp)
+
+
 def _fill_region(
     slide, placeholder, region: Region, base_dir: Path, build_dir: Path,
     code_typeface: str = DEFAULT_CODE_TYPEFACE,
@@ -525,6 +574,8 @@ def _fill_region(
         _fill_image(slide, placeholder, image, region.fit or DEFAULT_IMAGE_FIT)
     elif region.type == "video":
         _fill_video(slide, placeholder, region, base_dir, build_dir)
+    elif region.type == "smartart":
+        _fill_smartart(slide, placeholder, region, base_dir, code_typeface)
     else:  # pragma: no cover - parser guarantees the type set
         raise RenderError(f"unknown region type {region.type!r}")
 

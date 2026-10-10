@@ -3,7 +3,7 @@
 `edufair-import old.pptx --out blocks/05-x`, or drop a `.pptx` on the
 workbench's import door (it runs in your browser; the deck is never
 uploaded). Import rescues the **content** — text, tables, pictures,
-speaker notes — into a block of markdown plus media. It does not
+SmartArt, speaker notes — into a block of markdown plus media. It does not
 reproduce the old slide's appearance: free positioning, fonts and
 colours are what made the deck impossible to reuse, and the new
 template provides all of them.
@@ -61,9 +61,28 @@ came from plus a hash of its content, e.g.
 deck imported into the same block can never overwrite the first deck's
 pictures.
 
+## SmartArt
+
+Kept as SmartArt. The content tree — every node, its sub-points, an org
+chart's assistants, multi-paragraph nodes, bold — becomes a
+`type: smartart` region, and the layout, style and colour definitions
+PowerPoint stored with it are saved once to `media/smartart-<layout>-<hash>.xml`.
+The render hands PowerPoint the same SmartArt back, laid out afresh at
+the new template's placeholder; re-importing that deck gives the same
+markdown. In the workbench it is shown as a Mermaid diagram chosen by
+its family (a process as a flow, a cycle as a loop, an org chart as a
+tree) — displayed, not edited there.
+
+| On the old slide | On import |
+|---|---|
+| SmartArt alone (with or without a title) | `Full`, the diagram as `full` |
+| SmartArt beside text | `Split`, the diagram on **the side it was on** |
+| two SmartArt graphics, no text | `Split`, one each side |
+| more than that | the largest placed; the rest named in the report with their text |
+| a SmartArt that cannot be read | its words kept as a list, and the report says so |
+
 ## Not imported
 
-Charts (rebuild as a table), SmartArt (flattened to a list; redraw as
-Mermaid if the shape mattered), animations and transitions, embedded
+Charts (rebuild as a table), animations and transitions, embedded
 video files (link the hosted video instead). Each is named in the
 report when found.

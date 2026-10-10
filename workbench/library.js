@@ -23,7 +23,7 @@ export const RESERVED_SLIDE_KEYS = new Set([
   "role",
 ]);
 
-export const CONTENT_TYPES = ["ul", "ol", "p", "table", "image", "mermaid", "video"];
+export const CONTENT_TYPES = ["ul", "ol", "p", "table", "image", "mermaid", "video", "smartart"];
 
 /** Which repo paths a library render needs — mirrors wasm-renderer.js. */
 export function libraryPaths(paths) {
@@ -606,7 +606,7 @@ export function asPlainText(value) {
   const type = value.type ?? null;
   if (type === "ul" || type === "ol") return listLines(value.items).join("\n");
   if (type === null || type === "p" || type === "text") return String(value.text ?? "");
-  // image, video, mermaid: there is no honest text for these.
+  // image, video, mermaid, smartart: no honest single text for these.
   return null;
 }
 

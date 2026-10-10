@@ -16,7 +16,7 @@ RESERVED_SLIDE_KEYS = {"id", "layout", "notes", "develops", "outcomes", "dok", "
 # in block.yaml and outcomes.yaml -- and writing them again on a slide
 # is how a deck comes to disagree with the course it belongs to.
 SLIDE_ROLES = {"title", "outcomes"}
-CONTENT_TYPES = {"ul", "ol", "p", "table", "image", "mermaid", "video"}
+CONTENT_TYPES = {"ul", "ol", "p", "table", "image", "mermaid", "video", "smartart"}
 
 # How a picture meets its frame. Mirrors render.IMAGE_FITS, and is
 # declared here so the grammar can refuse an unknown one at parse time
@@ -47,6 +47,45 @@ def _check_color(color, where: str) -> str | None:
 
 class SessionParseError(Exception):
     """Raised when a session file violates the session.md grammar."""
+
+
+@dataclass
+class SmartArtNode:
+    text: str
+    children: list["SmartArtNode"] = field(default_factory=list)
+    # An org chart's assistant: drawn beside its manager, not under.
+    assistant: bool = False
+
+
+SMARTART_FAMILIES = ("process", "cycle", "hierarchy", "list", "relationship", "matrix", "pyramid")
+
+
+def _parse_smartart_nodes(raw, where: str, depth: int = 0) -> list[SmartArtNode]:
+    if depth >= MAX_LIST_DEPTH:
+        raise SessionParseError(f"{where}: SmartArt nesting exceeds {MAX_LIST_DEPTH} levels")
+    if not isinstance(raw, list) or (depth == 0 and not raw):
+        raise SessionParseError(f"{where}: smartart 'nodes' must be a non-empty list")
+    out = []
+    for entry in raw:
+        if isinstance(entry, (str, int, float)) and not isinstance(entry, bool):
+            out.append(SmartArtNode(text=str(entry)))
+        elif isinstance(entry, dict) and "text" in entry:
+            unknown = set(entry) - {"text", "items", "assistant"}
+            if unknown:
+                raise SessionParseError(
+                    f"{where}: smartart node {entry['text']!r} has unknown key(s) "
+                    f"{sorted(unknown)}; a node has text, items and assistant"
+                )
+            out.append(SmartArtNode(
+                text=str(entry["text"]),
+                children=_parse_smartart_nodes(entry.get("items") or [], where, depth + 1),
+                assistant=bool(entry.get("assistant", False)),
+            ))
+        else:
+            raise SessionParseError(
+                f"{where}: smartart node must be a string or {{text, items}}, got {entry!r}"
+            )
+    return out
 
 
 @dataclass
@@ -93,6 +132,14 @@ class Region:
     # The template knows the shape of the hole; only the author knows
     # whether this picture may lose its edges.
     fit: str | None = None
+    # smartart: the content tree, which of PowerPoint's diagram layouts
+    # draws it (short name, e.g. "process3"), and what kind of diagram
+    # that is ("process", "cycle", "hierarchy", ...). `src` is the
+    # definition file in media/ -- the layout, style and colours the
+    # render hands PowerPoint.
+    nodes: list["SmartArtNode"] = field(default_factory=list)
+    layout: str | None = None
+    family: str | None = None
 
 
 @dataclass
@@ -389,6 +436,24 @@ def _parse_region(name: str, raw, where: str) -> Region:
             raise SessionParseError(f"{where}: video 'poster' must be a path")
         return Region(
             name=name, type="video", url=url, src=poster, fit=raw.get("fit")
+        )
+    if ctype == "smartart":
+        definition = raw.get("definition")
+        if not isinstance(definition, str) or not definition:
+            raise SessionParseError(
+                f"{where}: region '{name}' of type smartart requires 'definition' "
+                "(the media/*.xml file import wrote beside it)"
+            )
+        family = raw.get("family")
+        if family is not None and family not in SMARTART_FAMILIES:
+            raise SessionParseError(
+                f"{where}: smartart family {family!r} is not one of {list(SMARTART_FAMILIES)}"
+            )
+        layout = raw.get("layout")
+        return Region(
+            name=name, type="smartart", src=definition,
+            nodes=_parse_smartart_nodes(raw.get("nodes"), f"{where}: region '{name}'"),
+            layout=str(layout) if layout is not None else None, family=family,
         )
     # image / mermaid
     src = raw.get("src")

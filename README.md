@@ -66,10 +66,10 @@ GitHub, where they belong.
 
 Content written elsewhere comes in through **import**, above the slides
 in the rail: paste slides, open a file — **or drop an existing
-.pptx**, whose text, pictures and notes are rescued into markdown in
-your browser, with a per-slide confidence report. Everything is checked
-against this template — layouts, regions, outcome ids — before anything
-is added.
+.pptx**, whose text, tables, pictures, SmartArt and notes are rescued
+into markdown in your browser, with a per-slide confidence report.
+Everything is checked against this template — layouts, regions, outcome
+ids — before anything is added.
 Plain markdown works too, headings becoming slides. `docs/gpt-prompt.md`
 is the prompt that makes a model write slides this door will accept.
 

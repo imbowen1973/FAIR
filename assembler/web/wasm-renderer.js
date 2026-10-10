@@ -32,6 +32,7 @@ export const MODULES = [
   "outcomes",
   "parser",
   "render",
+  "smartart",
   "runs",
   "tablefit",
   // Reading a template's own geometry, so a library missing

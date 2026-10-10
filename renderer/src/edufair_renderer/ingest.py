@@ -82,11 +82,28 @@ class _Pic:
 
 
 @dataclass
+class _Diagram:
+    """A SmartArt graphic: its content tree and the definition that
+    draws it. Both survive import; only the old frame's position goes."""
+    nodes: list
+    definition: object  # smartart.Definition
+    left: int
+    top: int
+    width: int = 0
+    height: int = 0
+
+    @property
+    def area(self) -> int:
+        return max(0, self.width) * max(0, self.height)
+
+
+@dataclass
 class _Facts:
     number: int
     texts: list[_Text] = field(default_factory=list)
     pics: list[_Pic] = field(default_factory=list)
     tables: list[dict] = field(default_factory=list)  # {header, rows}
+    diagrams: list["_Diagram"] = field(default_factory=list)
     notes: str | None = None
     oddities: list[str] = field(default_factory=list)
 
@@ -105,6 +122,7 @@ class IngestResult:
 _BULLET_GLYPHS = re.compile(r"^\s*(?:[•‣◦·⁃\-–—o]\s+)+")
 _DIAGRAM_URI = "http://schemas.openxmlformats.org/drawingml/2006/diagram"
 _A_T = "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
+_A_GRAPHIC_DATA = "{http://schemas.openxmlformats.org/drawingml/2006/main}graphicData"
 
 
 def _clean(text: str) -> str:
@@ -214,6 +232,50 @@ def _font_size(text_frame) -> int:
     return best
 
 
+def _harvest_smartart(shape, facts: _Facts, left: int, top: int) -> None:
+    from .smartart import SmartArtError, read_frame
+
+    try:
+        nodes, definition = read_frame(shape._element, shape.part)
+    except SmartArtError as e:
+        nodes, definition = None, None
+        problem = str(e)
+    if nodes:
+        facts.diagrams.append(_Diagram(
+            nodes=nodes, definition=definition, left=left, top=top,
+            width=shape.width or 0, height=shape.height or 0,
+        ))
+        return
+    # Unreadable: rescue the words, flat, and say so.
+    texts = [_clean(t.text or "") for t in shape._element.iter(_A_T)]
+    texts = [t for t in texts if t]
+    if texts:
+        facts.texts.append(_Text(
+            paragraphs=[{"text": t, "level": 0} for t in texts],
+            left=left, top=top, width=shape.width or 0, height=shape.height or 0,
+        ))
+    facts.oddities.append(
+        f"a SmartArt graphic could not be read ({problem if nodes is None else 'it is empty'})"
+        + (" — its text was kept as a list" if texts else "")
+    )
+
+
+def _smartart_nodes(nodes) -> list:
+    """Content tree -> the grammar's node list."""
+    out = []
+    for n in nodes:
+        if not n.children and not n.assistant:
+            out.append(n.text)
+            continue
+        entry = {"text": n.text}
+        if n.assistant:
+            entry["assistant"] = True
+        if n.children:
+            entry["items"] = _smartart_nodes(n.children)
+        out.append(entry)
+    return out
+
+
 def _harvest(shape, facts: _Facts, offset=(0, 0)) -> None:
     from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
 
@@ -226,6 +288,14 @@ def _harvest(shape, facts: _Facts, offset=(0, 0)) -> None:
         # is a fair approximation for classification.
         for child in shape.shapes:
             _harvest(child, facts, (left, top))
+        return
+
+    # SmartArt: a graphic frame whose data is a diagram. It has no text
+    # frame, so it used to fall through every branch below and vanish
+    # without a word. Its content tree and definition are kept whole.
+    graphic_data = shape._element.find(f".//{_A_GRAPHIC_DATA}")
+    if graphic_data is not None and graphic_data.get("uri") == _DIAGRAM_URI:
+        _harvest_smartart(shape, facts, left, top)
         return
 
     # Any picture: free-floating (Picture) or sitting in a placeholder
@@ -285,24 +355,6 @@ def _harvest(shape, facts: _Facts, offset=(0, 0)) -> None:
         return
 
     if kind == MSO_SHAPE_TYPE.PLACEHOLDER or shape.has_text_frame:
-        element_xml = shape._element.xml if hasattr(shape, "_element") else ""
-        if _DIAGRAM_URI in element_xml:
-            texts = [
-                _clean(t.text or "") for t in shape._element.iter(_A_T)
-            ]
-            texts = [t for t in texts if t]
-            if texts:
-                facts.texts.append(
-                    _Text(
-                        paragraphs=[{"text": t, "level": 0} for t in texts],
-                        left=left, top=top,
-                        width=shape.width or 0, height=shape.height or 0,
-                    )
-                )
-            facts.oddities.append(
-                "SmartArt flattened to a list — redraw as Mermaid if the shape mattered"
-            )
-            return
         if not shape.has_text_frame:
             return
         paragraphs = _paragraphs(shape.text_frame)
@@ -426,9 +478,12 @@ def classify(facts: _Facts, size, media_ref) -> tuple[dict, str, list[str]]:
         out["full"] = region
         if len(facts.tables) > 1:
             notes.append(f"{len(facts.tables) - 1} further table(s) dropped — split into their own slides")
-        if bodies or facts.pics:
+        if bodies or facts.pics or facts.diagrams:
             notes.append("table kept; other content on this slide set aside")
         return done("Full", "medium")
+
+    if facts.diagrams:
+        return _classify_smartart(facts, bodies, out, notes, done, media_ref)
 
     if not bodies and not facts.pics:
         if not title:
@@ -525,6 +580,70 @@ def classify(facts: _Facts, size, media_ref) -> tuple[dict, str, list[str]]:
     )
     clean_split = all(_horizontal_share(b, main) < 0.2 for b in beside)
     return done("Split", "medium" if clean_split else "low")
+
+
+def _classify_smartart(facts, bodies, out, notes, done, media_ref):
+    """A slide whose content is SmartArt: the diagram is the slide.
+
+    One diagram fills the slide, or sits beside the text on the side it
+    was on; two diagrams with no text sit side by side. Pictures on the
+    same slide are saved, not placed. The diagram stays real SmartArt:
+    the render hands PowerPoint the same layout with the same content.
+    """
+    diagrams = sorted(facts.diagrams, key=lambda d: d.area, reverse=True)
+    for pic in facts.pics:
+        kept = media_ref(pic, facts.number)
+        if kept:
+            notes.append(f"picture saved as {kept}, not placed — the SmartArt is this slide")
+
+    def region(diagram):
+        definition = diagram.definition
+        ref = media_ref(diagram, facts.number)
+        notes.append(
+            f"SmartArt kept as SmartArt: {definition.layout_name} ({definition.family}), "
+            f"{_count_nodes(diagram.nodes)} node(s)"
+        )
+        return {
+            "type": "smartart",
+            "layout": definition.layout_name,
+            "family": definition.family,
+            "definition": ref,
+            "nodes": _smartart_nodes(diagram.nodes),
+        }
+
+    if not bodies and len(diagrams) >= 2:
+        pair = sorted(diagrams[:2], key=_centre_x)
+        out["left"], out["right"] = region(pair[0]), region(pair[1])
+        _set_aside(diagrams[2:], notes)
+        return done("Split", "medium")
+
+    main = diagrams[0]
+    _set_aside(diagrams[1:], notes)
+    if not bodies:
+        out["full"] = region(main)
+        return done("Full", "high")
+
+    text_region = _merged_region(bodies)
+    if len(bodies) > 1:
+        notes.append(f"{len(bodies)} text areas merged beside the SmartArt")
+    diagram_left = _centre_x(main) < sum(_centre_x(b) for b in bodies) / len(bodies)
+    diagram = region(main)
+    out["left"], out["right"] = (
+        (diagram, text_region) if diagram_left else (text_region, diagram)
+    )
+    return done("Split", "medium")
+
+
+def _count_nodes(nodes) -> int:
+    return sum(1 + _count_nodes(n.children) for n in nodes)
+
+
+def _set_aside(diagrams, notes) -> None:
+    from .smartart import node_texts
+
+    for d in diagrams:
+        words = "; ".join(t.replace(chr(10), " ") for t in node_texts(d.nodes))
+        notes.append(f"a further SmartArt set aside — give it its own slide: \"{_snip(words, 80)}\"")
 
 
 # Text overlapping the picture by at least this share of its own area
@@ -639,6 +758,20 @@ BRANDING_MIN_SLIDES = 3
 BRANDING_SHARE = 0.5
 
 
+class _SlideDumper(yaml.SafeDumper):
+    """Text with a line break in it -- a SmartArt node of two paragraphs,
+    a note -- written as a block, which reads as what it is, rather than
+    a quoted string with doubled blank lines."""
+
+
+def _str_block(dumper, value: str):
+    style = "|" if "\n" in value else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
+
+
+_SlideDumper.add_representer(str, _str_block)
+
+
 def _slug(text: str, limit: int = 24) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
     return slug[:limit].strip("-") or "deck"
@@ -659,7 +792,16 @@ def ingest_pptx(
         source_name = Path(source).name
     prefix = _slug(Path(source_name).stem if source_name else block_id)
 
-    def media_ref(pic: _Pic, slide_no: int) -> str | None:
+    def media_ref(pic, slide_no: int) -> str | None:
+        if isinstance(pic, _Diagram):
+            # The definition is shared by every diagram drawn with the
+            # same layout, style and colours: named for the layout and
+            # its content, so the same one is written once.
+            data = pic.definition.to_bytes()
+            name = (f"media/smartart-{pic.definition.layout_name}-"
+                    f"{hashlib.sha1(data).hexdigest()[:8]}.xml")
+            media[name] = data
+            return name
         key = (hashlib.sha1(pic.blob).hexdigest(), pic.crop)
         if key in by_key:
             return by_key[key]
@@ -708,8 +850,8 @@ def ingest_pptx(
         ordered.update(slide_dict)
         if facts.notes:
             ordered["notes"] = facts.notes
-        body = yaml.safe_dump(
-            ordered, sort_keys=False, allow_unicode=True, width=76
+        body = yaml.dump(
+            ordered, Dumper=_SlideDumper, sort_keys=False, allow_unicode=True, width=76
         ).rstrip()
         blocks.append(f"--- slide\n{body}\n---")
         report.append(
