@@ -120,7 +120,7 @@ function splitButton({ name, menuLabel, face, onFace, build }) {
     if (opening) {
       menu.hidden = false;
       arrow.setAttribute("aria-expanded", "true");
-      keepOnScreen(menu);
+      keepOnScreen(menu, wrap);
     }
   }
   build(menu, () => {
@@ -142,19 +142,34 @@ function splitButton({ name, menuLabel, face, onFace, build }) {
 }
 
 /**
- * A menu opens below its button, and is nudged sideways if that would
- * put it off the screen -- on a phone the colour menu sits at the left
- * edge and the marks menu near the right, so no one fixed side works.
+ * Place an open menu under its button, inside the window.
+ *
+ * Fixed to the window, not absolute within the ribbon: absolute, a
+ * menu was placed relative to its split button and then clipped or
+ * shoved by whatever the page around it did -- off the right edge on a
+ * desktop, off the left on a phone. Measured against the window, the
+ * same rule works everywhere: under the button, slid sideways only as
+ * far as it takes to stay a margin inside both edges.
  */
-function keepOnScreen(menu) {
-  menu.style.left = "0px";
+function keepOnScreen(menu, anchor) {
   const margin = 8;
-  const rect = menu.getBoundingClientRect();
   const width = document.documentElement.clientWidth || window.innerWidth;
-  let shift = 0;
-  if (rect.right > width - margin) shift = width - margin - rect.right;
-  if (rect.left + shift < margin) shift = margin - rect.left;
-  menu.style.left = `${shift}px`;
+  const height = document.documentElement.clientHeight || window.innerHeight;
+  const at = anchor.getBoundingClientRect();
+  menu.style.position = "fixed";
+  menu.style.left = "0px";
+  menu.style.top = "0px";
+  menu.style.maxWidth = `${width - 2 * margin}px`;
+  const box = menu.getBoundingClientRect();
+  const left = Math.min(Math.max(margin, at.left), width - margin - box.width);
+  // Below the button if it fits, above it if not.
+  const below = at.bottom + 4;
+  const top = below + box.height > height - margin && at.top - 4 - box.height > margin
+    ? at.top - 4 - box.height
+    : below;
+  menu.style.left = `${Math.max(margin, left)}px`;
+  menu.style.top = `${top}px`;
+  menu.dataset.anchorTop = String(at.top);
 }
 
 function closeMenus() {
@@ -177,6 +192,20 @@ function listenOnce() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeMenus();
   });
+  // A menu fixed to the window would float away from its button as the
+  // page moves, so it closes instead -- as every native menu does.
+  // Only when its button has really moved: phones fire small scrolls of
+  // their own (the address bar settling), which must not shut a menu
+  // the moment it opens.
+  const ifMoved = () => {
+    for (const menu of document.querySelectorAll(".split-menu:not([hidden])")) {
+      const anchor = menu.closest(".split");
+      const was = Number(menu.dataset.anchorTop);
+      if (!anchor || Math.abs(anchor.getBoundingClientRect().top - was) > 6) closeMenus();
+    }
+  };
+  window.addEventListener("resize", closeMenus);
+  window.addEventListener("scroll", ifMoved, true);
   // Which marks the selection already carries, shown on the buttons.
   document.addEventListener("selectionchange", () => paintMarks());
 }
