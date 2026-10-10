@@ -8,9 +8,9 @@
   xsi:type="TaskPaneApp">
   <Id>3d5e8a17-94c2-4b60-8f7d-2a1c6e930bb4</Id>
   <Version>0.1.0</Version>
-  <ProviderName>eduFAIR</ProviderName>
+  <ProviderName>FAIR-Ed</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="eduFAIR Documents"/>
+  <DisplayName DefaultValue="FAIR-Ed Documents"/>
   <Description DefaultValue="Render lesson plans and workbooks from a git library into Word"/>
   <IconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://imbowen1973.github.io/FAIR/assets/icon-64.png"/>

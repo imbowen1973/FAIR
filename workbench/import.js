@@ -241,7 +241,7 @@ export function importPanel(host, { layoutMap, geometry, existingIds = [], mark 
     el(
       "p",
       "hint",
-      "Paste slides in the eduFAIR grammar, or plain markdown with " +
+      "Paste slides in the FAIR-Ed grammar, or plain markdown with " +
         "headings — headings become slides and what follows them becomes " +
         "the body." +
         (onPptx
@@ -302,7 +302,7 @@ export function importPanel(host, { layoutMap, geometry, existingIds = [], mark 
       `${result.slides.length} slide${result.slides.length === 1 ? "" : "s"}, ` +
       (result.kind === "markdown"
         ? "read as plain markdown and turned into slides"
-        : "read as eduFAIR slides") +
+        : "read as FAIR-Ed slides") +
       (fatal.length ? ` — ${fatal.length} to fix first` : "");
     summary.append(line);
 

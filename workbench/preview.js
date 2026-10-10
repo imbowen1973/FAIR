@@ -42,7 +42,7 @@ async function ensurePyodide(status = () => {}) {
     await py.loadPackage(["lxml", "pillow", "pyyaml", "micropip"]);
     await py.pyimport("micropip").install("python-pptx");
 
-    status("Loading the FAIR renderer…");
+    status("Loading the FAIR-Ed renderer…");
     py.FS.mkdirTree("/py/edufair_renderer");
     for (const [mod, source] of await fetchModules("../py/edufair_renderer/")) {
       py.FS.writeFile(`/py/edufair_renderer/${mod}.py`, source);

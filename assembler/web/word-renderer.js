@@ -43,7 +43,7 @@ async function ensurePyodide(status) {
     status("Installing python-docx…");
     await py.pyimport("micropip").install(["python-docx", "markdown-it-py"]);
 
-    status("Loading the eduFAIR renderer…");
+    status("Loading the FAIR-Ed renderer…");
     py.FS.mkdirTree("/py/edufair_renderer/word");
     const put = async (path, into) => {
       const res = await fetch(path);

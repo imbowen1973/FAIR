@@ -3433,7 +3433,7 @@ async function submit() {
       // library, which may be several sessions.
       title: `Update ${state.library.course.title || repo}`,
       body:
-        "Authored in the FAIR workbench.\n\n" +
+        "Authored in the FAIR-Ed workbench.\n\n" +
         "Review and merge here; the deck is rendered from this markdown at " +
         "the point of use and is never stored.",
     });
