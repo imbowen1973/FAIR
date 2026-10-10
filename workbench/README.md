@@ -23,8 +23,9 @@ Two providers behind one interface (`auth.js`):
 
 - **A fine-grained token.** Create one with *Contents: read and write* and
   *Pull requests: read and write* on the libraries you author, and paste
-  it. Held in `sessionStorage` for the tab only. Works today, no
-  infrastructure.
+  it. Kept in this browser's `localStorage` so it survives a restart;
+  untick *Stay signed in* on a shared machine and it is held for the tab
+  only. Works today, no infrastructure.
 - **OAuth via a broker.** Set `BROKER_URL` and `CLIENT_ID` in
   `config.js`.
 
@@ -32,6 +33,16 @@ The broker is unavoidable for real OAuth: `github.com`'s token endpoint
 sends no CORS headers, so a browser cannot complete the exchange however
 the flow is started. It is ~30 lines, holds the client secret, and never
 sees repository content.
+
+## Unsaved work
+
+Edits live in memory until **Save** commits them, and they are also
+written to this browser's `localStorage` as you go — per repository and
+branch — so a reload, a closed tab or a crash loses nothing. Opening the
+same repository again restores them and says so; if GitHub changed one
+of those files in the meantime, the message names it so you can check
+before saving. Saving clears the copy. Attached pictures not yet saved
+are kept too while they fit (about 3 MB); text always comes first.
 
 ## What it will not do
 

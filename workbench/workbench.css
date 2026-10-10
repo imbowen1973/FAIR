@@ -1170,3 +1170,27 @@ ul.import-list {
   pointer-events: none;
 }
 .stage.compact .smartart-badge { display: none; }
+
+/* ---- the picture button and panel ------------------------------------ */
+/* A word beside the glyph: the picture icon alone was not read as
+   "insert a picture". */
+button.mark.with-text > span { display: inline-flex; align-items: center; gap: 5px; }
+button.mark.with-text .mark-text { font-size: 12px; font-weight: 600; }
+
+.media-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 8px;
+}
+.media-head h4 { margin: 0; }
+button.media-close {
+  border: 0; background: none; font-size: 18px; line-height: 1;
+  padding: 2px 6px; border-radius: 4px; color: var(--muted); cursor: pointer;
+}
+button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
+
+/* Beside the slide, in the details column: it is the column's width,
+   not the editor's, so the grid packs two thumbnails a row. */
+#side-panels .media-picker { max-width: none; padding: 12px; }
+#side-panels .media-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+#side-panels .media-link { flex-wrap: wrap; }
+#side-panels .media-link input { min-width: 0; flex: 1 1 140px; }

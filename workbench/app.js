@@ -73,6 +73,7 @@ import {
   MEDIA_DIR,
 } from "./documents.js";
 import { tabs } from "./tabs.js";
+import { clearDraft, loadDraft, saveDraft } from "./drafts.js";
 import { markdownEditor } from "./mdeditor.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "./yaml.js";
 import { linkFor, prepareUpload, safeName, toBase64 } from "./attach.js";
@@ -424,6 +425,8 @@ async function openRepo(fullName) {
     state.library = readLibrary(files);
     state.edits = new Map();
     state.working = new Map();
+    state.uploads = new Map();
+    const restored = restoreDraft();
     state.blockId = [...state.library.blocks.keys()][0] ?? null;
     state.slideIndex = 0;
 
@@ -436,7 +439,10 @@ async function openRepo(fullName) {
     renderBranchNote();
     renderOutline();
     renderSlide();
-    if (state.canWrite) {
+    updateActions();
+    if (restored) {
+      status(...restored);
+    } else if (state.canWrite) {
       status("");
     } else {
       status(
@@ -541,7 +547,9 @@ function openImport() {
   const host = $("panels");
   const panel = document.createElement("div");
   host.prepend(panel);
-  panel.scrollIntoView({ block: "start" });
+  // After it is built (below): scrolled to while empty, scroll anchoring
+  // held the slide still and the panel grew upwards out of view.
+  requestAnimationFrame(() => panel.scrollIntoView({ block: "start" }));
 
   const place = (slides, replace) => {
     const list = working();
@@ -1551,9 +1559,9 @@ function renderRibbon({ slides = true, steps = slides } = {}) {
       // A second press closes it. A button that only ever opens leaves
       // the panel to be dismissed some other way, and there is no other
       // way that is obvious.
-      const open = $("panels").querySelector(".media-picker");
+      const open = openPicker();
       if (open) {
-        open.closest("#panels > *")?.remove();
+        open.remove();
         return;
       }
       const region = activeRegion;
@@ -2579,12 +2587,32 @@ function blockRelative(next) {
   return src.startsWith(mine) ? { src: src.slice(mine.length) } : {};
 }
 
-/** Fill a placeholder: a panel above the slide, not a modal. */
+// The width at which the details column sits beside the slide
+// (workbench.css): wide enough for the picker to go there too.
+const SIDE_BY_SIDE = "(min-width: 1181px)";
+
+/** The open picture picker's panel, wherever it was put. */
+function openPicker() {
+  for (const id of ["side-panels", "panels"]) {
+    const found = $(id)?.querySelector(".media-picker");
+    if (found) return found.closest(`#${id} > *`);
+  }
+  return null;
+}
+
+/**
+ * Fill a placeholder: a panel, not a modal. Beside the slide when there
+ * is a column for it -- above, it pushed the slide being filled off the
+ * screen, so the picture and the hole it was for could not be seen
+ * together. Above the slide on a narrower window, where that column
+ * has gone underneath.
+ */
 function openMediaPicker(region, value, kind) {
-  const host = $("panels");
+  openPicker()?.remove();
+  const beside = window.matchMedia?.(SIDE_BY_SIDE).matches && !$("sidebar").hidden;
+  const host = $(beside ? "side-panels" : "panels");
   const panel = document.createElement("div");
   host.prepend(panel);
-  panel.scrollIntoView({ block: "start" });
 
   const set = (next) => {
     const current = slideData(state.slideIndex);
@@ -2596,6 +2624,7 @@ function openMediaPicker(region, value, kind) {
   mediaPicker(panel, {
     region,
     kind,
+    onClose: () => panel.remove(),
     images: availableImages(),
     resolve: mediaHelpers().resolve,
     current: value,
@@ -2645,6 +2674,11 @@ function openMediaPicker(region, value, kind) {
       }
     },
   });
+  // Scrolled to once it has content. Scrolling to the empty panel and
+  // filling it afterwards let scroll anchoring hold the slide still, so
+  // the panel grew upwards out of view and seemed never to have opened.
+  if (beside) $("sidebar").scrollTop = 0;
+  else panel.scrollIntoView({ block: "start" });
 }
 
 // ---- assessments -------------------------------------------------------
@@ -3166,8 +3200,71 @@ function renderBranchNote() {
   host.append(document.createTextNode("editing "), name, back);
 }
 
+// ---- drafts kept in this browser ----------------------------------------
+
+let draftTimer = null;
+
+/** Write the unsaved work to this browser, soon (edits come in bursts). */
+function scheduleDraft() {
+  if (!state.repo || !state.library) return;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(flushDraft, 600);
+}
+
+function flushDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = null;
+  if (!state.repo || !state.library) return;
+  const { owner, repo } = state.repo;
+  const text = changedFiles().filter((f) => typeof f.content === "string");
+  saveDraft(owner, repo, workingBranch(), {
+    changed: text, uploads: state.uploads, base: state.files,
+  });
+}
+
+/**
+ * A slides.md held as a text edit would override every later change to
+ * its slides: pendingFiles writes the working deck, then the edits on
+ * top. Edits to a deck are therefore turned back into its working
+ * slides, which is where the slide editor reads and writes.
+ */
+function adoptSlideEdits() {
+  for (const block of state.library.blocks.values()) {
+    const path = block.slidesPath;
+    if (!path || !state.edits.has(path)) continue;
+    state.edits.delete(path);
+    state.working.set(block.id, workingSlides(block.parsed));
+  }
+}
+
+/** Put back what was left unsaved here last time; returns the message. */
+function restoreDraft() {
+  const { owner, repo } = state.repo;
+  const draft = loadDraft(owner, repo, workingBranch(), state.files);
+  if (!draft) return null;
+  for (const [path, text] of draft.files) state.edits.set(path, text);
+  for (const [path, bytes] of draft.uploads) state.uploads.set(path, bytes);
+  state.library = readLibrary(pendingFiles());
+  adoptSlideEdits();
+  const count = draft.files.size + draft.uploads.size;
+  const when = draft.savedAt ? new Date(draft.savedAt).toLocaleString() : "earlier";
+  // Returned, not shown: opening the library says its own things after
+  // this, and the author needs to see that their work came back.
+  return [
+    `Restored ${count} unsaved change${count === 1 ? "" : "s"} from ${when}, ` +
+      "kept in this browser. Save to put them on GitHub." +
+      (draft.moved.length
+        ? ` ${draft.moved.length} of these files changed on GitHub since: ` +
+          `${draft.moved.join(", ")} — yours is shown; check before saving.`
+        : "") +
+      (draft.left ? ` ${draft.left} picture(s) were too large to keep and need attaching again.` : ""),
+    draft.moved.length || draft.left ? "error" : "ok",
+  ];
+}
+
 function updateActions() {
   const changed = changedFiles();
+  scheduleDraft();
   $("dirty").textContent = changed.length
     ? `${changed.length} file${changed.length === 1 ? "" : "s"} changed`
     : "no changes";
@@ -3383,6 +3480,9 @@ async function save() {
     state.library = readLibrary(state.files);
 
     state.gh.onRebased = null;
+    // Nothing is unsaved now; the draft was for the branch it was made on.
+    clearDraft(owner, repo, workingBranch());
+    clearDraft(owner, repo, branch);
     // So the next visit opens here rather than on the published version.
     rememberBranch(owner, repo, branch);
     state.repo.branch = branch;
@@ -3578,12 +3678,15 @@ async function loadVersion(commit) {
       }
       state.working.delete(state.blockId);
       state.library = readLibrary(pendingFiles());
+      adoptSlideEdits();
       state.slideIndex = 0;
       renderTabs();
       renderOutline();
       renderSlide();
       updateActions();
-      const changed = [...loaded.keys()].filter((p) => state.edits.has(p)).length;
+      // Counted against the branch: a deck's edit has already moved from
+      // the edits into its working slides.
+      const changed = [...loaded].filter(([p, text]) => state.files.get(p) !== text).length;
       status(
         changed
           ? `Loaded ${sha.slice(0, 7)}: ${changed} file${changed === 1 ? "" : "s"} ` +
@@ -3600,6 +3703,12 @@ async function loadVersion(commit) {
 // ---- wiring ------------------------------------------------------------
 
 async function boot() {
+  // A closing tab gets no 600ms: write the draft now.
+  window.addEventListener("pagehide", flushDraft);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushDraft();
+  });
+
   $("rail-toggle").addEventListener("click", () => {
     const panes = document.querySelector(".panes");
     setRail(!panes.classList.contains("rail-open"));

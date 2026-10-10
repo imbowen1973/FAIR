@@ -23,10 +23,11 @@
 // read it — which for a static page with no third-party scripts is a
 // small risk, but not a zero one.
 //
-// So: session by default, disk only when asked for, and the preference
-// itself is remembered so the choice is made once. Either way a
-// fine-grained token scoped to the repositories being edited limits what
-// a leak is worth.
+// So: kept on this device by default -- pasting a token at every visit
+// is what made people stop using the workbench -- with "this tab only"
+// one untick away for a shared machine, and the choice remembered so it
+// is made once. Either way a fine-grained token scoped to the
+// repositories being edited limits what a leak is worth.
 
 const TOKEN_KEY = "fair.wb.token";
 const LOGIN_KEY = "fair.wb.login";
@@ -51,7 +52,7 @@ function stores() {
 /** Whether the author asked to stay signed in on this device. */
 export function persisting() {
   try {
-    return localStorage.getItem(PERSIST_KEY) === "1";
+    return localStorage.getItem(PERSIST_KEY) !== "0";
   } catch {
     return false;
   }
@@ -65,8 +66,7 @@ export function persisting() {
  */
 export function setPersisting(on) {
   try {
-    if (on) localStorage.setItem(PERSIST_KEY, "1");
-    else localStorage.removeItem(PERSIST_KEY);
+    localStorage.setItem(PERSIST_KEY, on ? "1" : "0");
   } catch {
     return false;
   }

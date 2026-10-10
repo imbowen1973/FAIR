@@ -42,12 +42,11 @@
         <button id="pat-signin">Use token</button>
       </div>
       <label class="row check" for="pat-persist">
-        <input id="pat-persist" type="checkbox"/>
+        <input id="pat-persist" type="checkbox" checked/>
         <span>
-          Stay signed in on this device. Off, the token is held for this tab
-          only; on, it is written to this browser's storage and survives a
-          restart — convenient, and worth a moment's thought on a shared
-          machine.
+          Stay signed in on this device: the token is kept in this browser
+          and survives a restart. On a shared machine, untick it and the
+          token is held for this tab only.
         </span>
       </label>
     </details>
@@ -154,6 +153,9 @@
            the slide when the window can hold it, underneath when it
            cannot: below the fold is where this went to be forgotten. -->
       <aside id="sidebar" class="pane sidebar" aria-label="Slide details">
+        <!-- The picture picker opens here, beside the slide, when the
+             window is wide enough for the column; otherwise above it. -->
+        <div id="side-panels"></div>
         <div id="meta" class="meta"></div>
       </aside>
     </div>

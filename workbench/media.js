@@ -105,11 +105,21 @@ function el(tag, className, text) {
  * onFit(fit)                how the picture meets its frame
  */
 export function mediaPicker(host, {
-  region, kind, images, resolve, current, onPick, onUpload, onClear, onFit,
+  region, kind, images, resolve, current, onPick, onUpload, onClear, onFit, onClose,
 }) {
   host.innerHTML = "";
   const panel = el("div", "media-picker");
-  panel.append(el("h4", null, `${kind === "video" ? "Video" : "Picture"} for ${region}`));
+  const head = el("div", "media-head");
+  head.append(el("h4", null, `${kind === "video" ? "Video" : "Picture"} for ${region}`));
+  if (onClose) {
+    const close = el("button", "media-close", "×");
+    close.type = "button";
+    close.title = "Close";
+    close.setAttribute("aria-label", "Close the picture panel");
+    close.addEventListener("click", () => onClose());
+    head.append(close);
+  }
+  panel.append(head);
 
   if (kind !== "video") {
     // Upload. The policy runs before the bytes reach a commit, and the
