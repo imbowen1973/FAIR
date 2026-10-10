@@ -33,6 +33,7 @@ export const MODULES = [
   "parser",
   "render",
   "runs",
+  "tablefit",
   // Reading a template's own geometry, so a library missing
   // layout-geometry.json can be repaired in the browser rather than by
   // telling somebody to install a command-line tool.

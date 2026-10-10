@@ -148,7 +148,17 @@ def _harvest(shape, facts: _Facts, offset=(0, 0)) -> None:
         ]
         header = rows[0] if len(rows) > 1 else None
         body = rows[1:] if len(rows) > 1 else rows
-        facts.tables.append({"header": header, "rows": body})
+        # The deck's own column proportions, kept as whole percentages:
+        # they say what the columns hold, which is content. The font size
+        # is deliberately not kept -- it is usually inherited rather than
+        # set, and a size that suited the old frame is wrong for the new
+        # one. The renderer fits the type to the frame instead.
+        raw_widths = [int(col.width or 0) for col in shape.table.columns]
+        total = sum(raw_widths)
+        widths = None
+        if total > 0 and all(raw_widths) and len(set(raw_widths)) > 1:
+            widths = [max(1, round(100 * w / total)) for w in raw_widths]
+        facts.tables.append({"header": header, "rows": body, "widths": widths})
         return
 
     if getattr(shape, "has_chart", False) and shape.has_chart:
@@ -291,6 +301,8 @@ def classify(facts: _Facts, size, media_ref) -> tuple[dict, str, list[str]]:
         region = {"type": "table", "rows": table["rows"]}
         if table["header"]:
             region["header"] = table["header"]
+        if table.get("widths"):
+            region["widths"] = table["widths"]
         out["full"] = region
         if len(facts.tables) > 1:
             notes.append(f"{len(facts.tables) - 1} further table(s) dropped — split into their own slides")

@@ -411,30 +411,66 @@ def _shrink_on_overflow(placeholder) -> None:
 
 
 def _fill_table(slide, placeholder, region, code_typeface: str) -> None:
-    """A real PowerPoint table at the placeholder's footprint.
+    """A real PowerPoint table, fitted to the placeholder's footprint.
 
     Tables cannot live inside a text placeholder, so this is the same
     documented exception as images in non-picture placeholders: the
-    graphic frame takes the placeholder's exact geometry and the empty
-    placeholder is removed. Styling (banding, header emphasis) comes
-    from the template's default table style, not from here.
+    graphic frame takes the placeholder's position and the empty
+    placeholder is removed. Banding and header emphasis come from the
+    template's default table style.
+
+    What does NOT come from the style is the type size. PowerPoint has
+    no autofit for tables and treats row height as a minimum, so at the
+    style's default size a table of sentences grows straight out of its
+    frame. tablefit chooses column widths and the largest size that
+    keeps the whole table inside the frame; rows get a one-line
+    minimum and PowerPoint grows each to its real content.
     """
+    from pptx.util import Emu, Pt
+
+    from .tablefit import fit_table
+
     header = region.header
     body = region.rows
     n_rows = len(body) + (1 if header else 0)
     n_cols = len(body[0]) if body else len(header or [])
 
+    fit = fit_table(
+        header, body, placeholder.width, placeholder.height, widths=region.widths
+    )
+
     frame = slide.shapes.add_table(
         n_rows, n_cols,
         placeholder.left, placeholder.top,
-        placeholder.width, placeholder.height,
+        placeholder.width, fit.height,
     )
     table = frame.table
     table.first_row = bool(header)
 
+    for c, width in enumerate(fit.column_widths):
+        table.columns[c].width = Emu(width)
+    # A minimum, not a prediction: PowerPoint grows each row to its real
+    # content, so a wrap the estimate expected but that never happens
+    # leaves no blank space behind it.
+    for row in table.rows:
+        row.height = Emu(fit.row_minimum)
+
+    size = Pt(fit.font_pt)
+    sz = str(int(round(fit.font_pt * 100)))
+
     def fill(cell, text):
+        cell.margin_left = cell.margin_right = Emu(fit.margin_lr)
+        cell.margin_top = cell.margin_bottom = Emu(fit.margin_tb)
         tf = cell.text_frame
+        tf.word_wrap = True
         write_runs(tf.paragraphs[0], text, code_typeface=code_typeface)
+        for paragraph in tf.paragraphs:
+            for run in paragraph.runs:
+                run.font.size = size
+            # An empty cell has no run to carry a size; its height comes
+            # from the end-of-paragraph mark, which would otherwise keep
+            # the style's 18pt and hold the row open.
+            paragraph._p.get_or_add_endParaRPr().set("sz", sz)
 
     row_at = 0
     if header:

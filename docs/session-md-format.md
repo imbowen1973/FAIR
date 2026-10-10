@@ -275,11 +275,18 @@ typed object:
 - `{ type: ol, items: [...] }` — numbered list
 - `{ type: p, text: "..." }` — plain paragraphs (newline-separated), no
   bullets
-- `{ type: table, header: [..], rows: [[..], ..] }` — a real PowerPoint
-  table at the region's footprint, styled by the template's table style.
-  `header` is optional; every row must have the same number of cells.
-  Cells take inline emphasis. (Like images in non-picture placeholders,
-  the table shape itself carries no `<p:ph>` — the documented exception.)
+- `{ type: table, header: [..], rows: [[..], ..], widths: [..] }` — a
+  real PowerPoint table at the region's footprint, styled by the
+  template's table style. `header` is optional; every row must have the
+  same number of cells. Cells take inline emphasis. `widths` is optional:
+  relative column widths, one positive number per column, of which only
+  the proportions matter (`[60, 25, 15]`); without it, columns are sized
+  from their content. Import fills it from the original deck.
+  **The type size is not authored:** PowerPoint has no autofit for
+  tables, so the renderer picks the largest size (18pt down to 8pt) at
+  which the whole table fits its frame without breaking a word. (Like
+  images in non-picture placeholders, the table shape itself carries no
+  `<p:ph>` — the documented exception.)
 - `{ type: image, src: path }` — image, path relative to the session file
 - `{ type: mermaid, src: path }` — Mermaid source, rendered to PNG at build
   time (see below)

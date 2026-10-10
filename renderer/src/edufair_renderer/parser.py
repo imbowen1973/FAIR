@@ -82,6 +82,9 @@ class Region:
     # strings (inline emphasis applies inside cells).
     header: list[str] | None = None
     rows: list[list[str]] = field(default_factory=list)
+    # table: relative column widths (any positive numbers; only the
+    # proportions matter). Absent = sized from the content.
+    widths: list[float] | None = None
     # How a picture meets its frame: cover, contain, width, height.
     # The template knows the shape of the hole; only the author knows
     # whether this picture may lose its edges.
@@ -277,7 +280,24 @@ def _parse_region(name: str, raw, where: str) -> Region:
                     f"{where}: table row {i + 1} has {len(row)} cells; expected {width}"
                 )
             cells_rows.append([str(c) for c in row])
-        return Region(name=name, type="table", header=cells_h, rows=cells_rows)
+        widths = raw.get("widths")
+        if widths is not None:
+            if (
+                not isinstance(widths, list)
+                or len(widths) != width
+                or not all(
+                    isinstance(w, (int, float)) and not isinstance(w, bool) and w > 0
+                    for w in widths
+                )
+            ):
+                raise SessionParseError(
+                    f"{where}: table 'widths' must be {width} positive numbers, "
+                    "one per column (only their proportions matter)"
+                )
+            widths = [float(w) for w in widths]
+        return Region(
+            name=name, type="table", header=cells_h, rows=cells_rows, widths=widths
+        )
     if ctype == "video":
         # Video is never embedded: it lives on a host (YouTube etc.) and
         # the slide carries a click-through poster. Keeps repos small.
