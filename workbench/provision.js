@@ -161,7 +161,7 @@ export function seedFiles({ title, description = "", blockTitle, blockId, author
     "",
     description || `The ${title} module.`,
     "",
-    "This is an **eduFAIR library**: teaching content as markdown in git,",
+    "This is a **FAIR-Ed library**: teaching content as markdown in git,",
     "rendered into PowerPoint, Word and Moodle XML by a deterministic",
     "renderer. The commit is the fact; rendered files are derived.",
     "",
@@ -298,7 +298,7 @@ export async function provisionInto(
     owner,
     name,
     branch || (await gh.defaultBranch(owner, name)) || "main",
-    `Set up ${title} as an eduFAIR library`,
+    `Set up ${title} as a FAIR-Ed library`,
     files
   );
 

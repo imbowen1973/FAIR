@@ -408,6 +408,47 @@ def _shrink_on_overflow(placeholder) -> None:
         pass
 
 
+
+
+def _fill_table(slide, placeholder, region, code_typeface: str) -> None:
+    """A real PowerPoint table at the placeholder's footprint.
+
+    Tables cannot live inside a text placeholder, so this is the same
+    documented exception as images in non-picture placeholders: the
+    graphic frame takes the placeholder's exact geometry and the empty
+    placeholder is removed. Styling (banding, header emphasis) comes
+    from the template's default table style, not from here.
+    """
+    header = region.header
+    body = region.rows
+    n_rows = len(body) + (1 if header else 0)
+    n_cols = len(body[0]) if body else len(header or [])
+
+    frame = slide.shapes.add_table(
+        n_rows, n_cols,
+        placeholder.left, placeholder.top,
+        placeholder.width, placeholder.height,
+    )
+    table = frame.table
+    table.first_row = bool(header)
+
+    def fill(cell, text):
+        tf = cell.text_frame
+        write_runs(tf.paragraphs[0], text, code_typeface=code_typeface)
+
+    row_at = 0
+    if header:
+        for c, text in enumerate(header):
+            fill(table.cell(0, c), text)
+        row_at = 1
+    for r, row in enumerate(body):
+        for c, text in enumerate(row):
+            fill(table.cell(row_at + r, c), text)
+
+    sp = placeholder._element
+    sp.getparent().remove(sp)
+
+
 def _fill_region(
     slide, placeholder, region: Region, base_dir: Path, build_dir: Path,
     code_typeface: str = DEFAULT_CODE_TYPEFACE,
@@ -429,6 +470,8 @@ def _fill_region(
             placeholder, region, numbered=(region.type == "ol"),
             code_typeface=code_typeface,
         )
+    elif region.type == "table":
+        _fill_table(slide, placeholder, region, code_typeface)
     elif region.type == "image":
         _fill_image(
             slide, placeholder, _asset_path(base_dir, region.src),

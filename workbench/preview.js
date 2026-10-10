@@ -42,7 +42,7 @@ async function ensurePyodide(status = () => {}) {
     await py.loadPackage(["lxml", "pillow", "pyyaml", "micropip"]);
     await py.pyimport("micropip").install("python-pptx");
 
-    status("Loading the FAIR renderer…");
+    status("Loading the FAIR-Ed renderer…");
     py.FS.mkdirTree("/py/edufair_renderer");
     for (const [mod, source] of await fetchModules("../py/edufair_renderer/")) {
       py.FS.writeFile(`/py/edufair_renderer/${mod}.py`, source);
@@ -135,6 +135,46 @@ export async function validate(files, status) {
   const out = await py.runPythonAsync(VALIDATE);
   status?.("");
   return JSON.parse(out);
+}
+
+const INGEST = `
+import json, shutil, sys
+from pathlib import Path
+if "/py" not in sys.path:
+    sys.path.insert(0, "/py")
+shutil.rmtree("/ingest-out", ignore_errors=True)
+from edufair_renderer.ingest import ingest_pptx
+args = json.loads(Path("/ingest-args.json").read_text())
+result = ingest_pptx(Path("/ingest-in.pptx").read_bytes(), args["block_id"])
+for rel, data in result.media.items():
+    p = Path("/ingest-out") / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(data)
+json.dumps({"title": result.title, "slides_md": result.slides_md,
+            "report": result.report, "media": sorted(result.media)})
+`;
+
+/**
+ * An existing .pptx, read in the browser and rescued into the grammar.
+ *
+ * The deck's bytes go into the Pyodide filesystem, the same extractor
+ * that powers edufair-import runs on them, and what comes back is
+ * grammar text, policy-clean media bytes, and a per-slide confidence
+ * report. The source deck is never uploaded anywhere: it is read in
+ * this tab and discarded.
+ */
+export async function ingestDeck(bytes, blockId, status = () => {}) {
+  const py = await ensurePyodide(status);
+  status?.("Reading the deck in your browser…");
+  py.FS.writeFile("/ingest-in.pptx", bytes);
+  py.FS.writeFile("/ingest-args.json", JSON.stringify({ block_id: blockId }));
+  const out = JSON.parse(await py.runPythonAsync(INGEST));
+  const media = new Map();
+  for (const rel of out.media) {
+    media.set(rel, py.FS.readFile(`/ingest-out/${rel}`));
+  }
+  status?.("");
+  return { title: out.title, slidesMd: out.slides_md, report: out.report, media };
 }
 
 const RENDER = `

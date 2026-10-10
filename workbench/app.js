@@ -61,7 +61,8 @@ import {
 } from "./canvas.js";
 import { slideMeta } from "./meta.js";
 import { paintListType, paintSwatches, ribbon } from "./ribbon.js";
-import { renderDeck, validate } from "./preview.js";
+import { ingestDeck, renderDeck, validate } from "./preview.js";
+import { connectHost, parseHostOrigin } from "./host.js";
 import {
   blockDocuments,
   freePath,
@@ -418,6 +419,7 @@ async function openRepo(fullName) {
 
     state.repo = { owner, repo, defaultBranch, branch };
     rememberRepo(`${owner}/${repo}`);
+    state.host?.emit("opened", { repo: `${owner}/${repo}`, branch });
     state.files = files;
     state.library = readLibrary(files);
     state.edits = new Map();
@@ -564,12 +566,44 @@ function openImport() {
     );
   };
 
+  // Media an ingested deck brought with it, staged only when its slides
+  // are actually added — Cancel must leave no trace.
+  let importMedia = null;
+  const stageImportMedia = () => {
+    if (!importMedia) return;
+    let resources = blockMeta().data.resources;
+    for (const [rel, bytes] of importMedia) {
+      state.uploads.set(`blocks/${state.blockId}/${rel}`, bytes);
+      resources = withResource(resources, {
+        type: "image",
+        title: rel.split("/").pop(),
+        path: rel,
+      });
+    }
+    setBlockResources(resources);
+    importMedia = null;
+  };
+
   importPanel(panel, {
     layoutMap: state.library.layoutMap,
     geometry: state.library.geometry,
     existingIds: working().map((entry) => entry.data?.id).filter(Boolean),
     mark: slideMark(state.library.blocks.get(state.blockId)?.parsed, working()),
-    onAdd: (slides) => place(slides, false),
+    // An existing PowerPoint deck, rescued in this tab: text, pictures
+    // and notes out; the .pptx itself read and discarded, never uploaded.
+    onPptx: async (picked) => {
+      const got = await ingestDeck(
+        new Uint8Array(await picked.arrayBuffer()),
+        state.blockId,
+        (m) => m && status(m)
+      );
+      importMedia = got.media;
+      return got;
+    },
+    onAdd: (slides) => {
+      stageImportMedia();
+      place(slides, false);
+    },
     onReplace: (slides) => {
       if (
         working().length &&
@@ -577,6 +611,7 @@ function openImport() {
           `Replace all ${working().length} slides in this deck with ${slides.length}?`
         )
       ) return;
+      stageImportMedia();
       place(slides, true);
     },
     onClose: () => panel.remove(),
@@ -3129,6 +3164,7 @@ function updateActions() {
   $("dirty").textContent = changed.length
     ? `${changed.length} file${changed.length === 1 ? "" : "s"} changed`
     : "no changes";
+  state.host?.emit("dirty", { files: changed.length });
   const writable = state.canWrite !== false;
   const blocking = state.problems.filter((p) => p.level !== "warning").length;
   const why = !writable ? "This token cannot push to this repository." : "";
@@ -3355,6 +3391,7 @@ async function save() {
         : `Saved to ${branch} (${sha.slice(0, 7)})${created ? " — branch created" : ""}.`,
       "ok"
     );
+    state.host?.emit("saved", { repo: `${owner}/${repo}`, branch, sha });
     return true;
   } catch (err) {
     // The raw API text for this one is "Update is not a fast forward"
@@ -3385,6 +3422,7 @@ async function submit() {
     const existing = await state.gh.pullForBranch(owner, repo, branch);
     if (existing) {
       status(`Already open for review: ${existing.html_url}`, "ok");
+      state.host?.emit("submitted", { prUrl: existing.html_url, existing: true });
       window.open(existing.html_url, "_blank", "noopener");
       return;
     }
@@ -3395,11 +3433,12 @@ async function submit() {
       // library, which may be several sessions.
       title: `Update ${state.library.course.title || repo}`,
       body:
-        "Authored in the FAIR workbench.\n\n" +
+        "Authored in the FAIR-Ed workbench.\n\n" +
         "Review and merge here; the deck is rendered from this markdown at " +
         "the point of use and is never stored.",
     });
     status(`Opened for review: ${pull.html_url}`, "ok");
+    state.host?.emit("submitted", { prUrl: pull.html_url, repo: `${owner}/${repo}`, branch });
     window.open(pull.html_url, "_blank", "noopener");
   } catch (err) {
     status(`Submit failed: ${err.message}`, "error");
@@ -3554,12 +3593,36 @@ async function loadVersion(commit) {
 // ---- wiring ------------------------------------------------------------
 
 async function boot() {
-  $("broker-signin").hidden = !broker.available();
-
   $("rail-toggle").addEventListener("click", () => {
     const panes = document.querySelector(".panes");
     setRail(!panes.classList.contains("rail-open"));
   });
+
+  // Embedded in a portal: the host owns identity (docs/workbench-embedding.md).
+  // No sign-in screen, no PAT field, no token on disk — credentials arrive
+  // by postMessage from the one origin named in ?host=, and rotate the
+  // same way. The portal hears lifecycle events back for its records.
+  const hostOrigin = parseHostOrigin(location.search, window.parent !== window);
+  if (hostOrigin) {
+    state.host = connectHost({ origin: hostOrigin });
+    $("signed-out").hidden = true;
+    status("Waiting for the portal to sign you in…");
+    const auth = await state.host.waitForAuth();
+    await afterSignIn(auth.token, auth.login || "signed in via portal");
+    // The portal signs people in and out; the frame must not.
+    $("signout").hidden = true;
+    state.host.onAuth((next) => {
+      state.gh = new GitHub(next.token);
+    });
+    if (auth.repo) await openRepo(auth.repo);
+    else {
+      const previous = lastRepo();
+      if (previous) await openRepo(previous);
+    }
+    return;
+  }
+
+  $("broker-signin").hidden = !broker.available();
 
   try {
     const returned = await broker.complete();
