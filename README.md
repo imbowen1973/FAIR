@@ -1,4 +1,6 @@
-# FAIR-Ed — git-native publishing for teaching content
+# FAIR-Ed: learning objects made findable, accessible, interoperable and reusable — at source
+
+**Share the source, not the slides.**
 
 Courses live as markdown in git: versioned, diffable, reviewable,
 forkable. Deterministic renderers turn that one source into the native
