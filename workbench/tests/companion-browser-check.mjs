@@ -52,6 +52,7 @@ const REPOS = {
   "t/empty-private": { files: {}, private: true, refs: {}, empty: true },
 };
 const refWrites = []; // {repo, branch}
+const landed = new Set(); // commit shas a branch was moved to
 const commits = []; // {repo, branch, paths}
 const blobs = new Map(); // sha -> {repo, content}
 let counter = 0;
@@ -88,8 +89,13 @@ await page.route("https://api.github.com/**", async (route) => {
     const path = rest.slice("/contents/".length);
     const sha = `init-${++counter}`;
     repo.empty = false;
+    // As seen for real: straight after the first commit, GitHub refuses
+    // the next ref update as "not a fast forward" although the branch is
+    // exactly where the commit was built.
+    repo.lagOnce = true;
     repo.refs[body.branch] = sha;
     commits.push({ repo: name, sha, paths: [path], first: true });
+    landed.add(sha);
     refWrites.push({ repo: name, branch: body.branch });
     return json({ commit: { sha } });
   }
@@ -108,7 +114,12 @@ await page.route("https://api.github.com/**", async (route) => {
     return sha ? json({ object: { sha } }) : json({ message: "Not Found" }, 404);
   }
   if (r && method === "PATCH") {
+    if (repo.lagOnce) {
+      repo.lagOnce = false;
+      return json({ message: "Update is not a fast forward" }, 422);
+    }
     repo.refs[r[1]] = req.postDataJSON().sha;
+    landed.add(req.postDataJSON().sha);
     refWrites.push({ repo: name, branch: r[1] });
     return json({});
   }
@@ -298,7 +309,9 @@ await page.waitForFunction(() => /Private companion started/.test(document.getEl
 const emptySaved = {
   status: await page.textContent("#status"),
   branches: [...new Set(refWrites.slice(writesBefore).map((w) => `${w.repo}@${w.branch}`))],
-  files: commits.filter((c) => c.repo === "t/empty-private").flatMap((c) => c.paths).sort(),
+  // Only commits the branch ended up on: a refused attempt leaves an
+  // orphan commit behind, which is GitHub's business, not the branch's.
+  files: [...new Set(commits.filter((c) => c.repo === "t/empty-private" && landed.has(c.sha)).flatMap((c) => c.paths))].sort(),
 };
 console.log("empty repo:", JSON.stringify({ emptyStatus, ...emptySaved }));
 

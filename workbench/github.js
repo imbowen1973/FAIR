@@ -305,6 +305,31 @@ export class GitHub {
    * branch in a single call -- which is exactly what the Git Data API
    * cannot do until one commit exists.
    */
+  /** The branch's head once it exists; a new repository may lag. */
+  async waitForHead(owner, name, branch, tries = 6) {
+    for (let i = 0; ; i++) {
+      try {
+        return await this.headSha(owner, name, branch);
+      } catch (err) {
+        if (i >= tries || (err.status !== 404 && err.status !== 409)) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 500 * (i + 1)));
+      }
+    }
+  }
+
+  /** Until the Git Data API can see a commit the Contents API made. */
+  async waitForCommit(owner, name, sha, tries = 6) {
+    for (let i = 0; ; i++) {
+      try {
+        await this.request(`/repos/${owner}/${name}/git/commits/${sha}`);
+        return;
+      } catch (err) {
+        if (i >= tries || (err.status !== 404 && err.status !== 409 && err.status !== 422)) return;
+        await new Promise((resolve) => setTimeout(resolve, 500 * (i + 1)));
+      }
+    }
+  }
+
   async createInitialFile(owner, name, branch, file, message) {
     return this.request(
       `/repos/${owner}/${name}/contents/${file.path}`,
@@ -346,11 +371,18 @@ export class GitHub {
 
     if (parent === null) {
       const first = files.find((f) => f.content !== undefined) ?? files[0];
-      await this.createInitialFile(owner, name, branch, first, message);
+      const created = await this.createInitialFile(owner, name, branch, first, message);
       const rest = files.filter((f) => f !== first);
-      if (!rest.length) return this.headSha(owner, name, branch);
+      const made = created?.commit?.sha ?? null;
+      if (!rest.length) return made ?? this.headSha(owner, name, branch);
       files = rest;
-      parent = await this.headSha(owner, name, branch);
+      // Build on the commit that was just made, once GitHub can see it.
+      // Straight after the first commit in a repository its copies have
+      // not agreed: the branch can still read as missing, and a commit
+      // built on it is refused as "not a fast forward" even though the
+      // branch is exactly where it was built.
+      parent = made ?? (await this.waitForHead(owner, name, branch));
+      await this.waitForCommit(owner, name, parent);
     }
     // The blobs are the same whatever the branch does underneath: they
     // are this session's files, and uploading them again on a retry
@@ -415,9 +447,15 @@ export class GitHub {
       } catch (err) {
         const moved =
           err.status === 422 && /fast forward/i.test(err.message ?? "");
-        if (!moved || attempt >= 2) throw err;
+        if (!moved || attempt >= 3) throw err;
         const now = await this.headSha(owner, name, branch);
-        if (now === parent) throw err; // 422 for some other reason
+        if (now === parent) {
+          // Refused, yet the branch is where we built on: GitHub's copies
+          // of a just-written repository have not agreed yet. Wait and
+          // try the same commit again rather than giving up.
+          await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+          continue;
+        }
         parent = now;
         this.onRebased?.(branch, now);
       }
