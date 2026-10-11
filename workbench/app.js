@@ -851,9 +851,26 @@ function renderOutline() {
   // no label has to. A level the author named ("week", "day") keeps its
   // name, quietly, because it is theirs; the default says nothing.
   const containers = [tree]; // containers[d] holds rows of depth d
-  for (const row of rows) {
+  const sameName = (a, b) =>
+    String(a ?? "").trim().replace(/\s+/g, " ").toLowerCase() ===
+    String(b ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  rows.forEach((row, index) => {
     containers.length = Math.min(containers.length, row.depth + 1);
     const into = containers[containers.length - 1];
+
+    // A grouping whose only session has its name is not drawn: it would
+    // show the title twice, one box inside the other. Its session takes
+    // its place. (The overview offers to remove it from course.yaml.)
+    if (row.kind !== "block") {
+      const next = rows[index + 1];
+      const after = rows[index + 2];
+      const onlyChild = next?.kind === "block" && next.depth === row.depth + 1 &&
+        (!after || after.depth <= row.depth);
+      if (onlyChild && sameName(row.title, sessionTitle(next.block))) {
+        containers.push(into); // its child lands where the grouping would have
+        return;
+      }
+    }
 
     if (row.kind !== "block") {
       const key = row.path.join(".");
@@ -893,7 +910,7 @@ function renderOutline() {
       box.append(headRow, body);
       into.appendChild(box);
       containers.push(body);
-      continue;
+      return;
     }
 
     const id = row.block;
@@ -1036,7 +1053,7 @@ function renderOutline() {
         state.collapsedGroups?.delete(head?.parentElement?.dataset.group);
       }
     }
-  }
+  });
 }
 
 // ---- the slide ---------------------------------------------------------
