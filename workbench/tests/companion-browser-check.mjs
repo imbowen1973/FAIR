@@ -184,27 +184,57 @@ const connected = await page.evaluate(() => ({
 }));
 console.log("connected:", JSON.stringify(connected));
 
-// ---- the bank: read from the private repo, checked, edited ----------
+// ---- the bank: read from the private repo, as a form -----------------
 await page.click(".tab.private[data-doc='companion:questions.yaml']");
-await page.waitForSelector(".questions-editor textarea");
-const bank = await page.evaluate(() => ({
-  text: document.querySelector(".questions-editor textarea").value,
+await page.waitForSelector(".questions-editor .qb-card");
+const form = await page.evaluate(() => ({
+  cards: document.querySelectorAll(".qb-card").length,
+  stem: document.querySelector(".qb-card textarea.q-text").value,
+  answer: [...document.querySelectorAll(".qb-card input[type=radio]")].map((r) => r.checked),
+  summary: document.querySelector(".qb-summary").textContent,
+}));
+console.log("form:", JSON.stringify(form));
+
+// The text view: the same bank as YAML, checked as it is typed.
+await page.click(".qb-view:text-is('Text')");
+await page.waitForSelector(".questions-editor > .qb-body > textarea");
+const AREA = ".questions-editor > .qb-body > textarea";
+const bank = await page.evaluate((sel) => ({
+  text: document.querySelector(sel).value,
   verdict: document.querySelector(".bank-check").textContent,
   note: document.querySelector(".private-note")?.textContent,
-}));
+}), AREA);
 console.log("bank:", JSON.stringify(bank));
-await page.fill(
-  ".questions-editor textarea",
-  bank.text + "  - {id: q-02, type: truefalse, assesses: [O7], stem: Bias is always audited., answer: false}\n"
-);
+await page.fill(AREA, bank.text + "  - {id: q-02, type: truefalse, assesses: [O7], stem: Bias is always audited., answer: false}\n");
 await page.waitForTimeout(500);
 const flagged = await page.textContent(".bank-check");
 console.log("flagged:", flagged);
-await page.fill(
-  ".questions-editor textarea",
-  bank.text + "  - {id: q-02, type: truefalse, assesses: [O1], stem: Bias is always audited., answer: false}\n"
-);
-await page.waitForTimeout(500);
+await page.fill(AREA, bank.text);
+
+// Back to the form: add a question, and say what it still needs.
+await page.click(".qb-view:text-is('Form')");
+await page.selectOption(".qb-add select", "truefalse");
+await page.click(".qb-add button");
+const SECOND = ".qb-card:nth-child(2)";
+await page.fill(`${SECOND} textarea.q-text`, "Bias is always audited.");
+await page.check(`${SECOND} .q-answer input[type=radio] >> nth=1`);
+const needs = await page.textContent(`${SECOND} .qb-problems`);
+await page.selectOption(`${SECOND} .qb-more`, "O1");
+// Typing keeps the cursor: the form is not rebuilt under it.
+await page.click(".qb-card:nth-child(1) textarea.q-text");
+await page.keyboard.type(" Ever?");
+const added = await page.evaluate(() => ({
+  ready: document.querySelector(".qb-card:nth-child(2) .qb-problems").textContent,
+  chip: [...document.querySelectorAll(".qb-card:nth-child(2) .chip.on")].map((c) => c.textContent),
+  summary: document.querySelector(".qb-summary").textContent,
+  focused: document.activeElement === document.querySelector(".qb-card:nth-child(1) textarea.q-text"),
+  stem: document.querySelector(".qb-card:nth-child(1) textarea.q-text").value,
+}));
+console.log("added:", JSON.stringify({ needs, ...added }));
+await page.click(".qb-view:text-is('Text')");
+const written = await page.inputValue(AREA);
+console.log("written:", JSON.stringify(written));
+await page.click(".qb-view:text-is('Form')");
 
 // ---- a guide that does not exist yet: created in the companion ------
 await page.click(".tab.private[data-doc='companion:instructorguide.md']");
@@ -285,9 +315,10 @@ console.log("refused:", JSON.stringify([refusedPublic, refusedOther, refusedSelf
 
 // ---- reload: the pairing reconnects, an unsaved private edit returns --
 await page.click(".tab.private[data-doc='companion:questions.yaml']");
-await page.waitForSelector(".questions-editor textarea");
-await page.fill(".questions-editor textarea",
-  (await page.inputValue(".questions-editor textarea")) + "  - {id: q-03, type: truefalse, assesses: [O1], stem: Unsaved., answer: true}\n");
+await page.click(".qb-view:text-is('Text')");
+await page.waitForSelector(AREA);
+await page.fill(AREA,
+  (await page.inputValue(AREA)) + "  - {id: q-03, type: truefalse, assesses: [O1], stem: Unsaved., answer: true}\n");
 await page.waitForTimeout(900); // past the draft's debounce
 await page.reload({ waitUntil: "networkidle" });
 await page.waitForSelector("#signed-in:not([hidden]), #workspace:not([hidden])", { timeout: 15000 });
@@ -334,7 +365,13 @@ const failed =
   JSON.stringify(connected.tabs.filter((t) => t[1])) !==
     JSON.stringify([["Questions", true, false], ["Instructor guide", true, false]]) ||
   !bank.text.includes("q-01") || !/1 question/.test(bank.verdict) || !/private companion/.test(bank.note || "") ||
-  !/unknown outcome O7/.test(flagged) ||
+  !/O7, which isn't one of the course's outcomes/.test(flagged) ||
+  form.cards !== 1 || !/Anonymised data/.test(form.stem) || JSON.stringify(form.answer) !== "[false,true]" ||
+  !/1 question · all ready/.test(form.summary) ||
+  !/Choose which learning outcome/.test(needs) || !/Ready/.test(added.ready) ||
+  JSON.stringify(added.chip) !== '["O1"]' || !/2 questions · all ready/.test(added.summary) ||
+  !added.focused || !/re-identified\. Ever\?$/.test(added.stem) ||
+  !/id: q-02\n\s+type: truefalse\n\s+assesses: \[O1\]\n\s+stem: Bias is always audited\.\n\s+answer: false/.test(written) ||
   !/2 files changed \(2 private\)/.test(dirty) || !libraryUntouched ||
   libCommits.length !== 1 ||
   privCommits.length !== 2 ||

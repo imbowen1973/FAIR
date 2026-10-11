@@ -59,8 +59,10 @@ model: public CI needs nothing private; private CI reads the public.
   byte-identical whether a companion exists or not.
 - **Workbench.** *＋ Private companion* beside the library picker
   connects it by `owner/repo`. Every session then gains two tabs marked
-  🔒 — **Questions** (the bank, checked as you type: shape of each item,
-  outcomes that exist) and **Instructor guide** (a document) — and
+  🔒 — **Questions** (the bank as a form: a card per question with the
+  fields its kind needs, the outcomes it tests as chips, and what it
+  still needs said underneath; **Text** shows the YAML) and
+  **Instructor guide** (a document) — and
   **Check** runs the same Python cross-checks the companion's CI does.
   Each file is saved to the repo that owns it: **Save** makes one commit
   on the course's draft branch and one on the companion's, and

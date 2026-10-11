@@ -27,7 +27,6 @@ import {
 } from "./prefs.js";
 import {
   checkPairing,
-  checkQuestions,
   COMPANION_FILE,
   companionDocuments,
   companionPaths,
@@ -126,6 +125,7 @@ import {
   workingQuestions,
 } from "./assessment.js";
 import { questionForm } from "./assessmentui.js";
+import { questionsEditor } from "./questionsui.js";
 import { importPanel } from "./import.js";
 import {
   outcomeDoc,
@@ -4200,64 +4200,20 @@ function renderCompanionDocument(host, doc) {
     return;
   }
 
-  // The bank: its source, checked as it is typed, and the questions it
-  // holds listed underneath. Check runs the full rules.
-  const wrap = document.createElement("div");
-  wrap.className = "questions-editor";
-  const area = document.createElement("textarea");
-  area.value = text;
-  area.spellcheck = false;
-  area.setAttribute("aria-label", "Question bank (questions.yaml)");
-  const verdict = document.createElement("div");
-  verdict.className = "bank-check";
-  const list = document.createElement("ul");
-  list.className = "bank-items";
-
-  const show = (value) => {
-    const { items, problems } = checkQuestions(value, { outcomes: knownOutcomes() });
-    verdict.className = `bank-check ${problems.length ? "bad" : "ok"}`;
-    verdict.innerHTML = "";
-    if (problems.length) {
-      verdict.append(`${problems.length} thing${problems.length === 1 ? "" : "s"} to fix:`);
-      const ul = document.createElement("ul");
-      for (const p of problems.slice(0, 12)) {
-        const li = document.createElement("li");
-        li.textContent = p;
-        ul.appendChild(li);
-      }
-      verdict.appendChild(ul);
-    } else {
-      verdict.textContent = `${items.length} question${items.length === 1 ? "" : "s"}, all well formed.`;
-    }
-    list.innerHTML = "";
-    for (const item of items) {
-      const li = document.createElement("li");
-      li.append(document.createTextNode(item.stem.slice(0, 140) || item.id));
-      const type = document.createElement("span");
-      type.className = "q-type";
-      type.textContent = item.type;
-      const out = document.createElement("span");
-      out.className = "q-out";
-      out.textContent = item.assesses.length ? `assesses ${item.assesses.join(", ")}` : "";
-      li.append(type, out);
-      list.appendChild(li);
-    }
-  };
-  let timer = null;
-  area.addEventListener("input", () => {
-    setDocText(doc, area.value);
-    clearTimeout(timer);
-    timer = setTimeout(() => show(area.value), 300);
+  // The bank, as a form: this session's outcomes first, then the rest
+  // of the course's, for the chips that say what each question tests.
+  const own = new Set(ownedOutcomes(state.blockId).map((o) => o.id));
+  const all = outcomeList(catalogueDoc());
+  const outcomes = [
+    ...all.filter((o) => own.has(o.id)).map((o) => ({ ...o, own: true })),
+    ...all.filter((o) => !own.has(o.id)).map((o) => ({ ...o, own: false })),
+  ];
+  questionsEditor(host, {
+    text,
+    outcomes,
+    known: knownOutcomes(),
+    onChange: (next) => setDocText(doc, next),
   });
-  const help = document.createElement("p");
-  help.className = "hint";
-  help.textContent =
-    "One question per item: mcq, multi, truefalse, short, numeric, match or cloze. " +
-    "Each names the outcomes it assesses. Exported to Moodle with edufair-moodle-questions " +
-    "or edufair-corpus --companion.";
-  wrap.append(area, verdict, list, help);
-  host.appendChild(wrap);
-  show(text);
 }
 
 // ---- save and submit ---------------------------------------------------
