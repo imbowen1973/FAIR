@@ -103,11 +103,13 @@ const failed =
   // real grouping, not a wrapper, and never offered for removal.
   /Assessment and feedback/.test(before.offer ?? "") ||
   /Week2|WEEK 2|Week 1/.test((before.offer ?? "").split("Remove")[0]) ||
-  twice(before.rail) !== 2 ||
+  // The side panel never draws the wrapper: the title once, even before
+  // the data is tidied.
+  twice(before.rail) !== 1 ||
   after.offer !== null || twice(after.rail) !== 1 ||
   !/Week 1 Foundations of clinical teaching .*WEEK 2 Assessment and feedback Feedback that changes practice Week2/.test(after.rail) ||
   after.dirty !== "1 file changed" ||
-  twice(undone.rail) !== 2 || !undone.offer;
+  twice(undone.rail) !== 1 || !undone.offer;
 console.log(failed ? "FAIL" : "PASS");
 await browser.close();
 process.exit(failed ? 1 : 0);
