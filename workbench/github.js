@@ -225,7 +225,9 @@ export class GitHub {
       );
       return true;
     } catch (err) {
-      if (err.status === 404) return false;
+      // 409 is GitHub's "Git Repository is empty": no commits, so no
+      // branches -- this one included.
+      if (err.status === 404 || err.status === 409) return false;
       throw err;
     }
   }

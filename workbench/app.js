@@ -3606,6 +3606,8 @@ async function openCompanion(fullName, { quiet = false } = {}) {
     state.companion = {
       owner, repo, defaultBranch, branch, files, edits: new Map(),
       canWrite: Boolean(info.permissions?.push), license: pairing.license ?? null,
+      // No commits at all: there is no branch to start a draft from yet.
+      empty: paths.length === 0,
     };
     if (pairing.setup) {
       state.companion.edits.set(COMPANION_FILE, starterCompanionYaml(library));
@@ -3674,22 +3676,35 @@ async function saveCompanion() {
     return false;
   }
   try {
-    const branch = await resolveDraftBranch(state.gh, c.owner, c.repo, state.login);
+    // An empty repository has no branch to start a draft from, and
+    // nothing to review a draft against: the first save creates its
+    // default branch. Every later save goes to a draft, as usual.
+    const first = c.empty;
+    const branch = first
+      ? c.defaultBranch
+      : await resolveDraftBranch(state.gh, c.owner, c.repo, state.login);
     status(`Saving the private companion to ${branch}…`, "busy");
-    const created = await state.gh.ensureBranch(c.owner, c.repo, branch, c.defaultBranch);
+    const created = first
+      ? true
+      : await state.gh.ensureBranch(c.owner, c.repo, branch, c.defaultBranch);
     const message =
       `Edit educator files for ${state.blockId}\n\n` +
       changed.map((f) => `- ${f.path}`).join("\n");
     const sha = await state.gh.commit(c.owner, c.repo, branch, message, changed);
     for (const file of changed) c.files.set(file.path, file.content);
     c.edits = new Map();
+    c.empty = false;
     clearDraft(c.owner, c.repo, companionBranch());
     clearDraft(c.owner, c.repo, branch);
-    rememberBranch(c.owner, c.repo, branch);
+    if (!first) rememberBranch(c.owner, c.repo, branch);
     c.branch = branch;
     renderTabs();
     status(
-      `Private companion saved to ${branch} (${sha.slice(0, 7)})${created ? " — branch created" : ""}.`,
+      first
+        ? `Private companion started: its first commit is on ${branch} ` +
+            `(${String(sha).slice(0, 7)}). Later changes go on a draft branch for review.`
+        : `Private companion saved to ${branch} (${String(sha).slice(0, 7)})` +
+            `${created ? " — branch created" : ""}.`,
       "ok"
     );
     return true;
