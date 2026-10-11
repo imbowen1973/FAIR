@@ -1350,3 +1350,22 @@ input.order-kind::placeholder {
   text-transform: none; letter-spacing: 0; font-weight: 400; font-style: italic;
   color: color-mix(in srgb, var(--muted) 70%, transparent);
 }
+
+/* ---- files that will not parse ----------------------------------------- */
+/* Named and fixable, not fatal: everything else stays open. */
+.broken {
+  margin: 8px 18px 0; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger) 6%, var(--bg));
+}
+.broken-intro { margin: 0 0 6px; font-weight: 600; }
+.broken-row { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 0.88rem; }
+.broken-row + .broken-row { margin-top: 4px; }
+.fixer textarea {
+  width: 100%; min-height: 16em; box-sizing: border-box; margin: 6px 0;
+  font: 13px/1.4 Consolas, ui-monospace, monospace; padding: 8px;
+  border: 1px solid var(--border-strong); border-radius: 6px;
+  background: var(--bg); color: var(--fg);
+}
+.fixer-verdict { margin: 0; font-size: 0.88rem; color: var(--danger); }
+.fixer-verdict.ok { color: var(--ok); }

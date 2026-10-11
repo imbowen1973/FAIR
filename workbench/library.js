@@ -532,17 +532,89 @@ export function placedBlocks(structure, out = []) {
 }
 
 /**
+ * What is wrong with a file that will not parse, in words an author can
+ * act on: which line, what is on it, and what YAML wanted instead.
+ *
+ * js-yaml reports where it gave up, which for the commonest slip -- a
+ * stray word on a line of its own -- is the line AFTER the culprit
+ * ("a multiline key may not be an implicit key"). So for that one the
+ * line reported is the last non-blank line before it.
+ */
+export function yamlProblem(path, text, err) {
+  const reason = String(err?.reason || err?.message || "").split("\n")[0];
+  const lines = String(text ?? "").split("\n");
+  let index = Number.isInteger(err?.mark?.line) ? err.mark.line : -1;
+  if (index >= 0 && /multiline key|could not find expected ':'/.test(reason)) {
+    let j = index - 1;
+    while (j >= 0 && !lines[j].trim()) j -= 1;
+    if (j >= 0) index = j;
+  }
+  const why =
+    /multiline key|could not find expected ':'|block mapping entry/.test(reason)
+      ? "this line isn't in “name: value” form — a stray word, or a missing colon?"
+      : /bad indentation/.test(reason)
+        ? "its indentation doesn't line up with the lines around it"
+        : /duplicated mapping key/.test(reason)
+          ? "this name appears twice in the same place"
+          : /quoted scalar/.test(reason)
+            ? "a quote is opened but never closed"
+            : /flow collection/.test(reason)
+              ? "a [ or { is opened but never closed"
+              : /tab/.test(reason)
+                ? "it is indented with a tab; YAML needs spaces"
+                : reason || "it isn't valid";
+  const line = index >= 0 ? index + 1 : null;
+  const snippet = index >= 0 ? (lines[index] || "").trim().slice(0, 60) : "";
+  return {
+    path,
+    line,
+    snippet,
+    reason,
+    message:
+      `${path}${line ? `, line ${line}` : ""}` +
+      `${snippet ? ` (“${snippet}”)` : ""}: ${why}${/[?.]$/.test(why) ? "" : "."}`,
+  };
+}
+
+/** Parse one file; a broken one is recorded, and stands in as `fallback`. */
+function readYaml(files, path, broken, fallback = {}) {
+  const text = files.get(path);
+  if (!text) return fallback;
+  try {
+    return parseYaml(text) || fallback;
+  } catch (err) {
+    broken.push(yamlProblem(path, text, err));
+    return fallback;
+  }
+}
+
+/**
  * The whole library, assembled from files already fetched.
  * `files` is a Map of path -> text.
+ *
+ * One file that will not parse sets that file aside, not the library:
+ * a stray keystroke in course.yaml used to stop the whole workbench
+ * opening -- and, kept as an unsaved draft, it came back on every
+ * reload. `broken` lists what was set aside, and why, so it can be
+ * fixed from inside the workbench.
  */
 export function readLibrary(files) {
-  const course = parseYaml(files.get("course.yaml") || "") || {};
-  const layoutMap = parseYaml(files.get("layout-map.yaml") || "") || {};
-  const framework = parseYaml(files.get("competencies/framework.yaml") || "") || {};
-  const outcomes = parseYaml(files.get("outcomes.yaml") || "") || {};
-  const geometry = files.has("layout-geometry.json")
-    ? JSON.parse(files.get("layout-geometry.json"))
-    : null;
+  const broken = [];
+  const course = readYaml(files, "course.yaml", broken);
+  const layoutMap = readYaml(files, "layout-map.yaml", broken);
+  const framework = readYaml(files, "competencies/framework.yaml", broken);
+  const outcomes = readYaml(files, "outcomes.yaml", broken);
+  let geometry = null;
+  if (files.has("layout-geometry.json")) {
+    try {
+      geometry = JSON.parse(files.get("layout-geometry.json"));
+    } catch (err) {
+      broken.push({
+        path: "layout-geometry.json", line: null, snippet: "", reason: err.message,
+        message: "layout-geometry.json: it isn't valid JSON — rebuild it from the template.",
+      });
+    }
+  }
 
   // Discovery is by `block.yaml`, not by the deck. A block is a session,
   // and a session may well be a lesson plan and a workbook with no slides
@@ -556,11 +628,24 @@ export function readLibrary(files) {
     const slidesPath = `blocks/${id}/slides.md`;
     const slides = files.get(slidesPath);
     const meta = files.get(`blocks/${id}/block.yaml`);
+    let parsed = null;
+    let slidesBroken = null;
+    if (slides !== undefined) {
+      try {
+        parsed = parseSlides(slides);
+      } catch (err) {
+        // Never an empty deck in its place: that would be written back
+        // over the real file at the next Save.
+        slidesBroken = yamlProblem(slidesPath, slides, err);
+        broken.push(slidesBroken);
+      }
+    }
     blocks.set(id, {
       id,
-      meta: meta === undefined ? {} : parseYaml(meta) || {},
+      meta: meta === undefined ? {} : readYaml(files, `blocks/${id}/block.yaml`, broken),
       slidesPath: slides === undefined ? null : slidesPath,
-      parsed: slides === undefined ? null : parseSlides(slides),
+      parsed,
+      slidesBroken,
     });
   }
 
@@ -569,7 +654,7 @@ export function readLibrary(files) {
     competencies[id] = typeof entry === "string" ? entry : entry?.label || id;
   }
 
-  return { course, layoutMap, geometry, competencies, outcomes, blocks };
+  return { course, layoutMap, geometry, competencies, outcomes, blocks, broken };
 }
 
 // ---- the title is text, and only text -----------------------------------

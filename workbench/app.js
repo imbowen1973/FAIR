@@ -57,8 +57,10 @@ import {
   layoutKeys,
   libraryPaths,
   placedBlocks,
+  parseSlides,
   readLibrary,
   mintSlideIds,
+  yamlProblem,
   applyLayoutChange,
   renderSlidesFile,
   slideMark,
@@ -150,6 +152,45 @@ const $ = (id) => document.getElementById(id);
 
 const GEOMETRY_PATH = "layout-geometry.json";
 
+// The path the fix-it editor is writing: the one writer allowed to
+// change a file that does not currently parse.
+let fixingPath = null;
+
+/**
+ * The edit store, guarded: nothing may overwrite a file that does not
+ * currently parse, except the fix-it editor. Every structured editor
+ * reads the file, changes it and writes it back -- and reading a broken
+ * file gives nothing, so writing back would replace everything in it
+ * with that one change. One rule here protects every one of them.
+ */
+class GuardedEdits extends Map {
+  set(path, text) {
+    if (path !== fixingPath && typeof text === "string" && this.size !== undefined) {
+      const current = super.get(path) ?? state?.files?.get(path);
+      if (typeof current === "string" && current && checkFile(path, current)) {
+        status(
+          `Not changed: ${path} can't be read yet, and changing it now would replace ` +
+            "what's in it. Fix it first — the red box at the top shows where.",
+          "error"
+        );
+        return this;
+      }
+    }
+    return super.set(path, text);
+  }
+}
+const guardedEdits = (entries) => new GuardedEdits(entries);
+
+/** Write text as typed: the raw editors, a restored draft, a past version. */
+function rawEdit(path, text) {
+  fixingPath = path;
+  try {
+    state.edits.set(path, text);
+  } finally {
+    fixingPath = null;
+  }
+}
+
 const state = {
   gh: null,
   login: null,
@@ -158,7 +199,7 @@ const state = {
   library: null,
   blockId: null,
   slideIndex: 0,
-  edits: new Map(), // path -> new text
+  edits: guardedEdits(), // path -> new text
   // Files the author has attached but not yet committed. Kept apart
   // from state.binaries, which caches binaries *fetched* from the repo
   // for rendering -- mixing them would try to re-commit template.pptx.
@@ -457,7 +498,7 @@ async function openRepo(fullName) {
     state.host?.emit("opened", { repo: `${owner}/${repo}`, branch });
     state.files = files;
     state.library = readLibrary(files);
-    state.edits = new Map();
+    state.edits = guardedEdits();
     state.working = new Map();
     state.uploads = new Map();
     state.companion = null;
@@ -1775,9 +1816,18 @@ function slugFor(title, taken) {
 }
 
 /** course.yaml as data, edits included. */
+/** YAML for reading: a file that will not parse reads as nothing. */
+function readable(text) {
+  try {
+    return parseYaml(text) || {};
+  } catch {
+    return {};
+  }
+}
+
 function courseDoc() {
   const text = state.edits.get("course.yaml") ?? state.files.get("course.yaml") ?? "";
-  return parseYaml(text) || {};
+  return readable(text);
 }
 
 function writeCourse(next) {
@@ -1941,7 +1991,7 @@ function blockMeta() {
   const block = currentBlock();
   const path = `blocks/${block.id}/block.yaml`;
   const text = state.edits.get(path) ?? state.files.get(path) ?? "";
-  return { path, data: parseYaml(text) || {} };
+  return { path, data: readable(text) };
 }
 
 /**
@@ -2094,6 +2144,29 @@ function renderBlock() {
   renderTabs();
   const doc = activeDoc();
   const slides = doc?.editor === "slides";
+
+  // A deck that will not parse: say so where the slides would be, and
+  // offer the fix, rather than draw an empty deck that Save would keep.
+  if (slides && currentBlock().slidesBroken) {
+    $("slidesview").hidden = true;
+    $("document").hidden = false;
+    $("sidebar").hidden = true;
+    renderRibbon({ slides: false });
+    const host = $("document");
+    host.innerHTML = "";
+    const note = document.createElement("p");
+    note.className = "warn";
+    note.textContent =
+      `This session's slides can't be shown: ${currentBlock().slidesBroken.message} ` +
+      "Nothing in it is lost — fix that line and they come back.";
+    const fix = document.createElement("button");
+    fix.type = "button";
+    fix.className = "primary";
+    fix.textContent = "Fix it";
+    fix.addEventListener("click", () => openFixer(currentBlock().slidesBroken.path));
+    host.append(note, fix);
+    return;
+  }
 
   $("slidesview").hidden = !slides;
   $("document").hidden = slides;
@@ -2258,7 +2331,7 @@ function renderDocument(doc) {
 /** The catalogue as data: the edited copy if there is one. */
 function catalogueDoc() {
   const text = state.edits.get(OUTCOMES_PATH) ?? state.files.get(OUTCOMES_PATH) ?? "";
-  return parseYaml(text) || {};
+  return readable(text);
 }
 
 /**
@@ -2324,7 +2397,7 @@ function outcomeOwners() {
 function blockOutcomes(blockId) {
   const path = `blocks/${blockId}/block.yaml`;
   const text = state.edits.get(path) ?? state.files.get(path) ?? "";
-  const meta = parseYaml(text) || {};
+  const meta = readable(text);
   return Array.isArray(meta.outcomes) ? meta.outcomes.map(String) : [];
 }
 
@@ -2333,7 +2406,7 @@ function setOutcomeOwner(outcomeId, blockId, { stay = false } = {}) {
   for (const [id] of state.library.blocks) {
     const path = `blocks/${id}/block.yaml`;
     const text = state.edits.get(path) ?? state.files.get(path) ?? "";
-    const meta = parseYaml(text) || {};
+    const meta = readable(text);
     const had = blockOutcomes(id);
     const wants = id === blockId;
     const has = had.includes(outcomeId);
@@ -2455,7 +2528,7 @@ function renderCompetencies(host) {
   host.appendChild(body);
 
   const path = "competencies/framework.yaml";
-  const read = () => parseYaml(state.edits.get(path) ?? state.files.get(path) ?? "") || {};
+  const read = () => readable(state.edits.get(path) ?? state.files.get(path) ?? "");
   const labels = () => {
     const out = {};
     for (const [id, entry] of Object.entries(read().competencies || {})) {
@@ -2540,7 +2613,7 @@ function renderFunding(host) {
   host.appendChild(body);
 
   const path = "attribution.yaml";
-  const read = () => parseYaml(state.edits.get(path) ?? state.files.get(path) ?? "") || {};
+  const read = () => readable(state.edits.get(path) ?? state.files.get(path) ?? "");
   const write = (next) => {
     // An empty credit line means no stamp at all, and the renderer reads
     // that from the file being absent rather than from an empty string.
@@ -2615,7 +2688,7 @@ function renderCourseSource(host) {
   area.setAttribute("aria-label", "course.yaml source");
   area.value = state.edits.get("course.yaml") ?? state.files.get("course.yaml") ?? "";
   area.addEventListener("input", () => {
-    state.edits.set("course.yaml", area.value);
+    rawEdit("course.yaml", area.value);
     try {
       state.library.course = parseYaml(area.value) || {};
       problem.hidden = true;
@@ -3244,6 +3317,127 @@ function renderSlide() {
   renderBlock();
 }
 
+// ---- files that will not parse --------------------------------------------
+//
+// One typo used to stop the whole workbench opening. Now readLibrary sets
+// a broken file aside (library.broken) and everything else opens; this
+// names each one in plain words, and fixes it in place.
+
+let brokenShown = "";
+
+function renderBroken() {
+  const host = $("broken");
+  if (!host) return;
+  const broken = state.library?.broken ?? [];
+  const key = broken.map((b) => b.message).join("|");
+  if (key === brokenShown && !host.querySelector(".fixer")) return;
+  if (host.querySelector(".fixer")) return; // being fixed: leave it be
+  brokenShown = key;
+  host.innerHTML = "";
+  host.hidden = !broken.length;
+  if (!broken.length) return;
+  const intro = document.createElement("p");
+  intro.className = "broken-intro";
+  intro.textContent =
+    broken.length === 1
+      ? "One file can't be read, so the part of the course it holds isn't shown. Everything else is open."
+      : `${broken.length} files can't be read, so the parts of the course they hold aren't shown. Everything else is open.`;
+  host.appendChild(intro);
+  for (const problem of broken) {
+    const row = document.createElement("div");
+    row.className = "broken-row";
+    const text = document.createElement("span");
+    text.textContent = problem.message;
+    const fix = document.createElement("button");
+    fix.type = "button";
+    fix.className = "link";
+    fix.textContent = "Fix it";
+    fix.addEventListener("click", () => openFixer(problem.path));
+    row.append(text, fix);
+    host.appendChild(row);
+  }
+}
+
+/** Does this text parse as the kind of file `path` is? A problem, or null. */
+function checkFile(path, text) {
+  try {
+    if (path.endsWith(".json")) JSON.parse(text);
+    else if (path.endsWith("slides.md")) parseSlides(text);
+    else if (/\.ya?ml$/i.test(path)) parseYaml(text);
+    // Anything else -- a lesson plan, a workbook -- is prose, and any
+    // text at all is a valid one.
+    return null;
+  } catch (err) {
+    return yamlProblem(path, text, err);
+  }
+}
+
+/**
+ * The file as text, with the bad line selected. Every keystroke is an
+ * ordinary unsaved edit; the moment the file reads cleanly the library
+ * is read again and the part it holds comes back.
+ */
+function openFixer(path) {
+  const host = $("broken");
+  host.hidden = false;
+  host.innerHTML = "";
+  const box = document.createElement("div");
+  box.className = "fixer";
+  const heading = document.createElement("p");
+  heading.className = "broken-intro";
+  heading.textContent = `Fixing ${path}`;
+  const verdict = document.createElement("p");
+  verdict.className = "fixer-verdict";
+  const area = document.createElement("textarea");
+  area.spellcheck = false;
+  area.value = state.edits.get(path) ?? state.files.get(path) ?? "";
+  area.setAttribute("aria-label", `${path}, as text`);
+  const done = document.createElement("button");
+  done.type = "button";
+  done.textContent = "Close";
+  done.addEventListener("click", () => {
+    brokenShown = "";
+    host.innerHTML = "";
+    renderBroken();
+  });
+
+  const show = () => {
+    const problem = checkFile(path, area.value);
+    verdict.textContent = problem ? problem.message : `${path} reads cleanly now.`;
+    verdict.classList.toggle("ok", !problem);
+    return problem;
+  };
+  const select = (problem) => {
+    if (!problem?.line) return;
+    const lines = area.value.split("\n");
+    const start = lines.slice(0, problem.line - 1).reduce((n, l) => n + l.length + 1, 0);
+    area.focus();
+    area.setSelectionRange(start, start + (lines[problem.line - 1] ?? "").length);
+    // Bring the line into view: roughly, by its share of the text.
+    area.scrollTop = Math.max(0, (problem.line - 3) * 18);
+  };
+
+  area.addEventListener("input", () => {
+    rawEdit(path, area.value);
+    if (!show()) {
+      // Clean: read the library again, and put back what it holds.
+      state.library = readLibrary(pendingFiles());
+      adoptSlideEdits();
+      brokenShown = "";
+      host.innerHTML = "";
+      renderOutline();
+      renderSlide();
+      renderBroken();
+      status(`${path} reads cleanly again. Save to keep the fix.`, "ok");
+    }
+    updateActions();
+  });
+  box.append(heading, verdict, area, done);
+  host.appendChild(box);
+  select(show());
+  host.scrollIntoView({ block: "start" });
+}
+
 // ---- pending files -----------------------------------------------------
 
 /** The library as it would be committed: fetched files plus edits. */
@@ -3251,6 +3445,10 @@ function pendingFiles() {
   const out = new Map(state.files);
   for (const [blockId, list] of state.working) {
     const block = state.library.blocks.get(blockId);
+    // A deck whose file will not parse is never rewritten from the
+    // editor: its slides are not known, and an empty list written back
+    // would replace the real file. It is fixed as text (renderBroken).
+    if (!block || block.slidesBroken) continue;
     // A block with no deck only gains a slides.md once it has a slide;
     // writing an empty one would commit a file nobody asked for.
     if (!block.slidesPath && !list.length) continue;
@@ -3362,7 +3560,7 @@ function restoreDraft() {
   const { owner, repo } = state.repo;
   const draft = loadDraft(owner, repo, workingBranch(), state.files);
   if (!draft) return null;
-  for (const [path, text] of draft.files) state.edits.set(path, text);
+  for (const [path, text] of draft.files) rawEdit(path, text);
   for (const [path, bytes] of draft.uploads) state.uploads.set(path, bytes);
   state.library = readLibrary(pendingFiles());
   adoptSlideEdits();
@@ -3383,6 +3581,7 @@ function restoreDraft() {
 }
 
 function updateActions() {
+  renderBroken();
   const own = changedFiles();
   const privateChanges = companionChanged();
   const changed = [...own, ...privateChanges];
@@ -3952,7 +4151,7 @@ async function saveLibrary() {
     // They are in the commit now, so they are not pending any more.
     state.uploads = new Map();
     state.working = new Map();
-    state.edits = new Map();
+    state.edits = guardedEdits();
     state.library = readLibrary(state.files);
 
     state.gh.onRebased = null;
@@ -4166,7 +4365,7 @@ async function loadVersion(commit) {
       // the change count is honest about what would be written.
       for (const [path, text] of loaded) {
         if (state.files.get(path) === text) state.edits.delete(path);
-        else state.edits.set(path, text);
+        else rawEdit(path, text);
       }
       state.working.delete(state.blockId);
       state.library = readLibrary(pendingFiles());
