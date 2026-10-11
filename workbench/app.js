@@ -35,7 +35,7 @@ import {
   starterGuide,
   starterQuestions,
 } from "./companion.js";
-import { decorate } from "./icons.js";
+import { decorate, icon } from "./icons.js";
 import { needsAsking, relayoutPanel } from "./relayout.js";
 import { provisionInto, provisionLibrary, repoNameFrom } from "./provision.js";
 import {
@@ -97,6 +97,7 @@ import {
   flatten,
   indent,
   insertAfter,
+  levelName,
   moveWithinSiblings,
   newContainer,
   outdent,
@@ -753,17 +754,6 @@ function escapeHtml(text) {
  * distinction was invisible, and a plan looked as though it hung off the
  * course.
  */
-function railHeading(title, note) {
-  const row = document.createElement("div");
-  row.className = "rail-heading";
-  const strong = document.createElement("strong");
-  strong.textContent = title;
-  const small = document.createElement("span");
-  small.textContent = note;
-  row.append(strong, small);
-  return row;
-}
-
 function renderOutline() {
   paintRailToggle();
   const host = $("outline");
@@ -772,13 +762,20 @@ function renderOutline() {
 
   // The course, above its blocks. Outcomes are library-wide, so they
   // belong to the course rather than to any one session.
+  // The module: the root of the tree, and the one entry that opens the
+  // whole course rather than a session.
   const courseGroup = document.createElement("div");
   courseGroup.className = "block course-entry";
-  courseGroup.appendChild(railHeading("This course", "the whole repo"));
   const courseHead = document.createElement("button");
   courseHead.type = "button";
-  courseHead.className = "block-head";
-  courseHead.textContent = library.course.title || "This course";
+  courseHead.className = "block-head module-head";
+  courseHead.title = "The module: what it is, its outcomes, and its running order";
+  courseHead.append(
+    icon("module", { size: 16 }),
+    Object.assign(document.createElement("span"), {
+      textContent: library.course.title || "This module",
+    })
+  );
   if (state.courseOpen) courseHead.classList.add("on");
   courseHead.addEventListener("click", () => {
     state.courseOpen = true;
@@ -789,7 +786,10 @@ function renderOutline() {
   courseGroup.appendChild(courseHead);
   host.appendChild(courseGroup);
 
-  host.appendChild(railHeading("Sessions", "each has its own outcomes and plan"));
+  // Everything below hangs inside the module, so it is drawn inside it.
+  const tree = document.createElement("div");
+  tree.className = "outline-tree";
+  host.appendChild(tree);
 
   // The recipe's own shape, so a lesson visibly sits inside its module.
   // Flat, the levels were invisible and a lesson plan looked as though
@@ -802,16 +802,53 @@ function renderOutline() {
     if (!placed.includes(id)) rows.push({ kind: "block", block: id, depth: 0 });
   }
 
+  // Groupings are drawn as boxes holding their sessions, nested as deep
+  // as the course nests them. The structure says "this is a grouping";
+  // no label has to. A level the author named ("week", "day") keeps its
+  // name, quietly, because it is theirs; the default says nothing.
+  const containers = [tree]; // containers[d] holds rows of depth d
   for (const row of rows) {
+    containers.length = Math.min(containers.length, row.depth + 1);
+    const into = containers[containers.length - 1];
+
     if (row.kind !== "block") {
-      const heading = document.createElement("div");
-      heading.className = "structure-row";
-      heading.style.paddingLeft = `${row.depth * 10}px`;
-      const kind = document.createElement("span");
-      kind.className = "structure-kind";
-      kind.textContent = row.kind;
-      heading.append(kind, document.createTextNode(row.title));
-      host.appendChild(heading);
+      const key = row.path.join(".");
+      const box = document.createElement("div");
+      box.className = "grouping";
+      box.dataset.group = key;
+      const headRow = document.createElement("button");
+      headRow.type = "button";
+      headRow.className = "grouping-head";
+      const collapsed = state.collapsedGroups?.has(key);
+      headRow.setAttribute("aria-expanded", String(!collapsed));
+      headRow.title = collapsed ? "Show its sessions" : "Hide its sessions";
+      const chevron = icon("chevron", { size: 12 });
+      chevron.classList.add("grouping-chevron");
+      headRow.appendChild(chevron);
+      if (levelName(row.kind)) {
+        const kind = document.createElement("span");
+        kind.className = "grouping-kind";
+        kind.textContent = levelName(row.kind);
+        headRow.appendChild(kind);
+      }
+      headRow.appendChild(
+        Object.assign(document.createElement("span"), {
+          className: "grouping-title",
+          textContent: row.title || "Untitled grouping",
+        })
+      );
+      headRow.addEventListener("click", () => {
+        state.collapsedGroups = state.collapsedGroups ?? new Set();
+        if (state.collapsedGroups.has(key)) state.collapsedGroups.delete(key);
+        else state.collapsedGroups.add(key);
+        renderOutline();
+      });
+      const body = document.createElement("div");
+      body.className = "grouping-body";
+      body.hidden = Boolean(collapsed);
+      box.append(headRow, body);
+      into.appendChild(box);
+      containers.push(body);
       continue;
     }
 
@@ -819,7 +856,6 @@ function renderOutline() {
     const block = library.blocks.get(id);
     const group = document.createElement("div");
     group.className = "block";
-    group.style.marginLeft = `${row.depth * 10}px`;
 
     const head = document.createElement("button");
     head.type = "button";
@@ -942,7 +978,20 @@ function renderOutline() {
     if (id === state.blockId && activeDoc()?.editor === "assessment") {
       group.appendChild(questionRows(activeDoc()));
     }
-    host.appendChild(group);
+    into.appendChild(group);
+    // A session just chosen (from a problem link, a search, a new
+    // session) opens the groupings around it. Only then: once it is on
+    // screen, folding its grouping away is the author's choice to make.
+    if (id === state.blockId && state.revealedBlock !== id && !state.courseOpen) {
+      state.revealedBlock = id;
+      for (const body of containers) {
+        if (!body.hidden) continue;
+        body.hidden = false;
+        const head = body.previousElementSibling;
+        head?.setAttribute("aria-expanded", "true");
+        state.collapsedGroups?.delete(head?.parentElement?.dataset.group);
+      }
+    }
   }
 }
 

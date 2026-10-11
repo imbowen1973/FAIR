@@ -49,7 +49,7 @@ title: Clinical Educator
 description: Teaching in the clinical environment, for veterinary educators.
 
 structure:
-  - kind: module
+  - kind: unit
     title: Foundations of clinical teaching
     children:
       - kind: day
@@ -57,16 +57,20 @@ structure:
         children:
           - block: 01-foundations
           - block: 02-adult-learners
-  - kind: module
-    title: Assessment and feedback
+  - title: Assessment and feedback      # a plain grouping
     children:
       - block: 03-feedback
 ```
 
-`kind` is the course's own word — `module`, `day`, `week`, `unit`,
-whatever it calls its parts. Containers nest to any depth via
-`children`. The only fixed thing is the leaf: `block:` names a folder
-under `blocks/`.
+Three levels, and the workbench names them so: the **module** is the
+whole course (this file, this repo); **groupings** are the containers in
+`structure`; **sessions** are the blocks. `kind` is optional and is the
+course's own word for a level of grouping — `week`, `day`, `unit` —
+shown beside the grouping's title; leave it out for a plain grouping.
+(`module` is not a useful `kind` here, since it is the name of the
+whole; a grouping saved with it is shown as a plain grouping.)
+Groupings nest to any depth via `children`. The only fixed thing is the
+leaf: `block:` names a folder under `blocks/`.
 
 A block on disk but absent from `structure` is a drafting state, not an
 error — it renders and stays findable, filed under "Unplaced blocks". A

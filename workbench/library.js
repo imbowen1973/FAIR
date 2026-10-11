@@ -502,19 +502,23 @@ export function layoutKeys(layoutMap) {
 // ---- course.yaml --------------------------------------------------------
 
 /** Flatten the recipe into rows the outline can draw. */
-export function flattenStructure(structure, depth = 0, out = []) {
-  for (const node of structure || []) {
+export function flattenStructure(structure, depth = 0, out = [], trail = []) {
+  (structure || []).forEach((node, index) => {
+    // Where the row sits in the tree: what remembers which groupings
+    // the rail has folded away.
+    const path = [...trail, index];
     if (node.block) {
-      out.push({ kind: "block", block: node.block, depth });
+      out.push({ kind: "block", block: node.block, depth, path });
     } else {
       out.push({
         kind: node.kind || "group",
         title: node.title || "",
         depth,
+        path,
       });
-      flattenStructure(node.children, depth + 1, out);
+      flattenStructure(node.children, depth + 1, out, path);
     }
-  }
+  });
   return out;
 }
 
