@@ -103,6 +103,8 @@ import {
   levelName,
   moveWithinSiblings,
   newContainer,
+  redundantGroupings,
+  unwrapRedundant,
   outdent,
   removeContainer,
   renameNode,
@@ -1163,6 +1165,7 @@ function rememberCourse(step = null) {
 function restoreCourse(doc) {
   if (!doc) return;
   writeCourse(structuredClone(doc));
+  renderOutline(); // the rail draws the same running order
   renderCourse();
 }
 
@@ -1181,6 +1184,10 @@ function structureOp(fn, { redraw = true, step = null } = {}) {
   writeCourse({ ...course, structure: next });
   rememberCourse(step);
   updateActions();
+  // The rail draws the same running order: moving a session, or taking
+  // a grouping away, left it showing the old one until something else
+  // happened to redraw it.
+  renderOutline();
   if (redraw) renderCourse();
 }
 
@@ -2449,6 +2456,12 @@ function courseRows() {
     });
 }
 
+/** A session's title as the author sees it, for comparing names. */
+function sessionTitle(blockId) {
+  const block = state.library?.blocks.get(blockId);
+  return block?.meta?.title || blockId;
+}
+
 function renderCourse() {
   renderTabs();
   $("slidesview").hidden = true;
@@ -2504,6 +2517,21 @@ function renderCourse() {
       onIndent: (path) => structureOp((t) => indent(t, path)),
       onOutdent: (path) => structureOp((t) => outdent(t, path)),
       onRemoveHeading: (path) => structureOp((t) => removeContainer(t, path)),
+      redundant: (() => {
+        const tree = courseDoc().structure ?? [];
+        return redundantGroupings(tree, sessionTitle).map((path) =>
+          path.reduce((nodes, i, n) => (n === path.length - 1 ? nodes[i] : nodes[i].children), tree).title
+        ).reverse();
+      })(),
+      onTidy: () => {
+        const count = redundantGroupings(courseDoc().structure ?? [], sessionTitle).length;
+        structureOp((t) => unwrapRedundant(t, sessionTitle));
+        status(
+          `Removed ${count} grouping${count === 1 ? "" : "s"} that only repeated a session's name. ` +
+            "The sessions are where they were; Undo puts the groupings back.",
+          "ok"
+        );
+      },
       onAddModuleAt: (path) => structureOp((t) => insertAfter(t, path, newContainer())),
       // Typing a heading's name must not redraw the row underneath the
       // caret, and a burst of keystrokes is one undo step, not forty.

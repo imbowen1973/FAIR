@@ -1387,3 +1387,11 @@ input.order-kind::placeholder {
 .plan-update .plan-action { color: var(--accent); }
 .plan-same { color: var(--muted); }
 .module-import-problems { color: var(--danger); max-width: 54rem; }
+
+/* A grouping that repeats its one session's name: offered a tidy-up. */
+.tidy-note {
+  max-width: 54rem; margin: 6px 0 12px; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+}
+.tidy-note p { margin: 0 0 8px; }
