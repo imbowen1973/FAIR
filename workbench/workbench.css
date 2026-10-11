@@ -1283,3 +1283,14 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
 @media (max-width: 700px) {
   .ribbon-group + .ribbon-group { padding-left: 6px; }
 }
+
+/* ---- the details behind an error -------------------------------------- */
+/* The sentence is for the author; the original is for whoever debugs it,
+   and stays folded away until asked for. */
+.status-details { display: inline; font-size: 12px; color: var(--muted); }
+.status-details summary { display: inline; cursor: pointer; text-decoration: underline; }
+.status-details[open] code {
+  display: block; margin-top: 4px; padding: 4px 6px; border-radius: 4px;
+  background: var(--bg); font-size: 11px; overflow-wrap: anywhere;
+  -webkit-user-select: text; user-select: text;
+}

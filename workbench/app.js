@@ -189,9 +189,24 @@ const state = {
   companion: null,
 };
 
-function status(message, kind = "") {
+/**
+ * The status bar. An error says what happened and what to do, in plain
+ * words (errors.js); `technical`, when given, is GitHub's own account,
+ * kept behind a toggle for whoever has to debug it.
+ */
+function status(message, kind = "", technical = null) {
   const el = $("status");
   el.textContent = message;
+  if (technical && message) {
+    const more = document.createElement("details");
+    more.className = "status-details";
+    const label = document.createElement("summary");
+    label.textContent = "Technical details";
+    const code = document.createElement("code");
+    code.textContent = technical;
+    more.append(label, code);
+    el.append(" ", more);
+  }
   el.className = `status ${kind}`.trim();
   el.hidden = !message;
   // The action bar sticks below the chrome, and the chrome just changed
@@ -244,7 +259,7 @@ async function signInWithToken() {
     input.value = "";
     await afterSignIn(token, login);
   } catch (err) {
-    status(err.message, "error");
+    status(err.message, "error", err.technical);
   }
 }
 
@@ -478,7 +493,7 @@ async function openRepo(fullName) {
     const paired = companionFor(fullName);
     if (paired) await openCompanion(paired, { quiet: true });
   } catch (err) {
-    status(err.message, "error");
+    status(err.message, "error", err.technical);
   }
 }
 
@@ -1299,7 +1314,7 @@ function offerGeometry() {
           "ok"
         );
       } catch (err) {
-        status(`Could not read the template: ${err.message}`, "error");
+        status(`Couldn't read the template. ${err.message}`, "error", err.technical);
       }
     })
   );
@@ -2522,7 +2537,7 @@ function renderFunding(host) {
           draw();
           status(`${name} added, unaltered.`, "ok");
         } catch (err) {
-          status(err.message, "error");
+          status(err.message, "error", err.technical);
         }
       },
     });
@@ -2720,7 +2735,7 @@ function openMediaPicker(region, value, kind) {
           "ok"
         );
       } catch (err) {
-        status(err.message, "error");
+        status(err.message, "error", err.technical);
       }
     },
   });
@@ -3144,7 +3159,7 @@ function attachFile() {
         added.push({ upload, file });
       }
     } catch (err) {
-      status(err.message, "error");
+      status(err.message, "error", err.technical);
       return;
     }
     if (!added.length) return;
@@ -3436,7 +3451,7 @@ async function runValidate() {
     }
     updateActions();
   } catch (err) {
-    status(`Could not check: ${err.message}`, "error");
+    status(`Check couldn't run. ${err.message}`, "error", err.technical);
   }
 }
 
@@ -3497,7 +3512,7 @@ async function previewDeck() {
     status("Deck rendered — check your downloads.", "ok");
   } catch (err) {
     console.error(err);
-    status(`Preview failed: ${err.message}`, "error");
+    status(`Couldn't render the deck. ${err.message}`, "error", err.technical);
   }
 }
 
@@ -3635,10 +3650,12 @@ async function openCompanion(fullName, { quiet = false } = {}) {
     // its companion is an ordinary case, not a failure of the course.
     status(
       quiet
-        ? `The private companion ${fullName} could not be read with this token, ` +
-            `so the course is open without it. (${err.message})`
-        : `Could not open ${fullName}: ${err.message}`,
-      quiet ? "" : "error"
+        ? `The private companion ${fullName} couldn't be opened, so the course is ` +
+            `open without it. ${err.message}`
+        : // A missing repository already names itself; say it once.
+          err.status === 404 ? err.message : `Couldn't open ${fullName}. ${err.message}`,
+      quiet ? "" : "error",
+      err.technical
     );
     return false;
   }
@@ -3709,7 +3726,7 @@ async function saveCompanion() {
     );
     return true;
   } catch (err) {
-    status(`Saving the private companion failed: ${err.message}`, "error");
+    status(`Couldn't save the private companion. ${err.message}`, "error", err.technical);
     return false;
   } finally {
     updateActions();
@@ -3915,14 +3932,15 @@ async function saveLibrary() {
     // against a URL-encoded ref, which says nothing about what happened
     // or what to do. It means the branch moved while the save was in
     // flight and could not be caught up.
-    const moved = err.status === 422 && /fast forward/i.test(err.message ?? "");
+    const moved = err.status === 422 && /fast forward/i.test(err.technical ?? err.message ?? "");
     status(
       moved
         ? `${branch} moved while this was saving, and kept moving — another ` +
             "tab, another person, or a merge on GitHub. Nothing here is lost: " +
             "press Save again, or use Submit to open a branch of your own."
-        : `Save failed: ${err.message}`,
-      "error"
+        : `Couldn't save. ${err.message}`,
+      "error",
+      err.technical
     );
     return false;
   } finally {
@@ -3973,7 +3991,7 @@ async function submit() {
     state.host?.emit("submitted", { prUrl: pull.html_url, repo: `${owner}/${repo}`, branch });
     window.open(pull.html_url, "_blank", "noopener");
   } catch (err) {
-    status(`Submit failed: ${err.message}`, "error");
+    status(`Couldn't open the review. ${err.message}`, "error", err.technical);
   }
 }
 
@@ -4060,7 +4078,7 @@ async function showHistory() {
     // screen and nothing appeared to happen.
     host.scrollIntoView({ block: "start", behavior: "smooth" });
   } catch (err) {
-    status(err.message, "error");
+    status(err.message, "error", err.technical);
   }
 }
 
@@ -4120,7 +4138,7 @@ async function loadVersion(commit) {
         "ok"
       );
     } catch (err) {
-      status(`Could not load ${sha.slice(0, 7)}: ${err.message}`, "error");
+      status(`Couldn't load version ${sha.slice(0, 7)}. ${err.message}`, "error", err.technical);
     }
   });
 }
@@ -4212,7 +4230,7 @@ async function boot() {
       return;
     }
   } catch (err) {
-    status(err.message, "error");
+    status(err.message, "error", err.technical);
   }
 
   const token = storedToken();
@@ -4519,7 +4537,7 @@ $("create-library")?.addEventListener("click", () =>
       state.blockId = made.blockId;
       $("new-library").open = false;
     } catch (err) {
-      status(err.message, "error");
+      status(err.message, "error", err.technical);
     }
   })
 );

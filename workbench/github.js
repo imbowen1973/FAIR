@@ -11,13 +11,22 @@
 // them would leave the branch describing a slide whose picture is missing.
 // The Git Data path is one commit or none.
 
+import { explain, technical } from "./errors.js";
+
 const API = "https://api.github.com";
 
 export class GitHubError extends Error {
-  constructor(message, status, url) {
+  /**
+   * `message` is for the author (errors.js); `technical` is GitHub's own
+   * account of it -- method, path, status and its words -- kept for the
+   * status bar's "Technical details" and for anything that has to branch
+   * on GitHub's exact wording.
+   */
+  constructor(message, status, url, technicalText = null) {
     super(message);
     this.status = status;
     this.url = url;
+    this.technical = technicalText;
   }
 }
 
@@ -39,7 +48,10 @@ export class GitHub {
 
   async request(path, { method = "GET", body, raw = false } = {}) {
     const url = path.startsWith("http") ? path : API + path;
-    const res = await fetch(url, {
+    const apiPath = url.replace(API, "").split("?")[0];
+    let res;
+    try {
+      res = await fetch(url, {
       method,
       headers: {
         Accept: raw ? "application/vnd.github.raw" : "application/vnd.github+json",
@@ -48,7 +60,11 @@ export class GitHub {
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
-    });
+      });
+    } catch (err) {
+      const facts = { status: 0, method, path: apiPath, detail: err.message };
+      throw new GitHubError(explain(facts), 0, url, technical(facts));
+    }
 
     if (!res.ok) {
       // Rate limiting is the failure a browser hits first, and "403" alone
@@ -60,7 +76,8 @@ export class GitHub {
         throw new GitHubError(
           `GitHub rate limit reached — resets in about ${mins} min. Signing in raises it from 60 to 5000 an hour.`,
           res.status,
-          url
+          url,
+          technical({ status: res.status, method, path: apiPath, detail: "rate limit" })
         );
       }
       let detail = "";
@@ -85,14 +102,12 @@ export class GitHub {
             `${owner} is an organisation, it may also need to approve the ` +
             "token under Settings → Personal access tokens.",
           res.status,
-          url
+          url,
+          technical({ status: res.status, method, path: apiPath, detail })
         );
       }
-      throw new GitHubError(
-        `${method} ${url.replace(API, "")} failed (${res.status})${detail ? `: ${detail}` : ""}`,
-        res.status,
-        url
-      );
+      const facts = { status: res.status, method, path: apiPath, detail };
+      throw new GitHubError(explain(facts), res.status, url, technical(facts));
     }
     return res.status === 204 ? null : res.json();
   }
@@ -171,9 +186,11 @@ export class GitHub {
       res = await fetch(url);
     } catch (err) {
       throw new GitHubError(
-        `could not reach GitHub for ${path} on ${ref} (${err.message})`,
+        `Couldn't reach GitHub to read ${path}. Check your internet connection ` +
+          "and try again — nothing is lost.",
         0,
-        path
+        path,
+        `GET ${url} → no response: ${err.message}`
       );
     }
     // A private repository reads as missing anonymously. With a token,
@@ -194,20 +211,24 @@ export class GitHub {
       if (api?.ok) return api.text();
     }
     if (!res.ok) {
-      const where = `${owner}/${name} on ${ref}`;
-      const why =
+      // Which repository and which branch, because reading depends on
+      // both; and what to do, because the number alone cannot say. A 400
+      // is raw.githubusercontent refusing the address itself (usually
+      // the branch name), a 404 a file that is not there -- or a private
+      // repository this token cannot read.
+      const where = `${owner}/${name}`;
+      const message =
         res.status === 400
-          ? ` — GitHub would not accept that address. The branch name is the ` +
-            `usual reason.`
+          ? `Couldn't read ${path} from ${where}: GitHub wouldn't accept the ` +
+            `branch name "${ref}".`
           : res.status === 404
-            ? ` — no such file on that branch, or a private repository this ` +
-              `token cannot read.`
-            : "";
-      throw new GitHubError(
-        `cannot read ${path} from ${where} (${res.status})${why}`,
-        res.status,
-        path
-      );
+            ? `Couldn't find ${path} in ${where} on the branch "${ref}". If the ` +
+              "repository is private, make sure your token includes it."
+            : res.status >= 500
+              ? `GitHub is having problems right now and couldn't send ${path}. ` +
+                "Wait a minute and try again."
+              : `Couldn't read ${path} from ${where} (GitHub answered ${res.status}).`;
+      throw new GitHubError(message, res.status, path, `GET ${url} → ${res.status}`);
     }
     return res.text();
   }
@@ -278,11 +299,12 @@ export class GitHub {
     } catch (err) {
       if (err.status === 422) {
         throw new GitHubError(
-          `${branch} could not be created (${err.message}). A branch of that ` +
-            "name may have appeared since, or the name collides with one " +
-            "that already exists.",
+          `Your draft branch ${branch} couldn't be created: a branch of that ` +
+            "name appeared in the meantime, or its name clashes with one that " +
+            "already exists. Press Save again.",
           422,
-          ""
+          "",
+          err.technical
         );
       }
       throw err;
@@ -446,7 +468,7 @@ export class GitHub {
         return await commitOnto(parent);
       } catch (err) {
         const moved =
-          err.status === 422 && /fast forward/i.test(err.message ?? "");
+          err.status === 422 && /fast forward/i.test(err.technical ?? err.message ?? "");
         if (!moved || attempt >= 3) throw err;
         const now = await this.headSha(owner, name, branch);
         if (now === parent) {

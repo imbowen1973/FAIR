@@ -273,6 +273,14 @@ const tryConnect = async (name) => {
 const refusedPublic = await tryConnect("t/public-answers");
 const refusedOther = await tryConnect("t/other-private");
 const refusedSelf = await tryConnect("t/lib");
+// A real GitHub failure: plain words up front, the original folded away.
+const missing = await tryConnect("t/no-such-repo");
+const missingDetails = await page.evaluate(() => ({
+  details: document.querySelector("#status .status-details summary")?.textContent ?? null,
+  folded: !document.querySelector("#status .status-details")?.open,
+  original: document.querySelector("#status .status-details code")?.textContent ?? "",
+}));
+console.log("missing repo:", JSON.stringify({ ...missing, ...missingDetails }));
 console.log("refused:", JSON.stringify([refusedPublic, refusedOther, refusedSelf]));
 
 // ---- reload: the pairing reconnects, an unsaved private edit returns --
@@ -342,6 +350,9 @@ const failed =
   !/is public/.test(refusedPublic.status) ||
   !/belongs to t\/another-course/.test(refusedOther.status) ||
   !/different repository/.test(refusedSelf.status) ||
+  !/t\/no-such-repo wasn't found/.test(missing.status) || /404|\/repos\//.test(missing.status.split("Technical details")[0]) ||
+  missingDetails.details !== "Technical details" || !missingDetails.folded ||
+  !/404/.test(missingDetails.original) ||
   // A refused connection leaves the working one in place.
   !refusedSelf.still.includes("t/lib-private") ||
   !reopened.toggle.includes("t/lib-private") ||
