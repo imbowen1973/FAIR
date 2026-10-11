@@ -87,6 +87,7 @@ import {
   MEDIA_DIR,
 } from "./documents.js";
 import { tabs } from "./tabs.js";
+import { parseModule, planImport } from "./moduleimport.js";
 import { clearDraft, loadDraft, saveDraft } from "./drafts.js";
 import { markdownEditor } from "./mdeditor.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "./yaml.js";
@@ -1863,7 +1864,7 @@ function containers(structure, trail = [], out = []) {
  * exactly what a new lesson is, and the tabs then offer to create both.
  */
 function addLesson(trail) {
-  const title = window.prompt("What is this lesson called?");
+  const title = window.prompt("What is this session called?");
   if (title === null) return;
   const id = slugFor(title, new Set(state.library.blocks.keys()));
   const path = `blocks/${id}/block.yaml`;
@@ -1887,22 +1888,18 @@ function addLesson(trail) {
   status(`Added ${title}. Its lesson plan and deck are waiting on the tabs.`, "ok");
 }
 
-/** A new module: a container in the recipe, holding lessons. */
+/** A new grouping: a container in the recipe, holding sessions. */
 function addModule() {
-  const title = window.prompt("What is this module called?");
+  const title = window.prompt("What is this grouping called? (a week, a day, a unit…)");
   if (title === null) return;
   const course = courseDoc();
   writeCourse({
     ...course,
-    structure: addToStructure(course.structure, [], {
-      kind: "module",
-      title: title.trim() || "Module",
-      children: [],
-    }),
+    structure: addToStructure(course.structure, [], newContainer(title.trim() || "New grouping")),
   });
   renderOutline();
   updateActions();
-  status(`Added the module ${title}. Add lessons to it from the rail.`, "ok");
+  status(`Added the grouping ${title}. Move sessions into it with → in the module overview.`, "ok");
 }
 
 // ---- the session drawer ------------------------------------------------
@@ -2105,6 +2102,7 @@ function renderTabs() {
         { id: "competencies", title: "Competencies", type: "course" },
         { id: "funding", title: "Funding", type: "course" },
         { id: "source", title: "course.yaml", type: "course" },
+        { id: "import", title: "Import", type: "course" },
         ...(back
           ? [{ id: "back", title: `← ${back.meta?.title || back.id}`, type: "back" }]
           : []),
@@ -2471,6 +2469,7 @@ function renderCourse() {
   host.innerHTML = "";
 
   if (state.courseTab === "source") return renderCourseSource(host);
+  if (state.courseTab === "import") return renderModuleImport(host);
   if (state.courseTab === "funding") return renderFunding(host);
   if (state.courseTab === "competencies") return renderCompetencies(host);
 
@@ -2667,6 +2666,130 @@ function renderFunding(host) {
 }
 
 /** course.yaml as text: the orchestrator, edited directly. */
+/**
+ * A module, written as one block of Markdown (docs/module-md-format.md),
+ * imported after a preview of exactly what it changes. Apply writes
+ * ordinary unsaved edits -- Save is still the only thing that reaches
+ * GitHub -- and Undo import puts back what was there.
+ */
+function renderModuleImport(host) {
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  host.append(el("h2", "course-heading", "Import a module"));
+  host.append(
+    el(
+      "p",
+      "hint",
+      "Paste a module written as Markdown — by hand, or by the FAIR-Ed module " +
+        "skill — or open a .md file. You'll see exactly what it changes, file by " +
+        "file, before anything is written; nothing reaches GitHub until you Save."
+    )
+  );
+  const area = el("textarea", "module-import-text");
+  area.spellcheck = false;
+  area.placeholder = "---\ntitle: …\nlevel: …\n---\n\n--- competencies\n…\n---\n\n## A grouping\n\n--- session\ntitle: …\n---";
+  area.value = state.moduleImportText ?? "";
+  area.setAttribute("aria-label", "The module, as Markdown");
+  area.addEventListener("input", () => (state.moduleImportText = area.value));
+
+  const row = el("div", "module-import-actions");
+  const file = el("input");
+  file.type = "file";
+  file.accept = ".md,.markdown,.txt,text/markdown,text/plain";
+  file.id = "module-import-file";
+  file.hidden = true;
+  const pick = el("label", "link", "Open a .md file");
+  pick.htmlFor = file.id;
+  file.addEventListener("change", async () => {
+    const f = file.files?.[0];
+    if (!f) return;
+    area.value = state.moduleImportText = await f.text();
+    preview();
+  });
+  const previewButton = el("button", "primary", "Preview");
+  previewButton.type = "button";
+  const help = el("a", "link", "The format");
+  help.href = "https://github.com/imbowen1973/FAIR/blob/main/docs/module-md-format.md";
+  help.target = "_blank";
+  help.rel = "noopener";
+  row.append(previewButton, pick, file, help);
+
+  const result = el("div", "module-import-result");
+  host.append(area, row, result);
+
+  function preview() {
+    result.innerHTML = "";
+    const text = area.value.trim();
+    if (!text) {
+      result.append(el("p", "hint", "Paste a module first."));
+      return;
+    }
+    const plan = planImport(parseModule(text), pendingFiles());
+    if (plan.problems.length) {
+      result.append(el("p", "warn", "This can't be imported yet:"));
+      const list = el("ul", "module-import-problems");
+      for (const p of plan.problems) list.append(el("li", null, p));
+      result.append(list);
+      return;
+    }
+    const table = el("table", "module-import-plan");
+    const verbs = { create: "New", update: "Changes", same: "No change" };
+    for (const r of plan.rows) {
+      const tr = el("tr", `plan-${r.action}`);
+      tr.append(el("td", "plan-action", verbs[r.action]), el("td", "plan-path", r.path), el("td", null, r.detail));
+      table.append(tr);
+    }
+    result.append(table);
+    for (const note of plan.notes) result.append(el("p", "hint", note));
+    const apply = el("button", "primary", plan.changes.size ? `Apply ${plan.changes.size} change${plan.changes.size === 1 ? "" : "s"}` : "Nothing to change");
+    apply.type = "button";
+    apply.disabled = !plan.changes.size;
+    apply.addEventListener("click", () => applyModuleImport(plan.changes));
+    result.append(apply);
+  }
+  previewButton.addEventListener("click", preview);
+  if (area.value.trim()) preview();
+}
+
+function applyModuleImport(changes) {
+  // What each path held before, so the whole import can be taken back.
+  const before = new Map();
+  for (const path of changes.keys()) before.set(path, state.edits.has(path) ? state.edits.get(path) : undefined);
+  for (const [path, text] of changes) state.edits.set(path, text);
+  state.working = new Map([...state.working].filter(([id]) => !changes.has(`blocks/${id}/slides.md`)));
+  state.library = readLibrary(pendingFiles());
+  state.courseTab = "overview";
+  renderOutline();
+  renderCourse();
+  updateActions();
+
+  const undo = document.createElement("button");
+  undo.type = "button";
+  undo.className = "link";
+  undo.textContent = "Undo import";
+  undo.addEventListener("click", () => {
+    for (const [path, text] of before) {
+      if (text === undefined) state.edits.delete(path);
+      else rawEdit(path, text);
+    }
+    state.library = readLibrary(pendingFiles());
+    renderOutline();
+    renderCourse();
+    updateActions();
+    status("Import undone: the module is as it was before.", "ok");
+  });
+  status(
+    `Imported: ${changes.size} file${changes.size === 1 ? "" : "s"} changed. ` +
+      "Check the running order and sessions, then Save to keep them. ",
+    "ok"
+  );
+  $("status").append(undo);
+}
+
 function renderCourseSource(host) {
   const heading = document.createElement("h2");
   heading.className = "course-heading";

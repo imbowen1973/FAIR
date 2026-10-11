@@ -70,8 +70,12 @@ in the rail: paste slides, open a file — **or drop an existing
 into markdown in your browser, with a per-slide confidence report.
 Everything is checked against this template — layouts, regions, outcome
 ids — before anything is added.
-Plain markdown works too, headings becoming slides. `docs/gpt-prompt.md`
-is the prompt that makes a model write slides this door will accept.
+Plain markdown works too, headings becoming slides. A whole module comes
+in the same way: **Module → Import** takes one block of Markdown
+(`docs/module-md-format.md`) and, after a file-by-file preview, writes
+its competencies, groupings, sessions, outcomes and funding. The Claude
+skills in `skills/` interview you and produce both — a module, then each
+session's deck, lesson plan and questions.
 
 ### The PowerPoint add-in — assemble decks by meaning
 
@@ -160,6 +164,8 @@ guide tabs, saved to the private repo, never the course. See
 | `docs/gpt-prompt.md` | The authoring prompt: what to ask before writing a session |
 | `docs/authoring-and-tracking.md` | Outcomes, competencies, and what is recorded |
 | `docs/importing-decks.md` | What import does with text, tables and pictures from an old deck |
+| `docs/module-md-format.md` | A whole module as one block of Markdown: details, competencies, groupings, sessions, outcomes, funding |
+| `skills/` | Claude skills that design a module and write its sessions, in the formats the workbench imports |
 | `docs/companion-repo.md` | The twin repos: public content, private shareable assessment |
 | `docs/questions-format.md` | The question grammar and its Moodle XML export |
 | `docs/workbench-embedding.md` | Wrapping the workbench in a portal: the host contract |
