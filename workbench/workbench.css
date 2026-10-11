@@ -1209,7 +1209,7 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
 /* An educator-only tab: marked, so nobody mistakes where it is saved. */
 .tab.private .tab-label::before { content: "🔒 "; }
 .tab.private { border-style: dashed; }
-.questions-editor textarea {
+.questions-editor .qb-body > textarea {
   width: 100%; min-height: 24em; font: 13px/1.5 Consolas, ui-monospace, monospace;
   padding: 10px; border: 1px solid var(--border-strong); border-radius: 6px;
   background: var(--bg); color: var(--fg); box-sizing: border-box;
@@ -1227,6 +1227,60 @@ button.media-close:hover { background: var(--bg-sunken); color: var(--fg); }
   font-size: 0.72rem; color: var(--muted); margin-left: 6px;
 }
 .private-note { font-size: 0.82rem; color: var(--muted); margin: 0 0 8px; }
+/* The bank as a form: a card per question. */
+.qb-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.qb-views { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+.qb-view { border: 0; border-radius: 0; padding: 3px 12px; background: var(--bg); }
+.qb-view + .qb-view { border-left: 1px solid var(--border-strong); }
+.qb-view.on { background: var(--accent); color: var(--accent-fg); }
+.qb-summary { font-size: 0.86rem; }
+.qb-summary.ok { color: var(--ok); }
+.qb-summary.bad { color: var(--danger); }
+.qb-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.qb-card {
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  background: var(--bg-raised);
+}
+.qb-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.qb-num {
+  min-width: 1.6em; height: 1.6em; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--bg-sunken); font-size: 0.8rem; font-weight: 600;
+}
+.qb-head input.qb-id { width: 6.5em; flex: 0 0 auto; }
+.qb-head input.qb-points { width: 4.5em; }
+.qb-tools { margin-left: auto; display: inline-flex; gap: 2px; }
+.qb-tools button.tool:disabled { opacity: 0.25; cursor: default; }
+.qb-inline { display: inline-flex; align-items: center; gap: 4px; font-size: 0.86rem; margin-right: 12px; }
+.qb-inline input[type=number] { width: 7em; }
+.qb-tests { display: flex; gap: 8px; align-items: baseline; }
+.qb-label { font-size: 0.82rem; font-weight: 600; }
+.qb-tests .chips { align-items: center; }
+.chip.unknown { border-style: dashed; color: var(--danger); }
+.chip.unknown.on { background: var(--danger); color: #fff; border-color: var(--danger); }
+.qb-more { font-size: 12px; max-width: 16rem; }
+.q-answer input.text { min-width: 0; }
+.q-answer .qb-right { flex: 0 0 auto; width: 1.1em; height: 1.1em; }
+.q-answer input.text + input.text { flex: 1 1 40%; }
+.qb-arrow { color: var(--muted); }
+.qb-preview { font-size: 0.82rem; color: var(--muted); margin: -6px 0 10px; }
+.qb-problems { margin: 6px 0 0; padding-left: 1.2em; font-size: 0.82rem; }
+.qb-problems.ok { list-style: none; padding-left: 0; color: var(--ok); }
+.qb-problems.bad { color: var(--danger); }
+.qb-add { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.qb-add .add-slide { width: auto; margin-top: 0; }
+.qb-blocked { color: var(--danger); font-size: 0.86rem; }
+.qb-card textarea.q-text { min-height: 0; resize: vertical; width: 100%; box-sizing: border-box; }
+.qb-card .q-field > input.text { width: 100%; box-sizing: border-box; }
+/* A choice: tick, answer, its feedback, remove -- on a phone the
+   feedback drops under the answer, the tick and × stay on its line. */
+.qb-choice { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto; }
+@media (max-width: 600px) {
+  .qb-choice { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 4px; }
+  .qb-choice input.text + input.text { grid-column: 2; grid-row: 2; }
+  .qb-choice button.tool { grid-column: 3; grid-row: 1; }
+  .qb-tools { margin-left: 0; }
+  .qb-inline { margin-bottom: 4px; }
+}
 
 /* ---- split buttons ---------------------------------------------------- */
 /* The face does the last thing chosen; the arrow opens the rest. One

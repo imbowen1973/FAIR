@@ -18,6 +18,7 @@
 // the Python one (questions.py), which Check runs.
 
 import { parse } from "./yaml.js";
+import { bankProblems, readBank } from "./questionbank.js";
 
 export const COMPANION_FILE = "companion.yaml";
 
@@ -130,68 +131,20 @@ const isText = (v) => typeof v === "string" && v.trim() !== "";
  * Returns {items: [{id, type, stem, assesses}], problems: [string]}.
  */
 export function checkQuestions(text, { outcomes = null } = {}) {
-  let data;
-  try {
-    data = parse(text);
-  } catch (err) {
-    return { items: [], problems: [`Not valid YAML: ${err.message.split("\n")[0]}`] };
-  }
-  if (!data || !Array.isArray(data.questions)) {
-    return { items: [], problems: ["Needs a top-level 'questions' list."] };
-  }
-  const items = [];
+  const bank = readBank(text);
+  if (bank.problem) return { items: [], problems: [bank.problem] };
+  const perQuestion = bankProblems(bank.questions, { outcomes });
   const problems = [];
-  const seen = new Set();
-  data.questions.forEach((raw, index) => {
-    const where = `Question ${index + 1}${raw?.id ? ` (${raw.id})` : ""}`;
-    if (!raw || typeof raw !== "object") {
-      problems.push(`${where}: must be a mapping.`);
-      return;
-    }
-    if (!isText(String(raw.id ?? ""))) problems.push(`${where}: missing 'id'.`);
-    else if (seen.has(String(raw.id))) problems.push(`${where}: duplicate id.`);
-    seen.add(String(raw.id));
-    if (!ITEM_TYPES.includes(raw.type)) {
-      problems.push(`${where}: type must be one of ${ITEM_TYPES.join(", ")}.`);
-    }
-    const assesses = raw.assesses;
-    if (!Array.isArray(assesses) || !assesses.length) {
-      problems.push(`${where}: 'assesses' must list the outcome ids it tests.`);
-    } else if (outcomes) {
-      for (const oid of assesses) {
-        if (!outcomes.has(String(oid))) problems.push(`${where}: assesses unknown outcome ${oid}.`);
-      }
-    }
-    if (raw.type !== "cloze" && !isText(raw.stem)) problems.push(`${where}: missing 'stem'.`);
-    const options = Array.isArray(raw.options) ? raw.options : [];
-    const correct = options.filter((o) => o && o.correct === true).length;
-    if (raw.type === "mcq" && correct !== 1) problems.push(`${where}: an mcq needs exactly one correct option.`);
-    if (raw.type === "multi" && correct < 1) problems.push(`${where}: a multi needs at least one correct option.`);
-    if ((raw.type === "mcq" || raw.type === "multi") && options.length < 2) {
-      problems.push(`${where}: needs at least two options.`);
-    }
-    if (raw.type === "truefalse" && typeof raw.answer !== "boolean") {
-      problems.push(`${where}: 'answer' must be true or false.`);
-    }
-    if (raw.type === "short" && !(Array.isArray(raw.answers) && raw.answers.length)) {
-      problems.push(`${where}: list the accepted 'answers'.`);
-    }
-    if (raw.type === "numeric" && typeof raw.answer !== "number") {
-      problems.push(`${where}: 'answer' must be a number.`);
-    }
-    if (raw.type === "match" && !(Array.isArray(raw.pairs) && raw.pairs.length >= 2)) {
-      problems.push(`${where}: a match needs at least two 'pairs'.`);
-    }
-    if (raw.type === "cloze" && !/\[\[[^\[\]]+\]\]/.test(String(raw.text ?? ""))) {
-      problems.push(`${where}: a cloze needs 'text' with gaps written [[answer]].`);
-    }
-    items.push({
-      id: String(raw.id ?? ""),
-      type: String(raw.type ?? ""),
-      stem: String(raw.stem ?? raw.text ?? ""),
-      assesses: Array.isArray(assesses) ? assesses.map(String) : [],
-    });
+  bank.questions.forEach((q, index) => {
+    const where = `Question ${index + 1}${q?.id ? ` (${q.id})` : ""}`;
+    for (const p of perQuestion[index]) problems.push(`${where}: ${p}`);
   });
-  if (!data.questions.length) problems.push("The bank has no questions yet.");
+  if (!bank.questions.length) problems.push("The bank has no questions yet.");
+  const items = bank.questions.map((q) => ({
+    id: String(q.id ?? ""),
+    type: String(q.type ?? ""),
+    stem: String(q.stem ?? q.text ?? ""),
+    assesses: Array.isArray(q.assesses) ? q.assesses.map(String) : [],
+  }));
   return { items, problems };
 }

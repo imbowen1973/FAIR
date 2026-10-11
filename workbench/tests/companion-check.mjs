@@ -59,15 +59,15 @@ test("the quick check names what is wrong, per question", () => {
   ].join("\n");
   const { problems } = checkQuestions(bank, { outcomes: new Set(["O1"]) });
   const text = problems.join("\n");
-  assert.match(text, /q1.*exactly one correct/);
-  assert.match(text, /duplicate id/);
-  assert.match(text, /unknown outcome O9/);
+  assert.match(text, /q1.*Mark exactly one answer as correct/);
+  assert.match(text, /used by another question too/);
+  assert.match(text, /tests O9, which isn't one of the course's outcomes/);
   assert.match(text, /true or false/);
-  assert.match(text, /cloze needs 'text' with gaps/);
-  assert.match(text, /q4.*type must be one of/);
+  assert.match(text, /Mark at least one gap/);
+  assert.match(text, /q4.*type should be one of/);
 });
 
 test("broken YAML is a problem, not an exception", () => {
-  assert.match(checkQuestions("questions: [").problems[0], /Not valid YAML/);
-  assert.match(checkQuestions("foo: 1").problems[0], /top-level 'questions'/);
+  assert.match(checkQuestions("questions: [").problems[0], /doesn't read as a question bank/);
+  assert.match(checkQuestions("foo: 1").problems[0], /no questions yet/);
 });
