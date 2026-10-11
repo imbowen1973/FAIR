@@ -35,7 +35,7 @@ import {
   starterGuide,
   starterQuestions,
 } from "./companion.js";
-import { decorate } from "./icons.js";
+import { decorate, icon } from "./icons.js";
 import { needsAsking, relayoutPanel } from "./relayout.js";
 import { provisionInto, provisionLibrary, repoNameFrom } from "./provision.js";
 import {
@@ -97,6 +97,7 @@ import {
   flatten,
   indent,
   insertAfter,
+  levelName,
   moveWithinSiblings,
   newContainer,
   outdent,
@@ -189,9 +190,24 @@ const state = {
   companion: null,
 };
 
-function status(message, kind = "") {
+/**
+ * The status bar. An error says what happened and what to do, in plain
+ * words (errors.js); `technical`, when given, is GitHub's own account,
+ * kept behind a toggle for whoever has to debug it.
+ */
+function status(message, kind = "", technical = null) {
   const el = $("status");
   el.textContent = message;
+  if (technical && message) {
+    const more = document.createElement("details");
+    more.className = "status-details";
+    const label = document.createElement("summary");
+    label.textContent = "Technical details";
+    const code = document.createElement("code");
+    code.textContent = technical;
+    more.append(label, code);
+    el.append(" ", more);
+  }
   el.className = `status ${kind}`.trim();
   el.hidden = !message;
   // The action bar sticks below the chrome, and the chrome just changed
@@ -244,7 +260,7 @@ async function signInWithToken() {
     input.value = "";
     await afterSignIn(token, login);
   } catch (err) {
-    status(err.message, "error");
+    status(err.message, "error", err.technical);
   }
 }
 
@@ -478,7 +494,7 @@ async function openRepo(fullName) {
     const paired = companionFor(fullName);
     if (paired) await openCompanion(paired, { quiet: true });
   } catch (err) {
-    status(err.message, "error");
+    status(err.message, "error", err.technical);
   }
 }
 
@@ -738,17 +754,6 @@ function escapeHtml(text) {
  * distinction was invisible, and a plan looked as though it hung off the
  * course.
  */
-function railHeading(title, note) {
-  const row = document.createElement("div");
-  row.className = "rail-heading";
-  const strong = document.createElement("strong");
-  strong.textContent = title;
-  const small = document.createElement("span");
-  small.textContent = note;
-  row.append(strong, small);
-  return row;
-}
-
 function renderOutline() {
   paintRailToggle();
   const host = $("outline");
@@ -757,13 +762,20 @@ function renderOutline() {
 
   // The course, above its blocks. Outcomes are library-wide, so they
   // belong to the course rather than to any one session.
+  // The module: the root of the tree, and the one entry that opens the
+  // whole course rather than a session.
   const courseGroup = document.createElement("div");
   courseGroup.className = "block course-entry";
-  courseGroup.appendChild(railHeading("This course", "the whole repo"));
   const courseHead = document.createElement("button");
   courseHead.type = "button";
-  courseHead.className = "block-head";
-  courseHead.textContent = library.course.title || "This course";
+  courseHead.className = "block-head module-head";
+  courseHead.title = "The module: what it is, its outcomes, and its running order";
+  courseHead.append(
+    icon("module", { size: 16 }),
+    Object.assign(document.createElement("span"), {
+      textContent: library.course.title || "This module",
+    })
+  );
   if (state.courseOpen) courseHead.classList.add("on");
   courseHead.addEventListener("click", () => {
     state.courseOpen = true;
@@ -774,7 +786,10 @@ function renderOutline() {
   courseGroup.appendChild(courseHead);
   host.appendChild(courseGroup);
 
-  host.appendChild(railHeading("Sessions", "each has its own outcomes and plan"));
+  // Everything below hangs inside the module, so it is drawn inside it.
+  const tree = document.createElement("div");
+  tree.className = "outline-tree";
+  host.appendChild(tree);
 
   // The recipe's own shape, so a lesson visibly sits inside its module.
   // Flat, the levels were invisible and a lesson plan looked as though
@@ -787,16 +802,53 @@ function renderOutline() {
     if (!placed.includes(id)) rows.push({ kind: "block", block: id, depth: 0 });
   }
 
+  // Groupings are drawn as boxes holding their sessions, nested as deep
+  // as the course nests them. The structure says "this is a grouping";
+  // no label has to. A level the author named ("week", "day") keeps its
+  // name, quietly, because it is theirs; the default says nothing.
+  const containers = [tree]; // containers[d] holds rows of depth d
   for (const row of rows) {
+    containers.length = Math.min(containers.length, row.depth + 1);
+    const into = containers[containers.length - 1];
+
     if (row.kind !== "block") {
-      const heading = document.createElement("div");
-      heading.className = "structure-row";
-      heading.style.paddingLeft = `${row.depth * 10}px`;
-      const kind = document.createElement("span");
-      kind.className = "structure-kind";
-      kind.textContent = row.kind;
-      heading.append(kind, document.createTextNode(row.title));
-      host.appendChild(heading);
+      const key = row.path.join(".");
+      const box = document.createElement("div");
+      box.className = "grouping";
+      box.dataset.group = key;
+      const headRow = document.createElement("button");
+      headRow.type = "button";
+      headRow.className = "grouping-head";
+      const collapsed = state.collapsedGroups?.has(key);
+      headRow.setAttribute("aria-expanded", String(!collapsed));
+      headRow.title = collapsed ? "Show its sessions" : "Hide its sessions";
+      const chevron = icon("chevron", { size: 12 });
+      chevron.classList.add("grouping-chevron");
+      headRow.appendChild(chevron);
+      if (levelName(row.kind)) {
+        const kind = document.createElement("span");
+        kind.className = "grouping-kind";
+        kind.textContent = levelName(row.kind);
+        headRow.appendChild(kind);
+      }
+      headRow.appendChild(
+        Object.assign(document.createElement("span"), {
+          className: "grouping-title",
+          textContent: row.title || "Untitled grouping",
+        })
+      );
+      headRow.addEventListener("click", () => {
+        state.collapsedGroups = state.collapsedGroups ?? new Set();
+        if (state.collapsedGroups.has(key)) state.collapsedGroups.delete(key);
+        else state.collapsedGroups.add(key);
+        renderOutline();
+      });
+      const body = document.createElement("div");
+      body.className = "grouping-body";
+      body.hidden = Boolean(collapsed);
+      box.append(headRow, body);
+      into.appendChild(box);
+      containers.push(body);
       continue;
     }
 
@@ -804,7 +856,6 @@ function renderOutline() {
     const block = library.blocks.get(id);
     const group = document.createElement("div");
     group.className = "block";
-    group.style.marginLeft = `${row.depth * 10}px`;
 
     const head = document.createElement("button");
     head.type = "button";
@@ -927,7 +978,20 @@ function renderOutline() {
     if (id === state.blockId && activeDoc()?.editor === "assessment") {
       group.appendChild(questionRows(activeDoc()));
     }
-    host.appendChild(group);
+    into.appendChild(group);
+    // A session just chosen (from a problem link, a search, a new
+    // session) opens the groupings around it. Only then: once it is on
+    // screen, folding its grouping away is the author's choice to make.
+    if (id === state.blockId && state.revealedBlock !== id && !state.courseOpen) {
+      state.revealedBlock = id;
+      for (const body of containers) {
+        if (!body.hidden) continue;
+        body.hidden = false;
+        const head = body.previousElementSibling;
+        head?.setAttribute("aria-expanded", "true");
+        state.collapsedGroups?.delete(head?.parentElement?.dataset.group);
+      }
+    }
   }
 }
 
@@ -1299,7 +1363,7 @@ function offerGeometry() {
           "ok"
         );
       } catch (err) {
-        status(`Could not read the template: ${err.message}`, "error");
+        status(`Couldn't read the template. ${err.message}`, "error", err.technical);
       }
     })
   );
@@ -2522,7 +2586,7 @@ function renderFunding(host) {
           draw();
           status(`${name} added, unaltered.`, "ok");
         } catch (err) {
-          status(err.message, "error");
+          status(err.message, "error", err.technical);
         }
       },
     });
@@ -2720,7 +2784,7 @@ function openMediaPicker(region, value, kind) {
           "ok"
         );
       } catch (err) {
-        status(err.message, "error");
+        status(err.message, "error", err.technical);
       }
     },
   });
@@ -3144,7 +3208,7 @@ function attachFile() {
         added.push({ upload, file });
       }
     } catch (err) {
-      status(err.message, "error");
+      status(err.message, "error", err.technical);
       return;
     }
     if (!added.length) return;
@@ -3436,7 +3500,7 @@ async function runValidate() {
     }
     updateActions();
   } catch (err) {
-    status(`Could not check: ${err.message}`, "error");
+    status(`Check couldn't run. ${err.message}`, "error", err.technical);
   }
 }
 
@@ -3497,7 +3561,7 @@ async function previewDeck() {
     status("Deck rendered — check your downloads.", "ok");
   } catch (err) {
     console.error(err);
-    status(`Preview failed: ${err.message}`, "error");
+    status(`Couldn't render the deck. ${err.message}`, "error", err.technical);
   }
 }
 
@@ -3635,10 +3699,12 @@ async function openCompanion(fullName, { quiet = false } = {}) {
     // its companion is an ordinary case, not a failure of the course.
     status(
       quiet
-        ? `The private companion ${fullName} could not be read with this token, ` +
-            `so the course is open without it. (${err.message})`
-        : `Could not open ${fullName}: ${err.message}`,
-      quiet ? "" : "error"
+        ? `The private companion ${fullName} couldn't be opened, so the course is ` +
+            `open without it. ${err.message}`
+        : // A missing repository already names itself; say it once.
+          err.status === 404 ? err.message : `Couldn't open ${fullName}. ${err.message}`,
+      quiet ? "" : "error",
+      err.technical
     );
     return false;
   }
@@ -3709,7 +3775,7 @@ async function saveCompanion() {
     );
     return true;
   } catch (err) {
-    status(`Saving the private companion failed: ${err.message}`, "error");
+    status(`Couldn't save the private companion. ${err.message}`, "error", err.technical);
     return false;
   } finally {
     updateActions();
@@ -3915,14 +3981,15 @@ async function saveLibrary() {
     // against a URL-encoded ref, which says nothing about what happened
     // or what to do. It means the branch moved while the save was in
     // flight and could not be caught up.
-    const moved = err.status === 422 && /fast forward/i.test(err.message ?? "");
+    const moved = err.status === 422 && /fast forward/i.test(err.technical ?? err.message ?? "");
     status(
       moved
         ? `${branch} moved while this was saving, and kept moving — another ` +
             "tab, another person, or a merge on GitHub. Nothing here is lost: " +
             "press Save again, or use Submit to open a branch of your own."
-        : `Save failed: ${err.message}`,
-      "error"
+        : `Couldn't save. ${err.message}`,
+      "error",
+      err.technical
     );
     return false;
   } finally {
@@ -3973,7 +4040,7 @@ async function submit() {
     state.host?.emit("submitted", { prUrl: pull.html_url, repo: `${owner}/${repo}`, branch });
     window.open(pull.html_url, "_blank", "noopener");
   } catch (err) {
-    status(`Submit failed: ${err.message}`, "error");
+    status(`Couldn't open the review. ${err.message}`, "error", err.technical);
   }
 }
 
@@ -4060,7 +4127,7 @@ async function showHistory() {
     // screen and nothing appeared to happen.
     host.scrollIntoView({ block: "start", behavior: "smooth" });
   } catch (err) {
-    status(err.message, "error");
+    status(err.message, "error", err.technical);
   }
 }
 
@@ -4120,7 +4187,7 @@ async function loadVersion(commit) {
         "ok"
       );
     } catch (err) {
-      status(`Could not load ${sha.slice(0, 7)}: ${err.message}`, "error");
+      status(`Couldn't load version ${sha.slice(0, 7)}. ${err.message}`, "error", err.technical);
     }
   });
 }
@@ -4212,7 +4279,7 @@ async function boot() {
       return;
     }
   } catch (err) {
-    status(err.message, "error");
+    status(err.message, "error", err.technical);
   }
 
   const token = storedToken();
@@ -4519,7 +4586,7 @@ $("create-library")?.addEventListener("click", () =>
       state.blockId = made.blockId;
       $("new-library").open = false;
     } catch (err) {
-      status(err.message, "error");
+      status(err.message, "error", err.technical);
     }
   })
 );

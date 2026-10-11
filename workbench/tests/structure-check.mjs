@@ -127,6 +127,39 @@ await page.click("#open-manual");
 await page.waitForSelector("#workspace", { timeout: 15000 });
 await page.waitForTimeout(900);
 
+// The rail draws the hierarchy by containment: the module at the root,
+// each grouping a box holding its sessions -- and no word "group", and
+// no "module" on a grouping (this fixture's groupings are saved as
+// `kind: module`, as older courses were; module is the whole course).
+const rail = await page.evaluate(() => {
+  const boxes = [...document.querySelectorAll("#outline .grouping")];
+  return {
+    module: document.querySelector("#outline .module-head")?.textContent.trim(),
+    boxes: boxes.map((b) => ({
+      title: b.querySelector(".grouping-title")?.textContent,
+      sessions: [...b.querySelectorAll(":scope > .grouping-body > .block .block-head")].map((h) => h.textContent),
+    })),
+    text: document.getElementById("outline").innerText,
+  };
+});
+console.log("rail:", JSON.stringify({ module: rail.module, boxes: rail.boxes }));
+const railOk =
+  rail.module === "V130" &&
+  JSON.stringify(rail.boxes) === JSON.stringify([
+    { title: "Foundations", sessions: ["01-intro", "02-profiles"] },
+    { title: "Assessment week", sessions: ["04-exam"] },
+  ]) &&
+  !/\bgroup\b/i.test(rail.text) && !/\bmodule\b/i.test(rail.text);
+// Folding a grouping away holds -- even the one holding the open session.
+await page.click('#outline .grouping[data-group="2"] .grouping-head');
+await page.click('#outline .grouping[data-group="0"] .grouping-head');
+await page.waitForTimeout(200);
+const folded = await page.evaluate(() =>
+  [...document.querySelectorAll("#outline .grouping-head")].map((h) => h.getAttribute("aria-expanded"))
+);
+console.log("folded:", JSON.stringify(folded));
+const foldOk = JSON.stringify(folded) === JSON.stringify(["false", "false"]);
+
 // Open the course view: the rail's own entry for the whole repo.
 await page.click(".course-entry .block-head");
 await page.waitForSelector(".order-row", { timeout: 8000 });
@@ -261,6 +294,7 @@ console.log("committed order:", JSON.stringify(parsed.rows, null, 1));
 if (errors.length) console.log("errors:", errors.slice(0, 5));
 
 const failed =
+  !railOk || !foldOk ||
   errors.length > 0 ||
   !toolbar.save || !toolbar.undo || !toolbar.redo || !toolbar.history ||
   !moved.every(Boolean) ||

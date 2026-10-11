@@ -44,8 +44,11 @@ export const isContainer = (node) =>
   Boolean(node) && !("block" in node) && Array.isArray(node[CHILDREN]);
 
 /** A fresh container. `children` is not optional — see the note above. */
-export function newContainer(title = "", kind = "module") {
-  return { kind: kind || "module", title: title ?? "", [CHILDREN]: [] };
+// A new grouping names no level of its own ("group", the library's own
+// default): "module" is what this tool calls the whole course, and a
+// grouping written as one is how groupings came to be called modules.
+export function newContainer(title = "", kind = "group") {
+  return { kind: kind || "group", title: title ?? "", [CHILDREN]: [] };
 }
 
 /**
@@ -239,4 +242,15 @@ export function wellFormed(structure) {
     if (!wellFormed(node[CHILDREN])) return false;
   }
   return true;
+}
+
+/**
+ * The level name worth showing for a grouping, or "" for none. "group"
+ * is the default and says nothing; "module" is the name of the whole
+ * course here, so a grouping saved as one (older courses were) is shown
+ * as the plain grouping it is.
+ */
+export function levelName(kind) {
+  const k = String(kind ?? "").trim();
+  return k && !/^(group|module)$/i.test(k) ? k : "";
 }

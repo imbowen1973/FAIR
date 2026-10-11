@@ -17,6 +17,7 @@
 // derives that list from the Python import graph, and a second copy here
 // would be the thing that drifts.
 import { fetchModules } from "../wasm-renderer.js";
+import { pythonError } from "./errors.js";
 
 const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 const LIB_DIR = "/fairlib"; // never /lib: that is Pyodide's own stdlib
@@ -24,6 +25,14 @@ const COMPANION_DIR = "/faircompanion";
 const OUT_DIR = "/out";
 
 let pyodidePromise = null;
+
+async function runPy(py, code, doing) {
+  try {
+    return await py.runPythonAsync(code);
+  } catch (err) {
+    throw pythonError(err, doing);
+  }
+}
 
 async function ensurePyodide(status = () => {}) {
   if (pyodidePromise) return pyodidePromise;
@@ -149,7 +158,7 @@ export async function validate(files, status, companionFiles = null) {
   mount(py, companionFiles ?? [], COMPANION_DIR);
   if (!companionFiles) py.runPython(`import shutil; shutil.rmtree("${COMPANION_DIR}", ignore_errors=True)`);
   status?.("Checking…");
-  const out = await py.runPythonAsync(VALIDATE);
+  const out = await runPy(py, VALIDATE, "check the course");
   status?.("");
   return JSON.parse(out);
 }
@@ -189,7 +198,7 @@ export async function ingestDeck(bytes, blockId, status = () => {}, sourceName =
     "/ingest-args.json",
     JSON.stringify({ block_id: blockId, source_name: sourceName })
   );
-  const out = JSON.parse(await py.runPythonAsync(INGEST));
+  const out = JSON.parse(await runPy(py, INGEST, "read the deck"));
   const media = new Map();
   for (const rel of out.media) {
     media.set(rel, py.FS.readFile(`/ingest-out/${rel}`));
@@ -228,7 +237,7 @@ export async function renderDeck(files, blockId, status) {
   const py = await ensurePyodide(status);
   mount(py, files);
   status?.("Rendering the deck…");
-  await py.runPythonAsync(RENDER);
+  await runPy(py, RENDER, "render the deck");
 
   const catalog = JSON.parse(
     new TextDecoder().decode(py.FS.readFile(`${OUT_DIR}/catalog.json`))
@@ -284,7 +293,7 @@ export async function buildGeometry(files, status = () => {}) {
   const py = await ensurePyodide(status);
   mount(py, files);
   status("Reading the template's layouts…");
-  const text = await py.runPythonAsync(GEOMETRY);
+  const text = await runPy(py, GEOMETRY, "read the template");
   const parsed = JSON.parse(text);
   if (parsed.error) throw new Error(parsed.error);
   if (!parsed.layouts || !Object.keys(parsed.layouts).length) {

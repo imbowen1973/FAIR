@@ -18,7 +18,7 @@
 // entry in this YAML. A session that exists in one but not the other is
 // the drift the orchestrator is supposed to prevent.
 
-import { canIndent, canMove, canOutdent } from "./structure.js";
+import { canIndent, canMove, canOutdent, levelName } from "./structure.js";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -128,6 +128,10 @@ export function courseHome(
 
   const grid = el("div", "session-cards");
   let cards = 0;
+  // Groupings are boxes that hold their sessions, nested as deep as the
+  // course nests them -- the same picture as the rail, so the module,
+  // its groupings and its sessions read the same way in both places.
+  const containers = [grid]; // containers[d] holds rows of depth d
 
   for (const row of rows) {
     // A session on disk that the running order does not mention. Not an
@@ -135,8 +139,17 @@ export function courseHome(
     // yet, and pretending it sits at the top would be a quiet lie.
     if (row.unplaced) continue;
 
+    containers.length = Math.min(containers.length, row.depth + 1);
+    let into = containers[containers.length - 1];
     const line = el("div", row.kind === "block" ? "order-row" : "order-row heading");
-    line.style.marginLeft = `${row.depth * 16}px`;
+    if (row.kind !== "block") {
+      const box = el("div", "order-group");
+      const body = el("div", "order-group-body");
+      box.append(line, body);
+      into.append(box);
+      containers.push(body);
+      into = null; // the heading is already placed, inside its box
+    }
 
     if (row.kind === "block") {
       cards += 1;
@@ -161,12 +174,15 @@ export function courseHome(
       line.append(card);
     } else {
       // The heading's own words. `kind` is whatever this course calls the
-      // level -- module, day, week, unit -- so it is a field, not a list.
+      // level -- week, day, unit -- so it is a field, not a list. Empty
+      // is a plain grouping; the placeholder says so, rather than
+      // suggesting it is a "module", which is the name of the whole.
       const kind = el("input", "order-kind");
       kind.type = "text";
-      kind.value = row.kind === "group" ? "" : row.kind;
-      kind.placeholder = "module";
-      kind.title = "What this course calls this level: module, day, week…";
+      kind.value = levelName(row.kind);
+      kind.placeholder = "e.g. week";
+      kind.title =
+        "What this course calls this level — week, day, unit… Leave it empty for a plain grouping.";
       kind.setAttribute("aria-label", "Kind of grouping");
       kind.addEventListener("input", () =>
         onHeading?.(row.path, { kind: kind.value.trim() || "group" })
@@ -231,7 +247,7 @@ export function courseHome(
 
     // Last in both kinds of row, so the arrows form one column.
     line.append(tools);
-    grid.append(line);
+    if (into) into.append(line);
   }
 
   if (!cards) {
@@ -280,7 +296,7 @@ export function courseHome(
   const addModule = el("button", null, "+ Add a grouping");
   addModule.type = "button";
   addModule.title =
-    "A module, day or week that holds sessions — whatever this course calls it";
+    "A grouping that holds sessions — a week, a day, a unit, whatever this course calls it";
   addModule.addEventListener("click", () => onAddModule?.());
   actions.append(addSession, addModule);
   host.append(actions);

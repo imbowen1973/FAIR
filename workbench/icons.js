@@ -34,6 +34,8 @@ const PATHS = {
   // Arrows curving back and forward: undo and redo.
   undo: "M5.5 3.5l-3 3 3 3M2.5 6.5h6a4 4 0 1 1 0 8H5",
   redo: "M10.5 3.5l3 3-3 3M13.5 6.5h-6a4 4 0 1 0 0 8H11",
+  // Stacked sheets: the module, which holds everything else.
+  module: "M8 2.5l5.5 2.75L8 8 2.5 5.25z M2.5 8L8 10.75 13.5 8 M2.5 10.75L8 13.5l5.5-2.75",
   // A slide divided into a title band and two panes: the layout picker.
   layout: "M2.5 3h11v10h-11z M2.5 6h11 M8 6v7",
   // A framed picture: two peaks and a sun. The universal image glyph,
