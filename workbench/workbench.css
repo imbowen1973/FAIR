@@ -1369,3 +1369,29 @@ input.order-kind::placeholder {
 }
 .fixer-verdict { margin: 0; font-size: 0.88rem; color: var(--danger); }
 .fixer-verdict.ok { color: var(--ok); }
+
+/* ---- importing a module ----------------------------------------------- */
+.module-import-text {
+  width: 100%; max-width: 54rem; min-height: 18em; box-sizing: border-box;
+  font: 13px/1.45 Consolas, ui-monospace, monospace; padding: 10px;
+  border: 1px solid var(--border-strong); border-radius: 6px;
+  background: var(--bg); color: var(--fg);
+}
+.module-import-actions { display: flex; gap: 14px; align-items: center; margin: 8px 0 14px; }
+.module-import-actions label.link { cursor: pointer; }
+.module-import-plan { border-collapse: collapse; max-width: 54rem; width: 100%; margin-bottom: 10px; font-size: 0.86rem; }
+.module-import-plan td { padding: 4px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.module-import-plan .plan-path { font-family: Consolas, ui-monospace, monospace; font-size: 0.8rem; white-space: nowrap; }
+.plan-action { font-weight: 700; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+.plan-create .plan-action { color: var(--ok); }
+.plan-update .plan-action { color: var(--accent); }
+.plan-same { color: var(--muted); }
+.module-import-problems { color: var(--danger); max-width: 54rem; }
+
+/* A grouping that repeats its one session's name: offered a tidy-up. */
+.tidy-note {
+  max-width: 54rem; margin: 6px 0 12px; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+}
+.tidy-note p { margin: 0 0 8px; }

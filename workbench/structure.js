@@ -254,3 +254,53 @@ export function levelName(kind) {
   const k = String(kind ?? "").trim();
   return k && !/^(group|module)$/i.test(k) ? k : "";
 }
+
+/**
+ * Groupings that only repeat the name of the one session inside them:
+ * "Foundations of clinical teaching" holding just the session
+ * "Foundations of clinical teaching". Older courses wrapped every
+ * session in a grouping of its own name, so it showed twice in the rail
+ * and the overview. `titleOf(blockId)` gives a session's title.
+ *
+ * Returns their paths, deepest and last first, so removing them in that
+ * order never shifts a path still to be removed.
+ */
+export function redundantGroupings(structure, titleOf) {
+  const same = (a, b) =>
+    String(a ?? "").trim().replace(/\s+/g, " ").toLowerCase() ===
+    String(b ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  const out = [];
+  const walk = (nodes, trail) => {
+    (nodes ?? []).forEach((node, index) => {
+      const path = [...trail, index];
+      if (!isContainer(node)) return;
+      const kids = node[CHILDREN] ?? [];
+      walk(kids, path);
+      if (kids.length === 1 && kids[0] && "block" in kids[0] && same(node.title, titleOf(kids[0].block))) {
+        out.push(path);
+      }
+    });
+  };
+  walk(structure, []);
+  return out.sort((a, b) => {
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if (a[i] === undefined) return 1;
+      if (b[i] === undefined) return -1;
+      if (a[i] !== b[i]) return b[i] - a[i];
+    }
+    return 0;
+  });
+}
+
+/** Remove every grouping that only repeats its one session's name. */
+export function unwrapRedundant(structure, titleOf) {
+  // Until nothing more qualifies: removing an inner wrapper can leave
+  // its parent a wrapper too ("Rounds" › "Rounds" › session "Rounds").
+  let tree = structure;
+  for (let guard = 0; guard < 50; guard++) {
+    const paths = redundantGroupings(tree, titleOf);
+    if (!paths.length) return tree;
+    tree = paths.reduce((t, path) => removeContainer(t, path), tree);
+  }
+  return tree;
+}

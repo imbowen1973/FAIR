@@ -73,6 +73,9 @@ export function courseHome(
     onRemoveHeading,
     onAddModuleAt,
     onPlace,
+    // Titles of groupings that only repeat their one session's name.
+    redundant = [],
+    onTidy,
   }
 ) {
   host.innerHTML = "";
@@ -125,6 +128,29 @@ export function courseHome(
     }
     return b;
   };
+
+  // A grouping holding one session of the same name says it twice --
+  // older courses wrapped every session that way. Offered, not done:
+  // the author may want the grouping and simply not have filled it yet.
+  if (redundant.length) {
+    const tidy = el("div", "tidy-note");
+    const names = redundant.map((t) => `“${t}”`).join(", ");
+    tidy.append(
+      el(
+        "p",
+        null,
+        redundant.length === 1
+          ? `The grouping ${names} only repeats the name of the one session inside it.`
+          : `${redundant.length} groupings only repeat the name of the one session inside them: ${names}.`
+      )
+    );
+    const go = el("button", "primary", redundant.length === 1 ? "Remove that grouping" : "Remove those groupings");
+    go.type = "button";
+    go.title = "The sessions stay exactly where they are; Undo puts the groupings back";
+    go.addEventListener("click", () => onTidy?.());
+    tidy.append(go, el("span", "hint", " The sessions stay where they are, and Undo brings the groupings back."));
+    host.append(tidy);
+  }
 
   const grid = el("div", "session-cards");
   let cards = 0;
